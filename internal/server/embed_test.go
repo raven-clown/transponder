@@ -8,6 +8,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/router"
+	"github.com/raven-clown/transponder/internal/server"
 )
 
 func (e *env) embed(t *testing.T, headers map[string]string, body string) result {
@@ -109,5 +110,22 @@ func TestEmbeddingsErrors(t *testing.T) {
 				t.Fatalf("records %d", n)
 			}
 		})
+	}
+}
+
+func TestUpstreamBodyTooLarge(t *testing.T) {
+	defer server.SetMaxUpstreamBytes(64)()
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1,0.2,0.3,0.4,0.5,0.6,0.7]}],"usage":{"prompt_tokens":1}}`)
+	})
+	e := setupRoutes(t, []router.Route{openaiRoute("*", "", up)})
+	for _, path := range []string{"/v1/embeddings", "/v1/chat/completions"} {
+		res, err := e.doPath(http.MethodPost, path, e.auth(), `{"model":"e","input":"x","messages":[{"role":"user","content":"x"}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_too_large" {
+			t.Fatalf("%s: status %d: %s", path, res.status, res.body)
+		}
 	}
 }

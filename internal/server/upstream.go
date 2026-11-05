@@ -30,6 +30,9 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 		c.w.WriteHeader(pe.Status)
 		_, _ = c.w.Write(pe.Body)
 		c.rec.Status = pe.Status
+	case errors.Is(err, errUpstreamTooLarge):
+		writeError(c.w, http.StatusBadGateway, "api_error", "upstream_too_large", "", "the provider's response is larger than 64 MiB; ask for fewer inputs or base64 encoding")
+		c.rec.Status = http.StatusBadGateway
 	case errors.Is(err, provider.ErrUnsupported):
 		writeError(c.w, http.StatusBadRequest, "invalid_request_error", "unsupported", "model", "the provider for this model cannot serve this request")
 		c.rec.Status = http.StatusBadRequest
@@ -40,8 +43,14 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 	g.record(ctx, c.rec)
 }
 
+var errUpstreamTooLarge = errors.New("the provider's response is larger than the gateway accepts")
+
 func readUpstream(resp *http.Response) ([]byte, error) {
-	return io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBytes))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBytes+1))
+	if err == nil && int64(len(b)) > maxUpstreamBytes {
+		return nil, errUpstreamTooLarge
+	}
+	return b, err
 }
 
 func estimateTokens(s string) int64 {

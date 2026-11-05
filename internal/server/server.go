@@ -17,10 +17,9 @@ import (
 	"github.com/raven-clown/transponder/internal/store"
 )
 
-const (
-	maxBodyBytes     = 20 << 20
-	maxUpstreamBytes = 64 << 20
-)
+const maxBodyBytes = 20 << 20
+
+var maxUpstreamBytes int64 = 64 << 20
 
 // Deps are what the server needs to answer requests.
 type Deps struct {
