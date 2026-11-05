@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-05
+
 ### Added
 
 - `POST /v1/chat/completions` answered by a built-in `echo` provider, with `X-Usage-Input-Tokens`, `X-Usage-Output-Tokens` and `X-Usage-Cost-USD` headers.
@@ -16,3 +18,6 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `POST /v1/embeddings`.
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
+
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/raven-clown/transponder/releases/tag/v0.1.0
