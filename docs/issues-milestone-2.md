@@ -109,3 +109,15 @@ Labels: `enhancement`, `good first issue`
 **Tests:** a test of a small helper that takes the context and the stop function and calls stop once the context is done, so no real signal is needed.
 
 **Where:** `cmd/transponder/main.go` and `main_test.go`.
+
+---
+
+## Found in review
+
+These came out of the review of the milestone 2 branch and are posted as their own issues:
+
+- #22 Pass the API key through for `type: ollama` (`good first issue`)
+- #23 Re-emit multi-line SSE data as several `data:` lines (`good first issue`)
+- #24 Treat an OpenAI stream that ends without `[DONE]` as cut
+- #25 Record a caller disconnect as client closed, not as a provider failure
+- #26 Cap the line and event size in `SSEReader`
