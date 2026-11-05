@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
-    url: https://github.com/raven-clown/mothership/discussions
+    url: "https://github.com/raven-clown/mothership/discussions"
     about: Ask how to do something, or float an idea before it becomes a feature request.
+  - name: Security problem
+    url: "https://github.com/raven-clown/transponder/security/advisories/new"
+    about: Report a vulnerability privately. Please don't open a public issue.
+  - name: How the projects fit together
+    url: "https://github.com/raven-clown/mothership/blob/main/CONTRACT.md"
+    about: The contract between airlock, rosetta, transponder and logbook.

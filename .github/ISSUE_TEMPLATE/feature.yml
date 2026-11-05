@@ -1,20 +1,51 @@
-name: Feature
+name: Feature request
 description: Propose something new. We agree on the API here before anyone writes code.
-labels: [enhancement]
+labels: [enhancement, needs design]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Every feature ships in the free build, so anything is fair game.
+
+        **How to write it**
+        - Title: the capability, in a short imperative phrase, such as "Add a Gemini provider" or "Filter the audit log by user".
+        - Start from the problem, not the solution. Someone who has never used transponder should follow it.
+        - One feature per issue. Split a big idea into pieces that can ship on their own.
+        - We agree on the API here before anyone writes code, so be concrete: names, config keys, endpoints, errors.
+        - A change to how transponder talks to the other mothership projects goes to the [contract](https://github.com/raven-clown/mothership/blob/main/CONTRACT.md) first.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Chat completions
+        - Embeddings
+        - Anthropic-compatible /v1/messages
+        - Streaming
+        - Providers
+        - Routing and fallback
+        - Usage, cost and pricing
+        - Budgets and limits
+        - Auth (OIDC, API keys)
+        - Storage and migrations
+        - Admin API
+        - Config and CLI
+        - Docs
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: why
     attributes:
       label: Why
-      description: What problem does this solve, and for whom?
+      description: The problem this solves and who has it. A real situation you ran into helps most.
     validations:
       required: true
   - type: textarea
     id: api
     attributes:
       label: Proposed API
-      description: The config keys, endpoints, Go types or functions you have in mind.
-      render: go
+      description: The config keys, routes, headers, endpoints or admin API fields you have in mind. A short YAML sketch of the config is best.
     validations:
       required: true
   - type: textarea
@@ -32,8 +63,37 @@ body:
     validations:
       required: true
   - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways to solve it, and why this one is better. Include a workaround you use today.
+  - type: dropdown
     id: compatibility
     attributes:
-      label: Compatibility
-      description: Does anything existing change?
-      placeholder: New feature only.
+      label: "Does anything existing change?"
+      options:
+        - No, it only adds something
+        - Yes, and the description says what
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: contract
+    attributes:
+      label: "Does it change how the mothership projects connect?"
+      options:
+        - "No"
+        - Yes, it needs a CONTRACT.md change
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: "Would you like to build it?"
+      options:
+        - "Yes"
+        - Yes, with some help
+        - "No"
+    validations:
+      required: true
