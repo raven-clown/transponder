@@ -48,6 +48,9 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 
 - Follow CONTRIBUTING.md: tests with every change, a failing test first for a bug fix, table-driven tests, no network in unit tests, no bare `time.Sleep`.
 - Commit after every change, with a Conventional Commits message, and push it.
+- Never commit straight to `main`. Start each piece of work on its own branch off `main`, named `feat/<topic>`, `fix/<topic>`, `ci/<topic>` or `docs/<topic>`, and push it after every commit.
+- When the work is done, open a pull request with a Conventional Commits title and a plain English description. Wait until every required check is green: the three test jobs, coverage, lint, analyze, dependency review and pr title. A macOS job cancelled while waiting for a runner is not a failure: rerun it with `gh run rerun <id> --failed`.
+- Then merge it with `gh pr merge <n> --squash --delete-branch --admin` and delete the local branch with `git switch main && git pull && git branch -D <branch>`. Never merge a red pull request, and never force-push `main`.
 - Never mention AI, assistants or code generation in code, comments, docs, commit messages, pull requests or issues.
 - Never add `Co-Authored-By`, `Generated with` or similar trailers.
 - No em-dashes. Keep comments short and about why.
