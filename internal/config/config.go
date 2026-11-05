@@ -24,6 +24,29 @@ type Bootstrap struct {
 	SecretsKey string `yaml:"secrets_key"`
 	OTel       OTel   `yaml:"otel"`
 	LogLevel   string `yaml:"log_level"`
+
+	Providers []Provider `yaml:"providers"`
+	Routes    []Route    `yaml:"routes"`
+}
+
+// Provider is one backend declared in the file.
+type Provider struct {
+	Name    string `yaml:"name"`
+	Type    string `yaml:"type"`
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"`
+}
+
+// Route sends the models matching Match to its targets.
+type Route struct {
+	Match   string   `yaml:"match"`
+	Targets []Target `yaml:"targets"`
+}
+
+// Target is one provider a route may use. An empty Model keeps the requested model.
+type Target struct {
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
 }
 
 // Store selects the database. Exactly one of the fields is set.
@@ -86,6 +109,34 @@ func (c *Bootstrap) validate() error {
 	default:
 		return fmt.Errorf("config: log_level %q must be debug, info, warn or error", c.LogLevel)
 	}
+	names := map[string]bool{}
+	for i, p := range c.Providers {
+		switch {
+		case p.Name == "":
+			return fmt.Errorf("config: providers[%d] has no name", i)
+		case names[p.Name]:
+			return fmt.Errorf("config: provider %q is declared twice", p.Name)
+		}
+		switch p.Type {
+		case "echo", "openai", "ollama":
+		default:
+			return fmt.Errorf("config: provider %q has unknown type %q", p.Name, p.Type)
+		}
+		names[p.Name] = true
+	}
+	for i, r := range c.Routes {
+		if r.Match == "" {
+			return fmt.Errorf("config: routes[%d] has no match", i)
+		}
+		if len(r.Targets) == 0 {
+			return fmt.Errorf("config: route %q has no targets", r.Match)
+		}
+		for _, t := range r.Targets {
+			if !names[t.Provider] {
+				return fmt.Errorf("config: route %q uses provider %q, which is not declared", r.Match, t.Provider)
+			}
+		}
+	}
 	return nil
 }
 
@@ -145,6 +196,9 @@ func leafPaths(t reflect.Type, prefix string) map[string]bool {
 	for f := range t.Fields() {
 		tag, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		if tag == "" || tag == "-" {
+			continue
+		}
+		if f.Type.Kind() == reflect.Slice {
 			continue
 		}
 		if f.Type.Kind() == reflect.Struct {

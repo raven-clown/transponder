@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -47,7 +48,7 @@ log_level: debug
 		OTel:       OTel{Endpoint: "http://otel:4318"},
 		LogLevel:   "debug",
 	}
-	if *c != want {
+	if !reflect.DeepEqual(*c, want) {
 		t.Fatalf("got %+v, want %+v", *c, want)
 	}
 }
@@ -83,11 +84,18 @@ func TestLoadRejects(t *testing.T) {
 		body    string
 		environ []string
 		path    string
+		want    string
 	}{
 		{name: "unknown file key", body: "listen_adr: x\n"},
 		{name: "both stores", body: "store:\n  sqlite: a.db\n  postgres: postgres://x\n"},
 		{name: "bad log level", body: "log_level: loud\n"},
 		{name: "missing file", path: filepath.Join(t.TempDir(), "nope.yaml")},
+		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
+		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
+		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
+		{name: "route without match", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - targets: [{provider: a}]\n", want: "routes[0]"},
+		{name: "route without targets", body: "routes:\n  - match: x\n", want: `"x"`},
+		{name: "target unknown provider", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - match: x\n    targets: [{provider: z}]\n", want: `"z"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,10 +103,47 @@ func TestLoadRejects(t *testing.T) {
 			if p == "" {
 				p = writeFile(t, tt.body)
 			}
-			if _, err := Load(p, tt.environ); err == nil {
+			_, err := Load(p, tt.environ)
+			if err == nil {
 				t.Fatal("expected an error")
 			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error %q does not name %q", err, tt.want)
+			}
 		})
+	}
+}
+
+func TestLoadProvidersAndRoutes(t *testing.T) {
+	p := writeFile(t, `providers:
+  - name: openai
+    type: openai
+    api_key: ${OPENAI_KEY}
+  - name: local
+    type: ollama
+routes:
+  - match: "gpt-*"
+    targets:
+      - provider: openai
+  - match: local
+    targets:
+      - provider: local
+        model: llama3.2
+`)
+	c, err := Load(p, []string{"OPENAI_KEY=sk-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProviders := []Provider{{Name: "openai", Type: "openai", APIKey: "sk-test"}, {Name: "local", Type: "ollama"}}
+	wantRoutes := []Route{
+		{Match: "gpt-*", Targets: []Target{{Provider: "openai"}}},
+		{Match: "local", Targets: []Target{{Provider: "local", Model: "llama3.2"}}},
+	}
+	if !reflect.DeepEqual(c.Providers, wantProviders) {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+	if !reflect.DeepEqual(c.Routes, wantRoutes) {
+		t.Fatalf("routes = %+v", c.Routes)
 	}
 }
 
@@ -110,6 +155,8 @@ func TestLoadIgnoresUnknownEnv(t *testing.T) {
 		"TRANSPONDER_STORE=oops",
 		"TRANSPONDER_STORE__NOPE=1",
 		"TRANSPONDER_LOG_LEVEL=warn",
+		"TRANSPONDER_PROVIDERS=x",
+		"TRANSPONDER_ROUTES=y",
 	}
 	c, err := Load("", environ)
 	if err != nil {
