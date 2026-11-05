@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -38,8 +39,13 @@ func (s *sse) write(frame []byte) {
 }
 
 func (s *sse) data(payload []byte) {
-	frame := append([]byte("data: "), payload...)
-	s.write(append(frame, '\n', '\n'))
+	var frame []byte
+	for line := range bytes.SplitSeq(payload, []byte{'\n'}) {
+		frame = append(frame, "data: "...)
+		frame = append(frame, line...)
+		frame = append(frame, '\n')
+	}
+	s.write(append(frame, '\n'))
 }
 
 func (s *sse) finish(u schema.Usage, cost int64) {

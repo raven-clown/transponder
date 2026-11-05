@@ -1,12 +1,15 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/router"
 )
@@ -173,5 +176,36 @@ func TestStreamUpstreamCut(t *testing.T) {
 	r := e.usage(t)[0]
 	if r.Status != 200 || !r.Estimated || r.OutputTokens != 4 {
 		t.Fatalf("record %+v", r)
+	}
+}
+
+func TestStreamNativeMultilineData(t *testing.T) {
+	for _, payload := range []string{
+		`{"choices":[{"index":0,"delta":{"content":"hi"}}]}`,
+		"{\n\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}",
+		"{\n\n\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n",
+	} {
+		t.Run(payload, func(t *testing.T) {
+			up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: "+strings.ReplaceAll(payload, "\n", "\ndata: ")+"\n\n"+openai.DoneFrame)
+			})
+			e := setupRoutes(t, []router.Route{openaiRoute("*", "", up)})
+			res := e.post(t, streamPing)
+			if res.status != http.StatusOK {
+				t.Fatalf("status %d: %s", res.status, res.body)
+			}
+			reader := openai.NewSSEReader(bytes.NewReader(res.body))
+			got, err := reader.Next()
+			if err != nil || string(got) != payload {
+				t.Fatalf("payload %q, error %v; want %q", got, err, payload)
+			}
+			if !json.Valid(got) {
+				t.Fatalf("invalid JSON: %s", got)
+			}
+			if _, err := reader.Next(); !errors.Is(err, io.EOF) {
+				t.Fatalf("end of stream: %v", err)
+			}
+		})
 	}
 }
