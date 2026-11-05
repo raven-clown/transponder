@@ -38,9 +38,7 @@ func (s *sse) write(frame []byte) {
 }
 
 func (s *sse) data(payload []byte) {
-	frame := make([]byte, 0, len(payload)+8)
-	frame = append(frame, "data: "...)
-	frame = append(frame, payload...)
+	frame := append([]byte("data: "), payload...)
 	s.write(append(frame, '\n', '\n'))
 }
 
