@@ -56,6 +56,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go stopOnContextDone(ctx, stop)
 	defer stop()
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.ListenAddr)
 	if err != nil {
@@ -67,6 +68,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func stopOnContextDone(ctx context.Context, stop context.CancelFunc) {
+	<-ctx.Done()
+	stop()
 }
 
 func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, stderr io.Writer) error {

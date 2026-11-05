@@ -276,3 +276,14 @@ func TestServeRecordsOpenStreamOnShutdown(t *testing.T) {
 		t.Fatalf("records %+v", recs)
 	}
 }
+func TestStopOnContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	called := make(chan struct{}, 1)
+	go stopOnContextDone(ctx, func() { called <- struct{}{} })
+	cancel()
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("stop was not called after context cancellation")
+	}
+}

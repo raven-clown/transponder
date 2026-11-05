@@ -6,6 +6,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 
+- Restore the default signal handler after the first shutdown signal so a second Ctrl+C stops the process immediately.
 - Preserve every data line when forwarding multiline streaming events.
 
 ## [0.1.0] - 2026-11-05
