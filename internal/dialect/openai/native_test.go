@@ -17,6 +17,12 @@ func TestPeekRequest(t *testing.T) {
 		{body: `{"model":"m","messages":[]}`, want: Peek{Model: "m"}},
 		{body: `{"model":"m","stream":true}`, want: Peek{Model: "m", Stream: true}},
 		{body: `{"model":"m","stream":true,"stream_options":{"include_usage":true}}`, want: Peek{Model: "m", Stream: true, IncludeUsage: true}},
+		{body: `{"model":"m","stream":true,"Stream":false,"Model":"x"}`, want: Peek{Model: "m", Stream: true}},
+		{body: `{"model":"m","stream":true,"stream_options":{"include_usage":false,"INCLUDE_USAGE":true}}`, want: Peek{Model: "m", Stream: true}},
+		{body: `{"model":"a","model":"m"}`, want: Peek{Model: "m"}},
+		{body: `{"model":"m","stream":"yes"}`, wantCode: "invalid_json"},
+		{body: `{"model":1}`, wantCode: "invalid_json"},
+		{body: `[]`, wantCode: "invalid_json"},
 		{body: `{"model":`, wantCode: "invalid_json"},
 		{body: `{"stream":true}`, wantCode: "missing_field"},
 	}
@@ -61,6 +67,10 @@ func TestRewriteRequest(t *testing.T) {
 	out, err = RewriteRequest([]byte(`{"model":"a"}`), "b", false)
 	if err != nil || string(out) != `{"model":"b"}` {
 		t.Fatalf("rewrite without usage = %s, %v", out, err)
+	}
+	out, err = RewriteRequest([]byte(`{"model":"a","Model":"x","stream":true,"STREAM":false}`), "b", false)
+	if err != nil || string(out) != `{"model":"b","stream":true}` {
+		t.Fatalf("rewrite with case variants = %s, %v", out, err)
 	}
 	if _, err := RewriteRequest([]byte(`[1]`), "b", false); err == nil {
 		t.Fatal("expected an error for a non-object body")

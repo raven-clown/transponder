@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/schema"
 )
@@ -15,26 +16,52 @@ type Peek struct {
 	IncludeUsage bool
 }
 
-// PeekRequest reads the routing fields of a chat or embeddings request.
+// PeekRequest reads the routing fields of a chat or embeddings request. Keys are matched exactly,
+// as upstream servers match them, so the gateway and the provider always agree on model and stream.
 func PeekRequest(body []byte) (Peek, error) {
-	var w struct {
-		Model         string `json:"model"`
-		Stream        bool   `json:"stream"`
-		StreamOptions *struct {
-			IncludeUsage bool `json:"include_usage"`
-		} `json:"stream_options"`
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+		return Peek{}, invalidJSON("the request body is not a JSON object")
 	}
-	if err := json.Unmarshal(body, &w); err != nil {
-		return Peek{}, &RequestError{Code: "invalid_json", Message: "the request body is not valid JSON: " + err.Error()}
+	var p Peek
+	if err := field(m, "model", &p.Model); err != nil {
+		return Peek{}, err
 	}
-	if w.Model == "" {
+	if err := field(m, "stream", &p.Stream); err != nil {
+		return Peek{}, err
+	}
+	if raw, ok := m["stream_options"]; ok && !isNull(raw) {
+		var opts map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &opts); err != nil {
+			return Peek{}, invalidJSON("stream_options must be an object")
+		}
+		if err := field(opts, "include_usage", &p.IncludeUsage); err != nil {
+			return Peek{}, err
+		}
+	}
+	if p.Model == "" {
 		return Peek{}, &RequestError{Param: "model", Code: "missing_field", Message: "model is required"}
 	}
-	p := Peek{Model: w.Model, Stream: w.Stream}
-	if w.StreamOptions != nil {
-		p.IncludeUsage = w.StreamOptions.IncludeUsage
-	}
 	return p, nil
+}
+
+func field(m map[string]json.RawMessage, key string, dst any) error {
+	raw, ok := m[key]
+	if !ok || isNull(raw) {
+		return nil
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return &RequestError{Param: key, Code: "invalid_json", Message: key + " has the wrong type"}
+	}
+	return nil
+}
+
+func isNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+func invalidJSON(msg string) *RequestError {
+	return &RequestError{Code: "invalid_json", Message: msg}
 }
 
 // RewriteRequest sets model and, with forceUsage, stream_options.include_usage, keeping every other field.
@@ -43,11 +70,18 @@ func RewriteRequest(body []byte, model string, forceUsage bool) ([]byte, error) 
 	if err := json.Unmarshal(body, &m); err != nil || m == nil {
 		return nil, errors.New("openai: request body is not a JSON object")
 	}
+	for k := range m {
+		for _, exact := range []string{"model", "stream", "stream_options"} {
+			if k != exact && strings.EqualFold(k, exact) {
+				delete(m, k)
+			}
+		}
+	}
 	name, _ := json.Marshal(model)
 	m["model"] = name
 	if forceUsage {
 		opts := map[string]json.RawMessage{}
-		if raw, ok := m["stream_options"]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		if raw, ok := m["stream_options"]; ok && !isNull(raw) {
 			if err := json.Unmarshal(raw, &opts); err != nil {
 				return nil, errors.New("openai: stream_options is not a JSON object")
 			}
