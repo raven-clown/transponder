@@ -21,6 +21,7 @@ import (
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/pricing"
 	"github.com/raven-clown/transponder/internal/provider"
+	"github.com/raven-clown/transponder/internal/provider/cloudflare"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/provider/ollama"
 	"github.com/raven-clown/transponder/internal/provider/openai"
@@ -159,6 +160,8 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 			prov = openai.New(openai.Options{Name: p.Name, BaseURL: p.BaseURL, APIKey: p.APIKey, Client: client})
 		case "ollama":
 			prov = ollama.New(p.Name, p.BaseURL, client)
+		case "cloudflare":
+			prov = cloudflare.New(p.Name, p.BaseURL, p.APIKey, client)
 		default:
 			return nil, fmt.Errorf("provider %q has unknown type %q", p.Name, p.Type)
 		}

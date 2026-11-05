@@ -151,6 +151,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "llama3.2", provider: "local", typ: "ollama", upstream: "llama3.2",
 		},
+		{
+			name: "cloudflare route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "cf", Type: "cloudflare", BaseURL: "https://gateway.ai.cloudflare.com/v1/account/gateway/compat", APIKey: "token"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "cf"}}}},
+			},
+			model: "m", provider: "cf", typ: "cloudflare", upstream: "m",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

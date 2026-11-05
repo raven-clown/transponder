@@ -93,6 +93,7 @@ func TestLoadRejects(t *testing.T) {
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
+		{name: "cloudflare without base URL", body: "providers:\n  - {name: cf, type: cloudflare}\nroutes:\n  - {match: '*', targets: [{provider: cf}]}\n", want: `provider "cf" of type cloudflare needs base_url`},
 		{name: "route without match", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - targets: [{provider: a}]\n", want: "routes[0]"},
 		{name: "providers without routes", body: "providers:\n  - {name: a, type: openai}\n", want: "routes"},
 		{name: "route without targets", body: "routes:\n  - match: x\n", want: `"x"`},

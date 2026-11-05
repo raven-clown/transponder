@@ -118,9 +118,12 @@ func (c *Bootstrap) validate() error {
 			return fmt.Errorf("config: provider %q is declared twice", p.Name)
 		}
 		switch p.Type {
-		case "echo", "openai", "ollama":
+		case "echo", "openai", "ollama", "cloudflare":
 		default:
 			return fmt.Errorf("config: provider %q has unknown type %q", p.Name, p.Type)
+		}
+		if p.Type == "cloudflare" && p.BaseURL == "" {
+			return fmt.Errorf("config: provider %q of type cloudflare needs base_url", p.Name)
 		}
 		names[p.Name] = true
 	}

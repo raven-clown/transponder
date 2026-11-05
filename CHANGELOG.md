@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Cloudflare AI Gateway provider using its OpenAI-compatible endpoint.
+
 ## [0.1.2] - 2026-11-05
 
 ### Added
