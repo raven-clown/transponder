@@ -1,0 +1,35 @@
+name: Docs
+description: Something in the docs is wrong, unclear or missing.
+labels: [docs]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **How to write it**
+        - Title: what is wrong or missing, such as "README doesn't say how to run on Postgres".
+        - Link the page or name the file, and quote the part that is wrong.
+        - Say what you were trying to do when the docs let you down. That tells us what to write.
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: The file or the link to the page.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "What is wrong or missing?"
+      description: Quote the part that is wrong, or say what you looked for and didn't find.
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: "What were you trying to do?"
+      description: The task you had when the docs let you down.
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+      description: New wording or an outline, if you have one.

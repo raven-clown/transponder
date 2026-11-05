@@ -12,13 +12,15 @@ Before you start, leave a comment on the issue so nobody else picks it up. If yo
 
 For a new feature that has no issue yet, open one first, so we can agree on the API before you write the code. Bug fixes and docs can go straight to a pull request.
 
+Use the issue forms: a bug report, a feature request, a new adapter or a docs problem. Each one says what to include.
+
 ## Development setup
 
 You need Go 1.26 or newer and [golangci-lint](https://golangci-lint.run/) v2.
 
 ```shell
-git clone https://github.com/<your-username>/<project>.git
-cd <project>
+git clone https://github.com/<your-username>/transponder.git
+cd transponder
 
 go test -race ./...      # all tests
 golangci-lint run ./...  # linters
