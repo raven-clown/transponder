@@ -4,15 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-05
+
+### Added
+
+- Message `content` sent as an array of text parts is accepted and joined in order. Other part types, such as `image_url`, still return 400 `unsupported`.
+
 ### Fixed
 
+- Restore the default signal handler after the first shutdown signal so a second Ctrl+C stops the process immediately.
 - Reject requests declaring bodies larger than 20 MiB before reading them.
 
 ## [0.1.1] - 2026-11-05
 
 ### Fixed
 
-- Restore the default signal handler after the first shutdown signal so a second Ctrl+C stops the process immediately.
 - Preserve every data line when forwarding multiline streaming events.
 
 ## [0.1.0] - 2026-11-05
@@ -30,6 +36,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/raven-clown/transponder/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/raven-clown/transponder/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/raven-clown/transponder/releases/tag/v0.1.0
