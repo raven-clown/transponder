@@ -18,7 +18,9 @@ import (
 
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
+	"github.com/raven-clown/transponder/internal/pricing"
 	"github.com/raven-clown/transponder/internal/provider/echo"
+	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
@@ -81,11 +83,12 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 
 	srv := &http.Server{
 		Handler: server.New(server.Deps{
-			Auth:     auth.NewAuthenticator(db, time.Now),
-			Provider: echo.New("echo"),
-			Usage:    db,
-			Logger:   logger,
-			Now:      time.Now,
+			Auth:   auth.NewAuthenticator(db, time.Now),
+			Router: router.New([]router.Route{{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo"}}}}),
+			Prices: pricing.Default(),
+			Usage:  db,
+			Logger: logger,
+			Now:    time.Now,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

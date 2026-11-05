@@ -4,111 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/raven-clown/transponder/internal/auth"
-	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/schema"
-	"github.com/raven-clown/transponder/internal/server"
-	"github.com/raven-clown/transponder/internal/store"
-	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
-
-type env struct {
-	srv *httptest.Server
-	db  *sqlite.DB
-	key string
-}
-
-type result struct {
-	status int
-	header http.Header
-	body   []byte
-}
-
-func setup(t *testing.T, p provider.Provider) *env {
-	t.Helper()
-	ctx := context.Background()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	plain, hash, last4, err := auth.NewKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	k := store.APIKey{OrgID: store.DefaultOrg, Name: "alice", Hash: hash, Last4: last4, Role: string(auth.RoleMember), CreatedAt: time.Now()}
-	if err := db.CreateKey(ctx, k); err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(server.New(server.Deps{
-		Auth:     auth.NewAuthenticator(db, time.Now),
-		Provider: p,
-		Usage:    db,
-		Logger:   slog.New(slog.NewJSONHandler(io.Discard, nil)),
-		Now:      time.Now,
-	}))
-	t.Cleanup(srv.Close)
-	return &env{srv: srv, db: db, key: plain}
-}
-
-func (e *env) do(method string, headers map[string]string, body string) (result, error) {
-	req, err := http.NewRequestWithContext(context.Background(), method, e.srv.URL+"/v1/chat/completions", strings.NewReader(body))
-	if err != nil {
-		return result{}, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := e.srv.Client().Do(req)
-	if err != nil {
-		return result{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(resp.Body)
-	return result{status: resp.StatusCode, header: resp.Header, body: b}, err
-}
-
-func (e *env) post(t *testing.T, body string) result {
-	t.Helper()
-	res, err := e.do(http.MethodPost, map[string]string{"Authorization": "Bearer " + e.key}, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return res
-}
-
-func (e *env) usage(t *testing.T) []store.UsageRecord {
-	t.Helper()
-	recs, err := e.db.RecentUsage(context.Background(), store.DefaultOrg, 100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return recs
-}
-
-func errorCode(t *testing.T, res result) string {
-	t.Helper()
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(res.body, &body); err != nil {
-		t.Fatalf("decoding %q: %v", res.body, err)
-	}
-	return body.Error.Code
-}
 
 const ping = `{"model":"m","messages":[{"role":"user","content":"ping"}]}`
 
@@ -167,6 +70,9 @@ func TestChatCompletionsUnauthenticated(t *testing.T) {
 	}
 	if res.status != http.StatusUnauthorized {
 		t.Fatalf("status = %d", res.status)
+	}
+	if res.header.Get("X-Usage-Cost-USD") != "0.000000" {
+		t.Fatalf("headers %v", res.header)
 	}
 	if code := errorCode(t, res); code != "invalid_api_key" {
 		t.Fatalf("code = %q", code)
