@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/config"
+	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
 
 func TestRun(t *testing.T) {
@@ -217,5 +219,60 @@ func TestServeWithOpenAIProvider(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Usage-Cost-USD") != "0.000450" {
 		t.Fatalf("status %d, headers %v", resp.StatusCode, resp.Header)
+	}
+}
+
+func TestServeRecordsOpenStreamOnShutdown(t *testing.T) {
+	old := shutdownTimeout
+	shutdownTimeout = 200 * time.Millisecond
+	defer func() { shutdownTimeout = old }()
+
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer up.Close()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(t.TempDir(), "t.db")
+	cfg := &config.Bootstrap{
+		Store:     config.Store{SQLite: dbPath},
+		LogLevel:  "info",
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: up.URL}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+	}
+	key, stop := startServe(t, cfg, ln)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+ln.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"ping"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if _, err := bufio.NewReader(resp.Body).ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+
+	db, err := sqlite.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	recs, err := db.RecentUsage(context.Background(), store.DefaultOrg, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || !recs[0].Estimated || recs[0].OutputTokens != 2 {
+		t.Fatalf("records %+v", recs)
 	}
 }

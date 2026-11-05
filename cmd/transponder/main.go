@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -29,6 +30,9 @@ import (
 )
 
 var version = "dev"
+
+// shutdownTimeout is how long open requests get to finish after a stop signal.
+var shutdownTimeout = 10 * time.Second
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -88,15 +92,26 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
+	gw := server.New(server.Deps{
+		Auth:   auth.NewAuthenticator(db, time.Now),
+		Router: rt,
+		Prices: pricing.Default(),
+		Usage:  db,
+		Logger: logger,
+		Now:    time.Now,
+	})
+	// Requests run on their own context so a drain that runs out of time can end them,
+	// and the handlers are counted so their usage is written before the store closes.
+	reqCtx, endRequests := context.WithCancel(context.WithoutCancel(ctx))
+	defer endRequests()
+	var inflight sync.WaitGroup
 	srv := &http.Server{
-		Handler: server.New(server.Deps{
-			Auth:   auth.NewAuthenticator(db, time.Now),
-			Router: rt,
-			Prices: pricing.Default(),
-			Usage:  db,
-			Logger: logger,
-			Now:    time.Now,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			inflight.Add(1)
+			defer inflight.Done()
+			gw.ServeHTTP(w, r)
 		}),
+		BaseContext:       func(net.Listener) context.Context { return reqCtx },
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
@@ -108,10 +123,13 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	case <-ctx.Done():
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return err
+		logger.Warn("open requests did not finish in time, ending them", "timeout", shutdownTimeout.String())
+		endRequests()
+		inflight.Wait()
+		_ = srv.Close()
 	}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
 		return err
