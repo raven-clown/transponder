@@ -86,7 +86,6 @@ func TestChatCompletionsBadRequest(t *testing.T) {
 	tests := []struct{ name, body, code string }{
 		{name: "bad json", body: `{`, code: "invalid_json"},
 		{name: "missing model", body: `{"messages":[{"role":"user","content":"x"}]}`, code: "missing_field"},
-		{name: "streaming", body: `{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`, code: "unsupported"},
 	}
 	e := setup(t, echo.New("echo"))
 	for _, tt := range tests {

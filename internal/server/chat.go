@@ -23,18 +23,20 @@ func (g *gateway) chat(w http.ResponseWriter, r *http.Request) {
 		writeRequestError(w, err)
 		return
 	}
-	if peek.Stream {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "unsupported", "stream", "streaming is not supported yet")
-		return
-	}
 	if !g.resolve(c, peek.Model) {
 		return
 	}
-	if n, ok := nativeTarget(c, "openai"); ok {
+	n, native := nativeTarget(c, "openai")
+	switch {
+	case peek.Stream && native:
+		g.chatStreamNative(c, n, peek.IncludeUsage)
+	case peek.Stream:
+		g.chatStreamCanonical(c, peek.IncludeUsage)
+	case native:
 		g.chatNative(c, n)
-		return
+	default:
+		g.chatCanonical(c)
 	}
-	g.chatCanonical(c)
 }
 
 func (g *gateway) chatNative(c *call, n provider.Native) {

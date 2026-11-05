@@ -29,9 +29,10 @@ type env struct {
 }
 
 type result struct {
-	status int
-	header http.Header
-	body   []byte
+	status  int
+	header  http.Header
+	trailer http.Header
+	body    []byte
 }
 
 func echoRoutes(p provider.Provider) []router.Route {
@@ -89,7 +90,7 @@ func (e *env) doPath(method, path string, headers map[string]string, body string
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
-	return result{status: resp.StatusCode, header: resp.Header, body: b}, err
+	return result{status: resp.StatusCode, header: resp.Header, trailer: resp.Trailer, body: b}, err
 }
 
 func (e *env) post(t *testing.T, body string) result {
