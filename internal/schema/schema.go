@@ -36,6 +36,14 @@ type Usage struct {
 // EventType names a stream event.
 type EventType string
 
+// Stream event types, in the order a stream sends them.
+const (
+	EventStart  EventType = "start"
+	EventText   EventType = "text"
+	EventFinish EventType = "finish"
+	EventUsage  EventType = "usage"
+)
+
 // Event is one item of a streamed response.
 type Event struct {
 	Type         EventType
