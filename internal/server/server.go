@@ -37,6 +37,7 @@ func New(d Deps) http.Handler {
 	g := &gateway{d: d}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
+	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	return mux
 }
 
