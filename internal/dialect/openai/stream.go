@@ -34,27 +34,29 @@ func (s *SSEReader) Next() ([]byte, error) {
 	var data []byte
 	for {
 		line, err := s.r.ReadBytes('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(line) > 0 || data != nil {
-					return nil, io.ErrUnexpectedEOF
-				}
-				return nil, io.EOF
-			}
+		eof := errors.Is(err, io.EOF)
+		if err != nil && !eof {
 			return nil, err
 		}
 		line = bytes.TrimRight(line, "\r\n")
+		payload, isData := bytes.CutPrefix(line, []byte("data:"))
+		payload = bytes.TrimPrefix(payload, []byte(" "))
+		if isData && bytes.Equal(payload, []byte("[DONE]")) {
+			s.done = true
+			return nil, io.EOF
+		}
+		if eof {
+			if len(line) > 0 || data != nil {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return nil, io.EOF
+		}
 		switch {
 		case len(line) == 0:
 			if data != nil {
 				return data, nil
 			}
-		case bytes.HasPrefix(line, []byte("data:")):
-			payload := bytes.TrimPrefix(bytes.TrimPrefix(line, []byte("data:")), []byte(" "))
-			if bytes.Equal(payload, []byte("[DONE]")) {
-				s.done = true
-				return nil, io.EOF
-			}
+		case isData:
 			if data != nil {
 				data = append(data, '\n')
 			}
@@ -135,8 +137,6 @@ func EncodeStreamError(code, message string) []byte {
 }
 
 func frame(payload []byte) []byte {
-	out := make([]byte, 0, len(payload)+8)
-	out = append(out, "data: "...)
-	out = append(out, payload...)
+	out := append([]byte("data: "), payload...)
 	return append(out, '\n', '\n')
 }

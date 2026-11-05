@@ -47,6 +47,16 @@ func TestSSEReaderEnds(t *testing.T) {
 	}
 }
 
+func TestSSEReaderFinalLineWithoutNewline(t *testing.T) {
+	r := NewSSEReader(strings.NewReader("data: {\"a\":1}\n\ndata: [DONE]"))
+	if _, err := r.Next(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
+		t.Fatalf("[DONE] without a newline = %v, want io.EOF", err)
+	}
+}
+
 func TestChunkUsage(t *testing.T) {
 	u, ok, only := ChunkUsage([]byte(`{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3}}`))
 	if !ok || !only || u != (schema.Usage{InputTokens: 10, OutputTokens: 3}) {
