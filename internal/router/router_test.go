@@ -41,6 +41,27 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+func TestGlobMatchesSlashes(t *testing.T) {
+	e := echo.New("a")
+	r := New([]Route{
+		{Match: "hf.co/*", Targets: []Target{{Provider: e, Type: "echo", Model: "hf"}}},
+		{Match: "gpt-?", Targets: []Target{{Provider: e, Type: "echo", Model: "one"}}},
+		{Match: "*", Targets: []Target{{Provider: e, Type: "echo"}}},
+	})
+	for model, want := range map[string]string{
+		"hf.co/user/repo":                  "hf",
+		"gpt-5":                            "one",
+		"meta-llama/Llama-3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
+		"gpt-5.1":                          "gpt-5.1",
+		"a.b+c(d)":                         "a.b+c(d)",
+	} {
+		got, err := r.Resolve(model)
+		if err != nil || got.Model != want {
+			t.Errorf("Resolve(%q) = %+v, %v; want model %q", model, got, err, want)
+		}
+	}
+}
+
 func TestBadGlobNeverMatches(t *testing.T) {
 	r := New([]Route{{Match: "a[", Targets: []Target{{Provider: echo.New("a"), Type: "echo"}}}})
 	if _, err := r.Resolve("ab"); !errors.Is(err, ErrNoRoute) {

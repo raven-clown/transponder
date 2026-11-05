@@ -3,7 +3,8 @@ package router
 
 import (
 	"errors"
-	"path"
+	"regexp"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/provider"
 )
@@ -35,17 +36,26 @@ type Resolved struct {
 // Router holds the routes in priority order.
 type Router struct {
 	routes []Route
+	globs  []*regexp.Regexp
 }
 
-// New returns a router over routes, first match wins.
+// New returns a router over routes, first match wins. In Match, * stands for any run of
+// characters, slashes included, since model names such as hf.co/user/repo have them.
 func New(routes []Route) *Router {
-	return &Router{routes: routes}
+	r := &Router{routes: routes, globs: make([]*regexp.Regexp, len(routes))}
+	for i, rt := range routes {
+		re := regexp.QuoteMeta(rt.Match)
+		re = strings.ReplaceAll(re, `\*`, ".*")
+		re = strings.ReplaceAll(re, `\?`, ".")
+		r.globs[i] = regexp.MustCompile("^" + re + "$")
+	}
+	return r
 }
 
 // Resolve returns the first target of the first route matching model.
 func (r *Router) Resolve(model string) (Resolved, error) {
-	for _, rt := range r.routes {
-		if len(rt.Targets) == 0 || !matches(rt.Match, model) {
+	for i, rt := range r.routes {
+		if len(rt.Targets) == 0 || !r.globs[i].MatchString(model) {
 			continue
 		}
 		t := rt.Targets[0]
@@ -56,12 +66,4 @@ func (r *Router) Resolve(model string) (Resolved, error) {
 		return Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Model: up}, nil
 	}
 	return Resolved{}, ErrNoRoute
-}
-
-func matches(pattern, model string) bool {
-	if pattern == model {
-		return true
-	}
-	ok, err := path.Match(pattern, model)
-	return err == nil && ok
 }
