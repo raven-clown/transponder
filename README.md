@@ -2,7 +2,7 @@
 
 An LLM gateway that knows who is spending what. One Go binary in front of Anthropic, OpenAI, Gemini and Ollama, with fallback across providers, cost per user from your own identity provider, and budgets that hold across replicas. Every feature is free.
 
-> **Status: in development.** Milestone 1 is done: the binary starts with no config, prints an admin key and answers chat completions through a built-in test provider. Real providers come next. The design is settled in [docs/design.md](docs/design.md) and the work is tracked in [issues](https://github.com/raven-clown/transponder/issues). Star or watch the repository to follow along, and see [How to help](#how-to-help) if you want to build it with us.
+> **Status: in development.** Milestones 1 and 2 are done: the binary starts with no config, prints an admin key, and serves chat completions (plain and streamed) and embeddings from OpenAI, Ollama or any OpenAI-compatible server, with token counts and cost on every response. The Anthropic API comes next. The design is settled in [docs/design.md](docs/design.md) and the work is tracked in [issues](https://github.com/raven-clown/transponder/issues). Star or watch the repository to follow along, and see [How to help](#how-to-help) if you want to build it with us.
 
 ## What it does
 
@@ -46,19 +46,51 @@ transponder works on its own. It is also one of four projects that fit together:
 
 The same user token flows through all four, so an agent's tool calls, memories and model spend line up under one person. The shared rules are in the [mothership contract](https://github.com/raven-clown/mothership/blob/main/CONTRACT.md).
 
-## How it will look
+## Try it
 
-These commands describe the first release. They do not work yet.
+From a clone, with Go 1.26 or later:
 
 ```shell
-transponder
+go run ./cmd/transponder
 # first start: SQLite in the working directory, and a one-time admin key on stderr
 ```
 
+With no config every model is answered by `echo`, a built-in test provider. To use real models, write a config file:
+
+```yaml
+# transponder.yaml
+providers:
+  - name: openai
+    type: openai
+    api_key: ${OPENAI_API_KEY}
+  - name: local
+    type: ollama          # http://localhost:11434/v1 unless base_url is set
+routes:
+  - match: "gpt-*"
+    targets:
+      - provider: openai
+  - match: "fast"
+    targets:
+      - provider: openai
+        model: gpt-4o-mini
+  - match: "*"
+    targets:
+      - provider: local
+```
+
 ```shell
-curl -X POST localhost:8080/admin/v1/providers \
-  -H "Authorization: Bearer $ADMIN_KEY" \
-  -d '{"name": "anthropic", "type": "anthropic", "settings": {"api_key": "sk-ant-..."}}'
+go run ./cmd/transponder --config transponder.yaml
+```
+
+```shell
+curl localhost:8080/v1/chat/completions   -H "Authorization: Bearer $TRANSPONDER_KEY"   -d '{"model": "fast", "messages": [{"role": "user", "content": "hi"}]}' -i
+# X-Usage-Input-Tokens, X-Usage-Output-Tokens and X-Usage-Cost-USD come back with the answer
+```
+
+Routes are tried in order and the first match wins. Fallback to the next target, the admin API and the Anthropic API are on the roadmap below; these commands describe where it is going:
+
+```shell
+curl -X POST localhost:8080/admin/v1/providers   -H "Authorization: Bearer $ADMIN_KEY"   -d '{"name": "anthropic", "type": "anthropic", "settings": {"api_key": "sk-ant-..."}}'
 ```
 
 ```shell

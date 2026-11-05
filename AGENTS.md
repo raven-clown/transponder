@@ -31,16 +31,17 @@ On Windows without gcc, `-race` is not available: run `go test ./...` locally an
 Planned in `docs/design.md` section 4. Packages marked (planned) do not exist yet; update this list as packages land.
 
 - `cmd/transponder`: main, flags, bootstrap config, server start
-- `internal/config`: bootstrap YAML, env overrides, runtime config types and validation
+- `internal/config`: bootstrap YAML, env overrides, and the providers and routes declared in the file
 - `internal/auth`: OIDC JWT verification, API keys, identity and roles
 - `internal/server`: HTTP mux, middleware, gateway handlers
 - `internal/admin` (planned): `/admin/v1` handlers, pagination, audit writes
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic` (anthropic planned): wire formats and usage parsing
-- `internal/router` (planned): routes, access, fallback, cooldown
-- `internal/provider`, `internal/provider/<name>`: the Provider interface and one adapter per backend (`echo` so far); `providertest` (planned) is the conformance suite
+- `internal/router`: routes and target choice; access, fallback and cooldown are planned
+- `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend (`echo`, `openai`, `ollama` so far); `providertest` (planned) is the conformance suite
 - `internal/store`, `internal/store/sqlite`: store interfaces, SQLite with embedded migrations in `internal/store/sqlite/migrations`
-- `internal/pricing`, `internal/budget`, `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): prices, budgets, live config, sealed secrets, logs and metrics
+- `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
+- `internal/budget`, `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): budgets, live config, sealed secrets, logs and metrics
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
 
