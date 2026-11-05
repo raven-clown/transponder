@@ -94,7 +94,8 @@ func TestLoadRejects(t *testing.T) {
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
 		{name: "route without match", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - targets: [{provider: a}]\n", want: "routes[0]"},
-		{name: "route without targets", body: "routes:\n  - match: x\n", want: `"x"`},
+		{name: "providers without routes", body: "providers:\n  - {name: a, type: openai}\n", want: "routes"},
+		{name: "route without targets",body: "routes:\n  - match: x\n", want: `"x"`},
 		{name: "target unknown provider", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - match: x\n    targets: [{provider: z}]\n", want: `"z"`},
 	}
 	for _, tt := range tests {

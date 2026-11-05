@@ -124,6 +124,9 @@ func (c *Bootstrap) validate() error {
 		}
 		names[p.Name] = true
 	}
+	if len(c.Providers) > 0 && len(c.Routes) == 0 {
+		return errors.New("config: providers are declared but no routes send models to them")
+	}
 	for i, r := range c.Routes {
 		if r.Match == "" {
 			return fmt.Errorf("config: routes[%d] has no match", i)
