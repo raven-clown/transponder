@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -58,21 +59,16 @@ func TestServeRejectsPostgres(t *testing.T) {
 	}
 }
 
-func TestServeEndToEnd(t *testing.T) {
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := &config.Bootstrap{ListenAddr: ln.Addr().String(), Store: config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")}, LogLevel: "info"}
+// startServe runs serve on ln and returns the printed admin key and a function that stops it.
+func startServe(t *testing.T, cfg *config.Bootstrap, ln net.Listener) (string, func()) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
 		done <- serve(ctx, cfg, ln, io.Discard, pw)
 		_ = pw.Close()
 	}()
-
 	keys := make(chan string, 1)
 	go func() {
 		sc := bufio.NewScanner(pr)
@@ -86,10 +82,32 @@ func TestServeEndToEnd(t *testing.T) {
 	select {
 	case key = <-keys:
 	case <-time.After(10 * time.Second):
+		cancel()
 		t.Fatal("no admin key printed")
 	}
+	return key, func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("serve returned %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("serve did not stop")
+		}
+	}
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+ln.Addr().String()+"/v1/chat/completions",
+func TestServeEndToEnd(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{ListenAddr: ln.Addr().String(), Store: config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")}, LogLevel: "info"}
+	key, stop := startServe(t, cfg, ln)
+	defer stop()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+ln.Addr().String()+"/v1/chat/completions",
 		strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"ping"}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -103,14 +121,101 @@ func TestServeEndToEnd(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Usage-Cost-USD") == "" {
 		t.Fatalf("status %d, headers %v", resp.StatusCode, resp.Header)
 	}
+}
 
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("serve returned %v", err)
+func TestBuildRouter(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      config.Bootstrap
+		model    string
+		provider string
+		typ      string
+		upstream string
+	}{
+		{name: "no providers", model: "anything", provider: "echo", typ: "echo", upstream: "anything"},
+		{
+			name: "openai route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "oa", Type: "openai", APIKey: "k"}},
+				Routes:    []config.Route{{Match: "fast", Targets: []config.Target{{Provider: "oa", Model: "gpt-4o-mini"}}}},
+			},
+			model: "fast", provider: "oa", typ: "openai", upstream: "gpt-4o-mini",
+		},
+		{
+			name: "ollama route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "local", Type: "ollama"}, {Name: "e", Type: "echo"}},
+				Routes:    []config.Route{{Match: "llama*", Targets: []config.Target{{Provider: "local"}}}, {Match: "*", Targets: []config.Target{{Provider: "e"}}}},
+			},
+			model: "llama3.2", provider: "local", typ: "ollama", upstream: "llama3.2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := buildRouter(&tt.cfg, http.DefaultClient)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := r.Resolve(tt.model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream {
+				t.Fatalf("resolved %+v", got)
+			}
+		})
+	}
+}
+
+func TestBuildRouterOllamaDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "local", Type: "ollama"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "local"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("x")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != "http://localhost:11434/v1" {
+		t.Fatalf("provider %T", got.Provider)
+	}
+}
+
+func TestServeWithOpenAIProvider(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer sk-test" {
+			t.Errorf("authorization %q", r.Header.Get("Authorization"))
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("serve did not stop")
+		_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":500}}`)
+	}))
+	defer up.Close()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{
+		Store:     config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")},
+		LogLevel:  "info",
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: up.URL, APIKey: "sk-test"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+	}
+	key, stop := startServe(t, cfg, ln)
+	defer stop()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+ln.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Usage-Cost-USD") != "0.000450" {
+		t.Fatalf("status %d, headers %v", resp.StatusCode, resp.Header)
 	}
 }
