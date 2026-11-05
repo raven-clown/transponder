@@ -32,9 +32,9 @@ func TestCost(t *testing.T) {
 }
 
 func TestCostRounds(t *testing.T) {
-	tb, err := Parse([]byte("openai/half: {input: \"0.0005\"}
-openai/less: {input: \"0.0004\"}
-"))
+	tb, err := Parse([]byte(`openai/half: {input: "0.0005"}
+openai/less: {input: "0.0004"}
+`))
 	if err != nil {
 		t.Fatal(err)
 	}
