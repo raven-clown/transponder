@@ -119,3 +119,19 @@ func TestChatModelNotFound(t *testing.T) {
 		t.Fatalf("headers %v", res.header)
 	}
 }
+
+func TestFreeTargetCostsNothing(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":500}}`)
+	})
+	rt := openaiRoute("*", "gpt-4o-mini", up)
+	rt.Targets[0].Free = true
+	e := setupRoutes(t, []router.Route{rt})
+	res := e.post(t, ping)
+	if res.status != http.StatusOK || res.header.Get("X-Usage-Cost-USD") != "0.000000" {
+		t.Fatalf("status %d, headers %v", res.status, res.header)
+	}
+	if r := e.usage(t)[0]; r.CostNUSD != 0 || r.InputTokens != 1000 {
+		t.Fatalf("record %+v", r)
+	}
+}

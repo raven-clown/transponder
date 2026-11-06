@@ -21,12 +21,8 @@ import (
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/pricing"
-	"github.com/raven-clown/transponder/internal/provider"
-	"github.com/raven-clown/transponder/internal/provider/cloudflare"
 	"github.com/raven-clown/transponder/internal/provider/echo"
-	"github.com/raven-clown/transponder/internal/provider/litellm"
-	"github.com/raven-clown/transponder/internal/provider/ollama"
-	"github.com/raven-clown/transponder/internal/provider/openai"
+	"github.com/raven-clown/transponder/internal/provider/registry"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
@@ -175,26 +171,16 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 // every model goes to a built-in echo provider so a bare start still answers.
 func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, error) {
 	if len(cfg.Routes) == 0 {
-		return router.New([]router.Route{{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo"}}}}), nil
+		return router.New([]router.Route{{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo", Free: true}}}}), nil
 	}
 	providers := map[string]router.Target{}
 	for _, p := range cfg.Providers {
-		var prov provider.Provider
-		switch p.Type {
-		case "echo":
-			prov = echo.New(p.Name)
-		case "openai":
-			prov = openai.New(openai.Options{Name: p.Name, BaseURL: p.BaseURL, APIKey: p.APIKey, Client: client})
-		case "ollama":
-			prov = ollama.New(p.Name, p.BaseURL, p.APIKey, client)
-		case "litellm":
-			prov = litellm.New(p.Name, p.BaseURL, p.APIKey, client)
-		case "cloudflare":
-			prov = cloudflare.New(p.Name, p.BaseURL, p.APIKey, client)
-		default:
+		spec, ok := registry.Lookup(p.Type)
+		if !ok {
 			return nil, fmt.Errorf("provider %q has unknown type %q", p.Name, p.Type)
 		}
-		providers[p.Name] = router.Target{Provider: prov, Type: p.Type}
+		prov := spec.New(registry.Settings{Name: p.Name, BaseURL: p.BaseURL, APIKey: p.APIKey, Client: client})
+		providers[p.Name] = router.Target{Provider: prov, Type: p.Type, Free: spec.Free}
 	}
 	routes := make([]router.Route, 0, len(cfg.Routes))
 	for _, r := range cfg.Routes {

@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/raven-clown/transponder/internal/provider/registry"
 )
 
 const envPrefix = "TRANSPONDER_"
@@ -117,13 +119,12 @@ func (c *Bootstrap) validate() error {
 		case names[p.Name]:
 			return fmt.Errorf("config: provider %q is declared twice", p.Name)
 		}
-		switch p.Type {
-		case "echo", "openai", "ollama", "cloudflare", "litellm":
-		default:
-			return fmt.Errorf("config: provider %q has unknown type %q", p.Name, p.Type)
+		spec, ok := registry.Lookup(p.Type)
+		if !ok {
+			return fmt.Errorf("config: provider %q has unknown type %q; known types are %s", p.Name, p.Type, strings.Join(registry.Types(), ", "))
 		}
-		if p.Type == "cloudflare" && p.BaseURL == "" {
-			return fmt.Errorf("config: provider %q of type cloudflare needs base_url", p.Name)
+		if spec.NeedsBaseURL && p.BaseURL == "" {
+			return fmt.Errorf("config: provider %q of type %s needs base_url", p.Name, p.Type)
 		}
 		names[p.Name] = true
 	}

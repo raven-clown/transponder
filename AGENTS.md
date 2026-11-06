@@ -38,7 +38,8 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic` (anthropic planned): wire formats and usage parsing
 - `internal/router`: routes and target choice; access, fallback and cooldown are planned
-- `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend (`echo`, `openai`, `ollama` so far); `providertest` (planned) is the conformance suite
+- `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
+- `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it
 - `internal/store`, `internal/store/sqlite`: store interfaces, SQLite with embedded migrations in `internal/store/sqlite/migrations`
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
 - `internal/budget`, `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): budgets, live config, sealed secrets, logs and metrics

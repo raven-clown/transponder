@@ -16,6 +16,7 @@ var ErrNoRoute = errors.New("router: no route matches the model")
 type Target struct {
 	Provider provider.Provider
 	Type     string
+	Free     bool
 	Model    string
 }
 
@@ -30,6 +31,7 @@ type Resolved struct {
 	Route    string
 	Provider provider.Provider
 	Type     string
+	Free     bool
 	Model    string
 }
 
@@ -63,7 +65,7 @@ func (r *Router) Resolve(model string) (Resolved, error) {
 		if up == "" {
 			up = model
 		}
-		return Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Model: up}, nil
+		return Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up}, nil
 	}
 	return Resolved{}, ErrNoRoute
 }

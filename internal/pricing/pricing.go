@@ -81,11 +81,8 @@ func Parse(data []byte) (*Table, error) {
 	return t, nil
 }
 
-// Cost returns the cost of u in nano-USD. Echo and Ollama are free. priced is false when the model has no entry.
+// Cost returns the cost of u in nano-USD. priced is false when the model has no entry.
 func (t *Table) Cost(typ, model string, u schema.Usage) (nusd int64, priced bool) {
-	if typ == "echo" || typ == "ollama" {
-		return 0, true
-	}
 	p, ok := t.prices[typ+"/"+model]
 	if !ok {
 		return 0, false

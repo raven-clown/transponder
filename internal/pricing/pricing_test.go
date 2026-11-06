@@ -17,8 +17,7 @@ func TestCost(t *testing.T) {
 		{"input and output", "openai", "gpt-4o-mini", schema.Usage{InputTokens: 1000, OutputTokens: 500}, 450_000, true},
 		{"cache read", "openai", "gpt-5", schema.Usage{InputTokens: 1000, CacheReadTokens: 200, OutputTokens: 100}, 2_275_000, true},
 		{"embeddings", "openai", "text-embedding-3-small", schema.Usage{InputTokens: 1_000_000}, 20_000_000, true},
-		{"ollama is free", "ollama", "anything", schema.Usage{InputTokens: 10, OutputTokens: 10}, 0, true},
-		{"echo is free", "echo", "m", schema.Usage{InputTokens: 10}, 0, true},
+		{"types have no free pass here", "ollama", "anything", schema.Usage{InputTokens: 10, OutputTokens: 10}, 0, false},
 		{"unpriced", "openai", "unknown", schema.Usage{InputTokens: 10}, 0, false},
 	}
 	for _, tt := range tests {

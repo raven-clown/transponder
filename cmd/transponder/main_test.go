@@ -217,7 +217,7 @@ func TestBuildRouter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream {
+			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama") {
 				t.Fatalf("resolved %+v", got)
 			}
 		})
