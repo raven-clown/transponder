@@ -35,8 +35,8 @@ func TestSSEReaderEnds(t *testing.T) {
 	if _, err := r.Next(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Next(); !errors.Is(err, io.EOF) {
-		t.Fatalf("clean end without [DONE] = %v, want io.EOF", err)
+	if _, err := r.Next(); !errors.Is(err, ErrNoDone) {
+		t.Fatalf("clean end without [DONE] = %v, want ErrNoDone", err)
 	}
 	r = NewSSEReader(strings.NewReader("data: {\"a\":1}\n\ndata: {\"b\""))
 	if _, err := r.Next(); err != nil {
@@ -114,4 +114,36 @@ func TestEncodeStreamError(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(f, "data: "))), &v); err != nil || v.Error.Code != "upstream_error" || v.Error.Message != "cut" {
 		t.Fatalf("frame %q: %+v %v", f, v, err)
 	}
+}
+
+func TestSSEReaderEventTooLarge(t *testing.T) {
+	old := maxEventBytes
+	maxEventBytes = 32
+	defer func() { maxEventBytes = old }()
+	for name, in := range map[string]string{
+		"one long line":    "data: " + strings.Repeat("x", 100),
+		"many short lines": strings.Repeat("data: xxxxxxxx\n", 10) + "\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := &countingReader{r: strings.NewReader(in + strings.Repeat("y", 1<<20))}
+			_, err := NewSSEReader(src).Next()
+			if !errors.Is(err, ErrEventTooLarge) {
+				t.Fatalf("err = %v, want ErrEventTooLarge", err)
+			}
+			if src.n > 1<<16 {
+				t.Fatalf("read %d bytes before giving up", src.n)
+			}
+		})
+	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
 }

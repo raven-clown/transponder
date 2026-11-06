@@ -10,6 +10,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - An unknown provider `type` in the config now lists the known types.
 - `settings.attempt_timeout` (default 60s) bounds how long a provider may take to answer with headers, and `settings.request_timeout` (default 10m) bounds the whole call, streams included. Before, one 10 minute limit covered both, so a provider that never answered held the caller for 10 minutes.
 
+### Fixed
+
+- A provider stream that ends without `[DONE]` now ends the caller's stream with an error event and estimated usage, instead of looking complete.
+- A stream line or event over 16 MiB ends the stream instead of growing memory.
+
 ## [0.1.4] - 2026-11-06
 
 ### Added

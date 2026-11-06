@@ -14,6 +14,16 @@ import (
 // DoneFrame ends an OpenAI stream.
 const DoneFrame = "data: [DONE]\n\n"
 
+var (
+	// ErrNoDone means the stream ended cleanly but before [DONE], so the answer may be cut short.
+	ErrNoDone = errors.New("openai: stream ended before [DONE]")
+	// ErrEventTooLarge means one line or event is over the size limit.
+	ErrEventTooLarge = errors.New("openai: stream event is too large")
+)
+
+// maxEventBytes caps one line and one event, so a broken upstream cannot grow memory without end.
+var maxEventBytes = 16 << 20
+
 // SSEReader reads the data payloads of a server-sent event stream.
 type SSEReader struct {
 	r    *bufio.Reader
@@ -25,15 +35,15 @@ func NewSSEReader(r io.Reader) *SSEReader {
 	return &SSEReader{r: bufio.NewReader(r)}
 }
 
-// Next returns the next data payload. It returns io.EOF after [DONE] or a clean end,
-// and io.ErrUnexpectedEOF when the stream stops inside an event.
+// Next returns the next data payload. It returns io.EOF after [DONE], ErrNoDone on a clean
+// end without it, and io.ErrUnexpectedEOF when the stream stops inside an event.
 func (s *SSEReader) Next() ([]byte, error) {
 	if s.done {
 		return nil, io.EOF
 	}
 	var data []byte
 	for {
-		line, err := s.r.ReadBytes('\n')
+		line, err := s.readLine()
 		eof := errors.Is(err, io.EOF)
 		if err != nil && !eof {
 			return nil, err
@@ -49,7 +59,7 @@ func (s *SSEReader) Next() ([]byte, error) {
 			if len(line) > 0 || data != nil {
 				return nil, io.ErrUnexpectedEOF
 			}
-			return nil, io.EOF
+			return nil, ErrNoDone
 		}
 		switch {
 		case len(line) == 0:
@@ -61,6 +71,24 @@ func (s *SSEReader) Next() ([]byte, error) {
 				data = append(data, '\n')
 			}
 			data = append(data, payload...)
+			if len(data) > maxEventBytes {
+				return nil, ErrEventTooLarge
+			}
+		}
+	}
+}
+
+// readLine reads up to and including the next newline, stopping once the line is over the limit.
+func (s *SSEReader) readLine() ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := s.r.ReadSlice('\n')
+		line = append(line, chunk...)
+		if len(line) > maxEventBytes {
+			return nil, ErrEventTooLarge
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return line, err
 		}
 	}
 }

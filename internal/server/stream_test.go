@@ -209,3 +209,19 @@ func TestStreamNativeMultilineData(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamEndsWithoutDone(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"half\"}}]}\n\n")
+	})
+	e := setupRoutes(t, []router.Route{openaiRoute("*", "", up)})
+	res := e.post(t, streamPing)
+	p := payloads(t, res.body)
+	if len(p) != 2 || !strings.Contains(p[1], "upstream_error") {
+		t.Fatalf("payloads %q", p)
+	}
+	if r := e.usage(t)[0]; !r.Estimated {
+		t.Fatalf("record %+v", r)
+	}
+}
