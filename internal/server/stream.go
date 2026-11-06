@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider"
@@ -59,6 +61,8 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		writeRequestError(c.w, &openai.RequestError{Code: "invalid_json", Message: err.Error()})
 		return
 	}
+	ctx, started, cancel := g.attempt(ctx)
+	defer cancel()
 	resp, err := n.Native(ctx, &provider.NativeCall{Path: "/chat/completions", Body: body, Header: c.r.Header})
 	if err != nil {
 		g.upstreamFailed(c, err, true)
@@ -67,6 +71,9 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	defer func() { _ = resp.Body.Close() }()
 	rd := openai.NewSSEReader(resp.Body)
 	first, err := rd.Next()
+	if err == nil && !started() {
+		err = errAttemptTimeout
+	}
 	if err != nil {
 		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
 		return
@@ -120,6 +127,8 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	}
 	req.Model = c.resolved.Model
 	req.Stream = true
+	ctx, started, cancel := g.attempt(ctx)
+	defer cancel()
 	st, err := c.resolved.Provider.ChatStream(ctx, req)
 	if err != nil {
 		g.upstreamFailed(c, err, false)
@@ -127,6 +136,9 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	}
 	defer func() { _ = st.Close() }()
 	first, err := st.Recv()
+	if err == nil && !started() {
+		err = errAttemptTimeout
+	}
 	if err != nil {
 		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
 		return
@@ -168,6 +180,21 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
 	g.record(ctx, c.rec)
+}
+
+var errAttemptTimeout = errors.New("the provider did not start the stream within the attempt timeout")
+
+// attempt returns a context that is cancelled when the first event takes longer than the
+// attempt timeout. started stops the clock and reports whether the event came in time.
+// Calls that are not streamed have no attempt clock, since their headers arrive only once
+// the whole answer is ready; the request timeout bounds them.
+func (g *gateway) attempt(ctx context.Context) (actx context.Context, started func() bool, cancel context.CancelFunc) {
+	actx, cancel = context.WithCancel(ctx)
+	if g.d.AttemptTimeout <= 0 {
+		return actx, func() bool { return true }, cancel
+	}
+	timer := time.AfterFunc(g.d.AttemptTimeout, cancel)
+	return actx, timer.Stop, cancel
 }
 
 // deltaText joins the content deltas of one stream chunk.

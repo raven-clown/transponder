@@ -46,10 +46,10 @@ func setup(t *testing.T, p provider.Provider) *env {
 
 func setupRoutes(t *testing.T, routes []router.Route) *env {
 	t.Helper()
-	return setupWith(t, routes, 0)
+	return setupWith(t, routes, 0, 0)
 }
 
-func setupWith(t *testing.T, routes []router.Route, requestTimeout time.Duration) *env {
+func setupWith(t *testing.T, routes []router.Route, requestTimeout, attemptTimeout time.Duration) *env {
 	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
@@ -69,6 +69,7 @@ func setupWith(t *testing.T, routes []router.Route, requestTimeout time.Duration
 		Auth:           auth.NewAuthenticator(db, time.Now),
 		Router:         router.New(routes),
 		RequestTimeout: requestTimeout,
+		AttemptTimeout: attemptTimeout,
 		Prices:         pricing.Default(),
 		Usage:          db,
 		Logger:         slog.New(slog.NewJSONHandler(io.Discard, nil)),

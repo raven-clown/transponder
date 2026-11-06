@@ -406,7 +406,7 @@ func TestAttemptTimeout(t *testing.T) {
 	key, stop := startServe(t, timeoutConfig(t, up.URL), ln)
 	defer stop()
 	start := time.Now()
-	status, body := postChat(t, ln.Addr().String(), key, `{"model":"m","messages":[{"role":"user","content":"x"}]}`)
+	status, body := postChat(t, ln.Addr().String(), key, `{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`)
 	if status != http.StatusBadGateway || time.Since(start) > 10*time.Second {
 		t.Fatalf("status %d after %s: %s", status, time.Since(start), body)
 	}

@@ -242,7 +242,7 @@ Cooldown: after 3 failures in a row a target is skipped for 30 seconds. Both num
 
 Streaming: transponder reads the upstream until its first event before writing anything to the client. A failure before that point falls back like any other call. After the first byte is sent the target is committed, and a later failure ends the stream with an error event in the caller's dialect.
 
-Each attempt has a timeout (`attempt_timeout`, default 60s until first byte) and the whole request has `request_timeout` (default 10m, since long generations are normal).
+Each streamed attempt has a timeout (`attempt_timeout`, default 60s until the first event) and every request has `request_timeout` (default 10m, since long generations are normal). A call that is not streamed has only the request timeout: its headers arrive once the whole answer is generated, so an attempt clock would cut long answers.
 
 ## 8. Identity, roles and secrets
 

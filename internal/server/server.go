@@ -29,6 +29,8 @@ type Deps struct {
 	Usage  store.UsageStore
 	Logger *slog.Logger
 	Now    func() time.Time
+	// AttemptTimeout bounds the wait for the first event of a stream. Zero means no limit.
+	AttemptTimeout time.Duration
 	// RequestTimeout bounds each call, streams included. Zero means no limit.
 	RequestTimeout time.Duration
 }

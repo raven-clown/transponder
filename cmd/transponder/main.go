@@ -118,7 +118,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 
-	rt, err := buildRouter(cfg, upstreamClient(cfg.Settings.AttemptTimeout))
+	rt, err := buildRouter(cfg, &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()})
 	if err != nil {
 		return err
 	}
@@ -130,6 +130,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		Logger: logger,
 		Now:    time.Now,
 
+		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
@@ -167,14 +168,6 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	return nil
-}
-
-// upstreamClient waits at most attempt for an upstream to answer with headers. The body,
-// a long stream included, is bounded by the request timeout instead.
-func upstreamClient(attempt time.Duration) *http.Client {
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.ResponseHeaderTimeout = attempt
-	return &http.Client{Transport: tr}
 }
 
 // buildRouter turns the providers and routes of the file into a router. With no routes,
