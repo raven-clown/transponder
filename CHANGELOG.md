@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- `transponder --version` prints the commit and build time, as listed in 0.1.4. The helper was added then, but the flag still printed only the version.
+
 ## [0.2.0] - 2026-11-06
 
 ### Added

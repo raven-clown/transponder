@@ -30,6 +30,9 @@ import (
 
 var version = "dev"
 
+// readBuildInfo is swapped in tests, since test binaries carry no VCS stamp.
+var readBuildInfo = debug.ReadBuildInfo
+
 // shutdownTimeout is how long open requests get to finish after a stop signal.
 var shutdownTimeout = 10 * time.Second
 
@@ -71,7 +74,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *showVersion {
-		_, _ = fmt.Fprintf(stdout, "transponder %s\n", version)
+		info, ok := readBuildInfo()
+		_, _ = fmt.Fprintln(stdout, versionString(version, info, ok))
 		return 0
 	}
 	cfg, err := config.Load(*configPath, os.Environ())

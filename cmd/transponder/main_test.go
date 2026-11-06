@@ -58,6 +58,24 @@ func TestVersionString(t *testing.T) {
 	}
 }
 
+func TestRunVersionShowsBuildInfo(t *testing.T) {
+	orig := readBuildInfo
+	t.Cleanup(func() { readBuildInfo = orig })
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "1a2b3c4d5e6f"},
+			{Key: "vcs.time", Value: "2026-11-04T10:00:00Z"},
+		}}, true
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--version"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d (stderr: %s)", code, stderr.String())
+	}
+	if got, want := stdout.String(), "transponder dev (1a2b3c4, 2026-11-04T10:00:00Z)\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestRun(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope.yaml")
 	tests := []struct {
