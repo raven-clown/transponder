@@ -21,7 +21,7 @@ func TestListModels(t *testing.T) {
 	if res.status != http.StatusOK || res.header.Get("Content-Type") != "application/json" {
 		t.Fatalf("status %d, headers %v", res.status, res.header)
 	}
-	want := `{"object":"list","data":[{"id":"fast","object":"model","created":0,"owned_by":"transponder"},{"id":"small","object":"model","created":0,"owned_by":"transponder"}]}`
+	want := `{"object":"list","data":[{"id":"fast","object":"model","created":0,"owned_by":"transponder"}]}`
 	if string(res.body) != want {
 		t.Fatalf("body %s", res.body)
 	}

@@ -8,7 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - OpenRouter provider (`type: openrouter`) defaulting to `https://openrouter.ai/api/v1`.
 - An unknown provider `type` in the config now lists the known types.
-- `GET /v1/models` lists the route names and target models a caller can ask for, so clients such as Open WebUI can fill their model picker. Wildcard routes are left out.
+- `GET /v1/models` lists the route names a caller can ask for, so clients such as Open WebUI can fill their model picker. Wildcard routes and the models a route sends upstream are left out.
 - `settings.attempt_timeout` (default 60s) bounds how long a streamed call waits for its first event, and `settings.request_timeout` (default 10m) bounds every call, streams included. Calls that are not streamed get only the request timeout, since a provider sends their headers once the whole answer is ready. Before, one 10 minute limit covered everything, so a stream that never started held the caller for 10 minutes.
 
 ### Fixed

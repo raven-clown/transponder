@@ -71,18 +71,14 @@ func (r *Router) Resolve(model string) (Resolved, error) {
 	return Resolved{}, ErrNoRoute
 }
 
-// Models returns the names a caller can ask for: every route match without a wildcard and
-// every model a target sends upstream, sorted and without duplicates.
+// Models returns the names a caller can ask for: every route match without a wildcard,
+// sorted and without duplicates. The models targets send upstream are left out, since a
+// caller asking for one of them would not reach that route.
 func (r *Router) Models() []string {
 	seen := map[string]bool{}
 	for _, rt := range r.routes {
 		if !strings.ContainsAny(rt.Match, "*?") {
 			seen[rt.Match] = true
-		}
-		for _, t := range rt.Targets {
-			if t.Model != "" {
-				seen[t.Model] = true
-			}
 		}
 	}
 	out := make([]string, 0, len(seen))

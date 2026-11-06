@@ -80,7 +80,7 @@ func TestModels(t *testing.T) {
 		{Match: "q?", Targets: []Target{{Provider: e}}},
 	})
 	got := r.Models()
-	want := []string{"embed", "fast", "gpt-4o-mini", "llama3.2"}
+	want := []string{"embed", "fast"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Models() = %v, want %v", got, want)
 	}
