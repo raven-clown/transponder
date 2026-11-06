@@ -12,6 +12,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 
+- `transponder --version` prints the commit and build time, as listed in 0.1.4. The helper was added then, but the flag still printed only the version.
 - Boolean config keys can be set from the environment, such as `TRANSPONDER_UPDATE_CHECK=true`. Before, the value was read as text and the config failed to load.
 
 ## [0.2.0] - 2026-11-06
