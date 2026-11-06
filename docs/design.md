@@ -392,7 +392,7 @@ The `Store` interface is split by concern (`UsageStore`, `ConfigStore`, `AuditSt
 
 Tables:
 
-- `usage`: id, org_id, time, request_id, user, teams, key, project, route, provider, model, endpoint, input, output, cache_read, cache_write, cost_nusd, estimated, status, latency_ms, fallbacks.
+- `usage`: id, org_id, time, request_id, user_id, teams, key, project, route, provider, model, endpoint, input, output, cache_read, cache_write, cost_nusd, estimated, status, latency_ms, fallbacks.
 - `spend`: org_id, subject, period, period_start, cost_nusd, primary key on the first four. Updated with `INSERT ... ON CONFLICT DO UPDATE SET cost_nusd = spend.cost_nusd + excluded.cost_nusd`, which both databases support, so concurrent replicas never lose an update.
 - `providers`, `routes`, `route_targets`, `budgets`, `api_keys`, `prices`, `settings`: runtime config, each with `org_id`, `version`, `source`, `created_at`, `updated_at`.
 - `audit`: id, org_id, time, actor (user and key), action, resource kind and id, a JSON diff of the change with secrets replaced by `"***"`, request id.

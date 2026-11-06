@@ -11,7 +11,7 @@ body:
         - Title: "Add <name> <kind>", such as "Add Gemini provider".
         - Link the docs of the system you want to connect to.
         - Say how it can be tested without network, such as a fake server or recorded responses.
-        - A provider implements the Provider interface in `internal/provider` and lives in `internal/provider/<name>`. Copy the `openai` or `ollama` adapter, and test against an `httptest` server that replays real responses.
+        - A provider implements the Provider interface in `internal/provider` and lives in `internal/provider/<name>`. Copy the `openai` or `ollama` adapter, register the type with one entry in `internal/provider/registry/registry.go`, and test against an `httptest` server that replays real responses.
   - type: dropdown
     id: kind
     attributes:
