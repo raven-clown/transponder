@@ -139,7 +139,7 @@ func TestWatchUpdatesLogsOnce(t *testing.T) {
 	}
 	cancel()
 	<-done
-	for _, want := range []string{`"latest":"v0.9.0"`, `"level":"fix"`, `"changes_affecting_config":1`, `"releases_behind":1`} {
+	for _, want := range []string{`"latest":"v0.9.0"`, `"urgency":"fix"`, `"changes_affecting_config":1`, `"releases_behind":1`} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("log misses %s: %s", want, out.String())
 		}

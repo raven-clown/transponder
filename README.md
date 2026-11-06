@@ -92,7 +92,7 @@ transponder --check-update --config transponder.yaml
 
 It lists every release newer than the one running, says how urgent the update is (security fixes, breaking changes, bug fixes or new features) and puts first the changes that touch your config, such as a fix to a provider type you use. It only reads the public release list on GitHub.
 
-To get the same news in the logs, set `update_check: true` (or `TRANSPONDER_UPDATE_CHECK=true`). transponder then checks at start and once a day and logs one `update available` line with the level, how many releases behind it is and how many changes touch your config. It is off by default, and a failed check is only logged at debug level. You can also watch the repository for releases on GitHub, or let Dependabot or Renovate bump the image tag.
+To get the same news in the logs, set `update_check: true` (or `TRANSPONDER_UPDATE_CHECK=true`). transponder then checks at start and once a day and logs one `update available` line with its urgency, how many releases behind it is and how many changes touch your config. It is off by default, and a failed check is only logged at debug level. You can also watch the repository for releases on GitHub, or let Dependabot or Renovate bump the image tag.
 
 ## Try it
 

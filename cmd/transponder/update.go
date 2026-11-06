@@ -94,6 +94,6 @@ func logUpdate(ctx context.Context, logger *slog.Logger, c *update.Checker, used
 	latest := rep.Releases[len(rep.Releases)-1]
 	logger.Info("update available",
 		"current", version, "latest", rep.Latest, "releases_behind", len(rep.Releases),
-		"level", rep.Level(), "changes_affecting_config", affects, "notes", latest.URL,
+		"urgency", rep.Level(), "changes_affecting_config", affects, "notes", latest.URL,
 		"details", "run transponder --check-update")
 }
