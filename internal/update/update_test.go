@@ -362,6 +362,7 @@ func TestRenderStates(t *testing.T) {
 }
 
 func TestCheckFailures(t *testing.T) {
+	var assetURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/a/b/releases":
@@ -369,12 +370,14 @@ func TestCheckFailures(t *testing.T) {
 		case "/repos/a/huge/releases":
 			_, _ = fmt.Fprint(w, `"`+strings.Repeat("x", maxBody+1)+`"`)
 		case "/repos/a/bad-asset/releases":
-			_, _ = fmt.Fprintf(w, `[{"tag_name":"v1.0.0","html_url":"u","assets":[{"name":"release.json","browser_download_url":"%s/asset"}]}]`, "http://"+r.Host)
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "v1.0.0", "html_url": "u",
+				"assets": []map[string]string{{"name": ManifestName, "browser_download_url": assetURL}}}})
 		case "/asset":
 			_, _ = fmt.Fprint(w, `{"version":"v2.0.0"}`)
 		}
 	}))
 	defer srv.Close()
+	assetURL = srv.URL + "/asset"
 	for _, repo := range []string{"a/b", "a/huge"} {
 		c := &Checker{Repo: repo, APIBase: srv.URL, Client: srv.Client()}
 		if _, err := c.Check(context.Background(), "v0.1.0"); err == nil {

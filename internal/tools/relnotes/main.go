@@ -70,7 +70,7 @@ func run(version, previous, repo, project, maintainers, out string) error {
 }
 
 func git(ctx context.Context, args ...string) (string, error) {
-	b, err := exec.CommandContext(ctx, "git", args...).Output()
+	b, err := exec.CommandContext(ctx, "git", args...).Output() //nolint:gosec // always git, args come from this tool
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
