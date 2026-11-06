@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -36,10 +38,23 @@ func appliedVersions(t *testing.T, db *DB) []int {
 	return out
 }
 
+func embeddedVersions(t *testing.T) []int {
+	t.Helper()
+	entries, err := fs.ReadDir(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]int, len(entries))
+	for i := range entries {
+		out[i] = i + 1
+	}
+	return out
+}
+
 func TestOpenNew(t *testing.T) {
 	db := openTemp(t)
-	if got := appliedVersions(t, db); len(got) != 1 || got[0] != 1 {
-		t.Fatalf("applied = %v, want [1]", got)
+	if got := appliedVersions(t, db); !reflect.DeepEqual(got, embeddedVersions(t)) {
+		t.Fatalf("applied = %v, want %v", got, embeddedVersions(t))
 	}
 	if err := db.Ping(context.Background()); err != nil {
 		t.Fatal(err)
@@ -61,8 +76,8 @@ func TestOpenTwice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	if got := appliedVersions(t, db); len(got) != 1 {
-		t.Fatalf("applied = %v, want one migration", got)
+	if got := appliedVersions(t, db); !reflect.DeepEqual(got, embeddedVersions(t)) {
+		t.Fatalf("applied = %v, want each migration once", got)
 	}
 }
 
