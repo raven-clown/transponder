@@ -52,7 +52,7 @@ Sources: bifrost's [enterprise overview](https://github.com/maximhq/bifrost/blob
 
 transponder has no paid edition and never will. SSO, roles, the audit log, replicas and the admin API are all in the Apache-2.0 build.
 
-It is also small on purpose. One provider is one Go package, a few hundred lines with recorded test fixtures, so adding a backend is a weekend pull request.
+It is also small on purpose. One provider is one Go package and one line in `internal/provider/registry`, so adding a backend is a weekend pull request.
 
 ## Part of mothership
 
@@ -95,6 +95,9 @@ providers:
     type: ollama          # http://localhost:11434/v1 unless base_url is set
   - name: proxy
     type: litellm         # http://localhost:4000/v1 unless base_url is set
+  - name: router
+    type: openrouter      # https://openrouter.ai/api/v1 unless base_url is set
+    api_key: ${OPENROUTER_API_KEY}
   - name: cf
     type: cloudflare      # set base_url to your AI Gateway compatibility endpoint
     base_url: https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat

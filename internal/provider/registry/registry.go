@@ -12,6 +12,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/litellm"
 	"github.com/raven-clown/transponder/internal/provider/ollama"
 	"github.com/raven-clown/transponder/internal/provider/openai"
+	"github.com/raven-clown/transponder/internal/provider/openrouter"
 )
 
 // Settings are the values a provider is built from.
@@ -43,6 +44,9 @@ var specs = []Spec{
 	}},
 	{Type: "cloudflare", NeedsBaseURL: true, New: func(s Settings) provider.Provider {
 		return cloudflare.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "openrouter", New: func(s Settings) provider.Provider {
+		return openrouter.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 }
 

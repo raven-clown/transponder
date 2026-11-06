@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- OpenRouter provider (`type: openrouter`) defaulting to `https://openrouter.ai/api/v1`.
+- An unknown provider `type` in the config now lists the known types.
+
 ## [0.1.4] - 2026-11-06
 
 ### Added
