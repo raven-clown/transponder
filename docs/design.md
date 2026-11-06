@@ -292,7 +292,9 @@ Reload: every write through the admin API bumps a `config_version` row in the sa
 
 ## 10. Usage, cost and budgets
 
-Usage. Token counts come from the provider's response: the `usage` object for non-streaming calls, and the usage events while streaming. For OpenAI-dialect streams transponder adds `stream_options.include_usage` upstream, and drops the usage-only chunk again if the caller did not ask for it. When a provider returns no usage (some OpenAI-compatible servers), the record is marked `estimated` and counts are approximated from character length divided by 4.
+Usage. Token counts come from the provider's response: the `usage` object for non-streaming calls, and the usage events while streaming. For OpenAI-dialect streams transponder adds `stream_options.include_usage` upstream, and drops the usage-only chunk again if the caller did not ask for it. When a provider returns no usage (some OpenAI-compatible servers), the record is marked `estimated` and counts are approximated from character length divided by 4. That rule undercounts Thai and other non-Latin scripts, which cost more tokens per character, so milestone 3 counts them at a higher rate and lets a route name a tokenizer for exact counts.
+
+Reasoning tokens. `schema.Usage` gains `ReasoningTokens`. Each adapter reads them where its provider reports them apart: OpenAI's `completion_tokens_details.reasoning_tokens` and Gemini's `thoughtsTokenCount`. Anthropic, Ollama and vLLM count them inside the output tokens, so they stay there. The usage record, the `X-Usage-Reasoning-Tokens` header and the usage event carry the number.
 
 Price. `internal/pricing/prices.yaml` is embedded in the binary, keyed by `type/model`, with USD per million input, output, cache read and cache write tokens. Overrides and new entries are stored in SQL and set through the admin API or the file. Ollama and `echo` cost zero. A model with no price is served and costs zero, the log line says `unpriced`, and `transponder_unpriced_requests_total` goes up. Money is kept as int64 nano-USD so sums never drift.
 
@@ -333,6 +335,21 @@ budgets:
 - Before a call, every budget that applies (the caller's user rule, each of their teams, their key) must have room. If one is spent the caller gets HTTP 402 with error type `budget_exceeded`, the subject, the limit and the reset time, in the caller's dialect. 402 is used on purpose: the OpenAI and Anthropic SDKs retry 429 automatically, which would only burn time.
 - After the call, the real cost is added to every subject's spend in the same transaction as the usage record. Requests already in flight can push a subject a little past its limit. The overshoot is at most the cost of those requests, and the docs say so.
 - `GET /v1/usage` returns the caller's own spend and remaining budget for each rule that applies to them. Everything wider is in the admin API.
+
+Token limits, milestone 3. Besides money, a caller can be limited in tokens, through the `llm.` keys of the shared profiles in mothership's `docs/scale.md`:
+
+```yaml
+llm.tokens:               {rate: 20000/m, per_day: 100000, per_month: 2000000}
+llm.max_input_tokens:     8192
+llm.max_output_tokens:    2048
+llm.max_reasoning_tokens: 4096
+```
+
+- `llm.tokens` counts input, output and reasoning tokens together. `rate` is tokens per minute, so one caller cannot spend a day's allowance in a minute and slow everyone else on the same GPUs.
+- Tokens are reserved before the call, from the prompt and `max_tokens`, and settled to the real counts after it. A failed call gives the reservation back.
+- A prompt over `llm.max_input_tokens` gets 400 `input_too_large` before any provider is called.
+- `llm.max_output_tokens` and `llm.max_reasoning_tokens` lower the request's `max_tokens` and reasoning budget to the cap. They never raise them.
+- A spent `per_day` or `per_month` allowance is 402 `quota_exceeded`. A spent `rate` is 429 `rate_limited` with `Retry-After`.
 
 ## 11. Admin API
 
