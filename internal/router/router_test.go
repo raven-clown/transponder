@@ -2,6 +2,7 @@ package router
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/provider/echo"
@@ -66,5 +67,24 @@ func TestBadGlobNeverMatches(t *testing.T) {
 	r := New([]Route{{Match: "a[", Targets: []Target{{Provider: echo.New("a"), Type: "echo"}}}})
 	if _, err := r.Resolve("ab"); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestModels(t *testing.T) {
+	e := echo.New("a")
+	r := New([]Route{
+		{Match: "fast", Targets: []Target{{Provider: e, Model: "gpt-4o-mini"}}},
+		{Match: "gpt-*", Targets: []Target{{Provider: e}, {Provider: e, Model: "llama3.2"}}},
+		{Match: "embed", Targets: []Target{{Provider: e}}},
+		{Match: "fast", Targets: []Target{{Provider: e, Model: "gpt-4o-mini"}}},
+		{Match: "q?", Targets: []Target{{Provider: e}}},
+	})
+	got := r.Models()
+	want := []string{"embed", "fast", "gpt-4o-mini", "llama3.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Models() = %v, want %v", got, want)
+	}
+	if got := New([]Route{{Match: "*", Targets: []Target{{Provider: e}}}}).Models(); len(got) != 0 {
+		t.Fatalf("catch-all lists %v", got)
 	}
 }

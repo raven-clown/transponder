@@ -25,7 +25,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 ## What it does
 
-- Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
+- Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Sends each call to Anthropic, OpenAI, Gemini or Ollama, and to any OpenAI-compatible server such as vLLM or LM Studio.
 - Falls back to the next provider when one is down, rate limited or out of credit, and skips a provider that keeps failing for a while.
 - Knows the caller from an OIDC token (Okta, Entra, Keycloak, Zitadel, Google, Auth0 and others) or an API key, and records tokens and cost in USD for every call.
