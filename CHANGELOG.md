@@ -8,6 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - OpenRouter provider (`type: openrouter`) defaulting to `https://openrouter.ai/api/v1`.
 - An unknown provider `type` in the config now lists the known types.
+- `settings.attempt_timeout` (default 60s) bounds how long a provider may take to answer with headers, and `settings.request_timeout` (default 10m) bounds the whole call, streams included. Before, one 10 minute limit covered both, so a provider that never answered held the caller for 10 minutes.
 
 ## [0.1.4] - 2026-11-06
 

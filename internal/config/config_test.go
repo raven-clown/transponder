@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, body string) string {
@@ -24,6 +25,19 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.ListenAddr != ":8080" || c.Store.SQLite != "./transponder.db" || c.LogLevel != "info" {
 		t.Fatalf("unexpected defaults: %+v", c)
+	}
+	if c.Settings.AttemptTimeout != time.Minute || c.Settings.RequestTimeout != 10*time.Minute {
+		t.Fatalf("unexpected timeout defaults: %+v", c.Settings)
+	}
+}
+
+func TestLoadSettings(t *testing.T) {
+	c, err := Load(writeFile(t, "settings:\n  attempt_timeout: 5s\n  request_timeout: 1m\n"), []string{"TRANSPONDER_SETTINGS__ATTEMPT_TIMEOUT=7s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Settings.AttemptTimeout != 7*time.Second || c.Settings.RequestTimeout != time.Minute {
+		t.Fatalf("settings %+v", c.Settings)
 	}
 }
 
@@ -47,6 +61,7 @@ log_level: debug
 		SecretsKey: "abc",
 		OTel:       OTel{Endpoint: "http://otel:4318"},
 		LogLevel:   "debug",
+		Settings:   Settings{AttemptTimeout: time.Minute, RequestTimeout: 10 * time.Minute},
 	}
 	if !reflect.DeepEqual(*c, want) {
 		t.Fatalf("got %+v, want %+v", *c, want)
@@ -93,6 +108,8 @@ func TestLoadRejects(t *testing.T) {
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
+		{name: "negative attempt timeout", body: "settings:\n  attempt_timeout: -1s\n", want: "attempt_timeout"},
+		{name: "request timeout not a duration", body: "settings:\n  request_timeout: soon\n", want: "`soon`"},
 		{name: "unknown type lists the known ones", body: "providers:\n  - {name: b, type: bedrock}\n", want: "cloudflare, echo, litellm, ollama, openai, openrouter"},
 		{name: "cloudflare without base URL", body: "providers:\n  - {name: cf, type: cloudflare}\nroutes:\n  - {match: '*', targets: [{provider: cf}]}\n", want: `provider "cf" of type cloudflare needs base_url`},
 		{name: "route without match", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - targets: [{provider: a}]\n", want: "routes[0]"},

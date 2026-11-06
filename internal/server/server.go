@@ -29,6 +29,8 @@ type Deps struct {
 	Usage  store.UsageStore
 	Logger *slog.Logger
 	Now    func() time.Time
+	// RequestTimeout bounds each call, streams included. Zero means no limit.
+	RequestTimeout time.Duration
 }
 
 // New returns the gateway handler.
@@ -37,7 +39,14 @@ func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
-	return mux
+	if d.RequestTimeout <= 0 {
+		return mux
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), d.RequestTimeout)
+		defer cancel()
+		mux.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 type gateway struct {

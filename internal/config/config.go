@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -29,6 +30,15 @@ type Bootstrap struct {
 
 	Providers []Provider `yaml:"providers"`
 	Routes    []Route    `yaml:"routes"`
+	Settings  Settings   `yaml:"settings"`
+}
+
+// Settings tune how calls to providers are made.
+type Settings struct {
+	// AttemptTimeout is how long an upstream may take to answer with headers.
+	AttemptTimeout time.Duration `yaml:"attempt_timeout"`
+	// RequestTimeout bounds a whole call, streaming included.
+	RequestTimeout time.Duration `yaml:"request_timeout"`
 }
 
 // Provider is one backend declared in the file.
@@ -99,6 +109,12 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 	if c.Store.SQLite == "" && c.Store.Postgres == "" {
 		c.Store.SQLite = "./transponder.db"
 	}
+	if c.Settings.AttemptTimeout == 0 {
+		c.Settings.AttemptTimeout = time.Minute
+	}
+	if c.Settings.RequestTimeout == 0 {
+		c.Settings.RequestTimeout = 10 * time.Minute
+	}
 	return c, c.validate()
 }
 
@@ -110,6 +126,12 @@ func (c *Bootstrap) validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("config: log_level %q must be debug, info, warn or error", c.LogLevel)
+	}
+	if c.Settings.AttemptTimeout < 0 {
+		return fmt.Errorf("config: settings.attempt_timeout %s must be positive", c.Settings.AttemptTimeout)
+	}
+	if c.Settings.RequestTimeout < 0 {
+		return fmt.Errorf("config: settings.request_timeout %s must be positive", c.Settings.RequestTimeout)
 	}
 	names := map[string]bool{}
 	for i, p := range c.Providers {

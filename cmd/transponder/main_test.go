@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -356,5 +357,82 @@ func TestStopOnContextDone(t *testing.T) {
 	case <-called:
 	case <-time.After(time.Second):
 		t.Fatal("stop was not called after context cancellation")
+	}
+}
+
+func timeoutConfig(t *testing.T, upURL string) *config.Bootstrap {
+	return &config.Bootstrap{
+		Store:     config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")},
+		LogLevel:  "info",
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: upURL}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+		Settings:  config.Settings{AttemptTimeout: 150 * time.Millisecond, RequestTimeout: time.Minute},
+	}
+}
+
+func postChat(t *testing.T, addr, key, body string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+addr+"/v1/chat/completions", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, b
+}
+
+func TestAttemptTimeout(t *testing.T) {
+	release := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer up.Close()
+	defer close(release)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, stop := startServe(t, timeoutConfig(t, up.URL), ln)
+	defer stop()
+	start := time.Now()
+	status, body := postChat(t, ln.Addr().String(), key, `{"model":"m","messages":[{"role":"user","content":"x"}]}`)
+	if status != http.StatusBadGateway || time.Since(start) > 10*time.Second {
+		t.Fatalf("status %d after %s: %s", status, time.Since(start), body)
+	}
+}
+
+func TestSlowStreamNotCut(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		tick := time.NewTicker(100 * time.Millisecond)
+		defer tick.Stop()
+		for i := range 4 {
+			_, _ = io.WriteString(w, fmt.Sprintf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"%d\"}}]}\n\n", i))
+			w.(http.Flusher).Flush()
+			<-tick.C
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer up.Close()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, stop := startServe(t, timeoutConfig(t, up.URL), ln)
+	defer stop()
+	status, body := postChat(t, ln.Addr().String(), key, `{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`)
+	if status != http.StatusOK || !strings.HasSuffix(string(body), "data: [DONE]\n\n") || strings.Contains(string(body), "upstream_error") {
+		t.Fatalf("status %d: %s", status, body)
 	}
 }

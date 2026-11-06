@@ -46,6 +46,11 @@ func setup(t *testing.T, p provider.Provider) *env {
 
 func setupRoutes(t *testing.T, routes []router.Route) *env {
 	t.Helper()
+	return setupWith(t, routes, 0)
+}
+
+func setupWith(t *testing.T, routes []router.Route, requestTimeout time.Duration) *env {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
@@ -61,12 +66,13 @@ func setupRoutes(t *testing.T, routes []router.Route) *env {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(server.New(server.Deps{
-		Auth:   auth.NewAuthenticator(db, time.Now),
-		Router: router.New(routes),
-		Prices: pricing.Default(),
-		Usage:  db,
-		Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
-		Now:    time.Now,
+		Auth:           auth.NewAuthenticator(db, time.Now),
+		Router:         router.New(routes),
+		RequestTimeout: requestTimeout,
+		Prices:         pricing.Default(),
+		Usage:          db,
+		Logger:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Now:            time.Now,
 	}))
 	t.Cleanup(srv.Close)
 	return &env{srv: srv, db: db, key: plain}
