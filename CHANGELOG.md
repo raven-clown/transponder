@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `transponder --check-update` lists the releases newer than the running one, how urgent they are and which changes touch the providers in your config. It only reads the release list and never installs anything.
+- `update_check: true` logs one `update available` line at start and once a day when a newer release is out. Off by default.
+- Releases come with binaries for Linux, macOS and Windows on amd64 and arm64, a `release.json` describing each change, and a container image at `ghcr.io/raven-clown/transponder`.
+
+### Fixed
+
+- Boolean config keys can be set from the environment, such as `TRANSPONDER_UPDATE_CHECK=true`. Before, the value was read as text and the config failed to load.
+
 ## [0.2.0] - 2026-11-06
 
 ### Added

@@ -67,8 +67,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	configPath := fs.String("config", "", "path to the YAML config file")
+	checkUpdate := fs.Bool("check-update", false, "list newer releases, how urgent they are and which changes touch this config, then exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *checkUpdate {
+		return runCheckUpdate(*configPath, stdout, stderr)
 	}
 	if *showVersion {
 		_, _ = fmt.Fprintf(stdout, "transponder %s\n", version)
@@ -150,6 +154,9 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 	logger.Info("listening", "addr", ln.Addr().String(), "version", version)
+	if cfg.UpdateCheck {
+		go watchUpdates(ctx, logger, updateChecker, usedFeatures(cfg), updateInterval)
+	}
 
 	select {
 	case err := <-errc:

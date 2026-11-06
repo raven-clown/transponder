@@ -1,0 +1,6 @@
+.git
+dist
+*.db
+*.db-*
+cover.out
+transponder.key

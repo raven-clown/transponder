@@ -67,14 +67,32 @@ The same user token flows through all four, so an agent's tool calls, memories a
 
 ## Install
 
+Download a binary for Linux, macOS or Windows from the [releases page](https://github.com/raven-clown/transponder/releases), or run the container image:
+
+```shell
+docker run -p 8080:8080 -v transponder:/data ghcr.io/raven-clown/transponder:latest
+```
+
+Image tags follow the releases: `v0.2.1` for one release, `v0.2` for the newest patch of a minor line, and `latest`.
+
 With Go 1.26 or later:
 
 ```shell
 go install github.com/raven-clown/transponder/cmd/transponder@latest
-transponder -version
+transponder --version
 ```
 
-Prebuilt binaries for Linux, macOS and Windows and a container image are planned.
+## Updates
+
+transponder never updates itself. To see what a newer release changes before you install it:
+
+```shell
+transponder --check-update --config transponder.yaml
+```
+
+It lists every release newer than the one running, says how urgent the update is (security fixes, breaking changes, bug fixes or new features) and puts first the changes that touch your config, such as a fix to a provider type you use. It only reads the public release list on GitHub.
+
+To get the same news in the logs, set `update_check: true` (or `TRANSPONDER_UPDATE_CHECK=true`). transponder then checks at start and once a day and logs one `update available` line with the level, how many releases behind it is and how many changes touch your config. It is off by default, and a failed check is only logged at debug level. You can also watch the repository for releases on GitHub, or let Dependabot or Renovate bump the image tag.
 
 ## Try it
 

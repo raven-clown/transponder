@@ -186,3 +186,24 @@ func TestLoadIgnoresUnknownEnv(t *testing.T) {
 		t.Fatalf("config = %+v", c)
 	}
 }
+
+func TestLoadUpdateCheck(t *testing.T) {
+	c, err := Load(writeFile(t, "update_check: true\n"), nil)
+	if err != nil || !c.UpdateCheck {
+		t.Fatalf("from file: %+v %v", c, err)
+	}
+	c, err = Load("", []string{"TRANSPONDER_UPDATE_CHECK=true"})
+	if err != nil || !c.UpdateCheck {
+		t.Fatalf("from env: %v", err)
+	}
+	c, err = Load("", nil)
+	if err != nil || c.UpdateCheck {
+		t.Fatalf("default must be off: %+v %v", c, err)
+	}
+}
+
+func TestLoadRejectsBadBoolEnv(t *testing.T) {
+	if _, err := Load("", []string{"TRANSPONDER_UPDATE_CHECK=maybe"}); err == nil {
+		t.Fatal("expected an error for a value that is not true or false")
+	}
+}

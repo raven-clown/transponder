@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,8 @@ type Bootstrap struct {
 	SecretsKey string `yaml:"secrets_key"`
 	OTel       OTel   `yaml:"otel"`
 	LogLevel   string `yaml:"log_level"`
+	// UpdateCheck logs a line at start and once a day when a newer release is out.
+	UpdateCheck bool `yaml:"update_check"`
 
 	Providers []Provider `yaml:"providers"`
 	Routes    []Route    `yaml:"routes"`
@@ -203,7 +206,8 @@ func applyEnv(tree map[string]any, environ []string) {
 			continue
 		}
 		name := strings.ToLower(k[len(envPrefix):])
-		if !known[name] {
+		kind, isKnown := known[name]
+		if !isKnown {
 			continue
 		}
 		path := strings.Split(name, "__")
@@ -216,12 +220,18 @@ func applyEnv(tree map[string]any, environ []string) {
 			}
 			node = child
 		}
-		node[path[len(path)-1]] = v
+		var value any = v
+		if kind == reflect.Bool {
+			if b, err := strconv.ParseBool(v); err == nil {
+				value = b
+			}
+		}
+		node[path[len(path)-1]] = value
 	}
 }
 
-func leafPaths(t reflect.Type, prefix string) map[string]bool {
-	out := map[string]bool{}
+func leafPaths(t reflect.Type, prefix string) map[string]reflect.Kind {
+	out := map[string]reflect.Kind{}
 	for f := range t.Fields() {
 		tag, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		if tag == "" || tag == "-" {
@@ -231,12 +241,12 @@ func leafPaths(t reflect.Type, prefix string) map[string]bool {
 			continue
 		}
 		if f.Type.Kind() == reflect.Struct {
-			for p := range leafPaths(f.Type, prefix+tag+"__") {
-				out[p] = true
+			for p, k := range leafPaths(f.Type, prefix+tag+"__") {
+				out[p] = k
 			}
 			continue
 		}
-		out[prefix+tag] = true
+		out[prefix+tag] = f.Type.Kind()
 	}
 	return out
 }

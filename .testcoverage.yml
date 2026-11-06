@@ -1,3 +1,7 @@
 profile: cover.out
 threshold:
   total: 80
+exclude:
+  paths:
+    # The release tool only runs git and the GitHub API; its logic is in internal/update.
+    - internal/tools/
