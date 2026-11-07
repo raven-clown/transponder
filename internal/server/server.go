@@ -33,6 +33,8 @@ type Deps struct {
 	AttemptTimeout time.Duration
 	// RequestTimeout bounds each call, streams included. Zero means no limit.
 	RequestTimeout time.Duration
+	// Ready are the dependencies /readyz pings, by name.
+	Ready map[string]Pinger
 }
 
 // New returns the gateway handler.
@@ -42,6 +44,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	mux.HandleFunc("GET /v1/models", g.models)
+	mux.Handle("/healthz", Healthz())
+	mux.Handle("/readyz", Readyz(d.Ready))
 	if d.RequestTimeout <= 0 {
 		return mux
 	}

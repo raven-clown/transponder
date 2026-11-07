@@ -140,6 +140,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
+		Ready:          map[string]server.Pinger{"store": db},
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.

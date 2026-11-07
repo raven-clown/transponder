@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `GET /healthz` answers 200 while the process is up, and `GET /readyz` answers 503 with the names of the dependencies that fail, such as `{"status":"unavailable","failed":["store"]}`, so Kubernetes and load balancers can restart the process or hold traffic. Neither needs an API key.
+
 ## [0.2.1] - 2026-11-07
 
 ### Added
