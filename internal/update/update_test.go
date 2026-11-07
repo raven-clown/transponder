@@ -166,7 +166,7 @@ func newFakeSource() *fakeSource {
 			"b": " # Changelog\n",
 			"c": " ## [Unreleased]\n+### Changed\n+- `settings.timeout` is now two settings.\n",
 			"d": " ## [Unreleased]\n+### Fixed\n+- Keys are compared in constant time.\n",
-			"e": " ## [Unreleased]\n+### Added\n+- Should be skipped.\n",
+			"e": " ## [Unreleased]\n \n+## [0.2.1] - 2026-11-07\n+\n+### Added\n+\n+- LiteLLM provider.\n+- Written at release time.\n ## [0.2.0] - 2026-11-06\n+- Not this release.\n",
 			"f": " ## [Unreleased]\n+### Fixed\n+- Direct fix.\n",
 		},
 		prs: map[int]PR{
@@ -191,6 +191,7 @@ func TestBuild(t *testing.T) {
 		{Kind: KindChanged, Text: "`settings.timeout` is now two settings.", PR: 81, Author: "raven-clown", Breaking: true},
 		{Kind: KindSecurity, Text: "Keys are compared in constant time.", PR: 90, Author: "Satvik-jain", Affects: []string{"endpoint:/admin/v1"}},
 		{Kind: KindFixed, Text: "Direct fix."},
+		{Kind: KindAdded, Text: "Written at release time."},
 	}
 	if !reflect.DeepEqual(m.Changes, want) {
 		t.Fatalf("changes\n got %+v\nwant %+v", m.Changes, want)
