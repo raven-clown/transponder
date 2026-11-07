@@ -64,13 +64,15 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 	}
 	authors := map[string][]int{}
 	var order []string
+	var late []Change
 	for _, c := range commits {
-		if strings.HasPrefix(c.Subject, "chore(release)") {
-			continue
-		}
 		diff, err := src.ChangelogDiff(ctx, c.SHA)
 		if err != nil {
 			return m, err
+		}
+		if strings.HasPrefix(c.Subject, "chore(release)") {
+			late = append(late, parseSection(diff, releaseSection(o.Version))...)
+			continue
 		}
 		changes := ParseChangelogDiff(diff)
 		if len(changes) == 0 {
@@ -104,6 +106,13 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 			authors[pr.Author] = append(authors[pr.Author], number)
 		}
 	}
+	// A release pull request may add lines nobody wrote earlier. Moved lines
+	// are already listed, so only new text is kept, without a pull request.
+	for _, ch := range late {
+		if !slices.ContainsFunc(m.Changes, func(c Change) bool { return c.Text == ch.Text }) {
+			m.Changes = append(m.Changes, ch)
+		}
+	}
 	m.Level = LevelOf(m.Changes)
 	for _, a := range order {
 		if slices.Contains(o.Maintainers, a) || strings.HasSuffix(a, "[bot]") {
@@ -124,6 +133,18 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 // the entries added under Unreleased, with the kind taken from their heading.
 // Continuation lines of a wrapped entry are joined to it.
 func ParseChangelogDiff(diff string) []Change {
+	return parseSection(diff, func(section string) bool {
+		return strings.Contains(strings.ToLower(section), "unreleased")
+	})
+}
+
+// releaseSection matches the "## [0.1.2] - date" heading of a version.
+func releaseSection(version string) func(string) bool {
+	want := "[" + strings.TrimPrefix(version, "v") + "]"
+	return func(section string) bool { return strings.Contains(section, want) }
+}
+
+func parseSection(diff string, inSection func(string) bool) []Change {
 	var out []Change
 	section, heading := "", ""
 	last := -1
@@ -143,7 +164,7 @@ func ParseChangelogDiff(diff string) []Change {
 			heading, last = strings.ToLower(strings.TrimSpace(line[4:])), -1
 			continue
 		}
-		if !strings.Contains(strings.ToLower(section), "unreleased") || mark != '+' {
+		if !inSection(section) || mark != '+' {
 			if mark != '+' {
 				last = -1
 			}

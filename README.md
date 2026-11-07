@@ -113,6 +113,8 @@ providers:
     type: ollama          # http://localhost:11434/v1 unless base_url is set
   - name: proxy
     type: litellm         # http://localhost:4000/v1 unless base_url is set
+  - name: vllm
+    type: vllm            # http://localhost:8000/v1 unless base_url is set
   - name: router
     type: openrouter      # https://openrouter.ai/api/v1 unless base_url is set
     api_key: ${OPENROUTER_API_KEY}

@@ -225,6 +225,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "m", provider: "llm", typ: "litellm", upstream: "m",
 		},
+		{
+			name: "vllm route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "v", Type: "vllm", APIKey: "sk-vllm"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "v"}}}},
+			},
+			model: "m", provider: "v", typ: "vllm", upstream: "m",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -236,7 +244,7 @@ func TestBuildRouter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama") {
+			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama" || tt.typ == "vllm") {
 				t.Fatalf("resolved %+v", got)
 			}
 		})
@@ -271,6 +279,22 @@ func TestBuildRouterLiteLLMDefault(t *testing.T) {
 	got, _ := r.Resolve("x")
 	a, ok := got.Provider.(interface{ BaseURL() string })
 	if !ok || a.BaseURL() != "http://localhost:4000/v1" {
+		t.Fatalf("provider %T", got.Provider)
+	}
+}
+
+func TestBuildRouterVLLMDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "local", Type: "vllm"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "local"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("x")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != "http://localhost:8000/v1" {
 		t.Fatalf("provider %T", got.Provider)
 	}
 }

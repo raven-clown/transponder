@@ -13,6 +13,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/ollama"
 	"github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/provider/openrouter"
+	"github.com/raven-clown/transponder/internal/provider/vllm"
 )
 
 // Settings are the values a provider is built from.
@@ -47,6 +48,9 @@ var specs = []Spec{
 	}},
 	{Type: "openrouter", New: func(s Settings) provider.Provider {
 		return openrouter.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "vllm", Free: true, New: func(s Settings) provider.Provider {
+		return vllm.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 }
 
