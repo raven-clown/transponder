@@ -18,7 +18,6 @@ jobs:
       !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association || github.event.pull_request.author_association)
     permissions:
       issues: write
-      pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
