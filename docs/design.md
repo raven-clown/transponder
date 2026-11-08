@@ -72,7 +72,7 @@ Goals:
 - An audit log of every admin change.
 - A demo anyone can run in five minutes.
 
-Not in v1: a UI of any kind (the contract puts that in the separate console), semantic or exact caching, request-per-minute rate limits, guardrails, the OpenAI Responses API, batch, images, audio, weighted load balancing, Bedrock, Vertex and Azure. Section 14 lists the ones most likely to come next.
+Not in v1: a UI of any kind (the contract puts that in the separate console), semantic or exact caching, guardrails, the OpenAI Responses API, batch, images, audio, weighted load balancing, Bedrock, Vertex and Azure. Section 14 lists the ones most likely to come next.
 
 ## 4. Architecture
 
@@ -292,7 +292,7 @@ Reload: every write through the admin API bumps a `config_version` row in the sa
 
 ## 10. Usage, cost and budgets
 
-Usage. Token counts come from the provider's response: the `usage` object for non-streaming calls, and the usage events while streaming. For OpenAI-dialect streams transponder adds `stream_options.include_usage` upstream, and drops the usage-only chunk again if the caller did not ask for it. When a provider returns no usage (some OpenAI-compatible servers), the record is marked `estimated` and counts are approximated from character length divided by 4. That rule undercounts Thai and other non-Latin scripts, which cost more tokens per character, so milestone 3 counts them at a higher rate and lets a route name a tokenizer for exact counts.
+Usage. Token counts come from the provider's response: the `usage` object for non-streaming calls, and the usage events while streaming. For OpenAI-dialect streams transponder adds `stream_options.include_usage` upstream, and drops the usage-only chunk again if the caller did not ask for it. When a provider returns no usage (some OpenAI-compatible servers), the record is marked `estimated` and counts are approximated from character length divided by 4. That rule undercounts Thai and other non-Latin scripts, which cost more tokens per character, so v0.2.3 counts them at a higher rate and lets a route name a tokenizer for exact counts.
 
 Reasoning tokens. `schema.Usage` gains `ReasoningTokens`. Each adapter reads them where its provider reports them apart: OpenAI's `completion_tokens_details.reasoning_tokens` and Gemini's `thoughtsTokenCount`. Anthropic, Ollama and vLLM count them inside the output tokens, so they stay there. The usage record, the `X-Usage-Reasoning-Tokens` header and the usage event carry the number.
 
@@ -336,7 +336,7 @@ budgets:
 - After the call, the real cost is added to every subject's spend in the same transaction as the usage record. Requests already in flight can push a subject a little past its limit. The overshoot is at most the cost of those requests, and the docs say so.
 - `GET /v1/usage` returns the caller's own spend and remaining budget for each rule that applies to them. Everything wider is in the admin API.
 
-Token limits, milestone 3. Besides money, a caller can be limited in tokens, through the `llm.` keys of the shared profiles in mothership's `docs/scale.md`:
+Token limits, v0.2.3. Besides money, a caller can be limited in tokens, through the `llm.` keys of the shared profiles in mothership's `docs/scale.md`:
 
 ```yaml
 llm.tokens:               {rate: 20000/m, per_day: 100000, per_month: 2000000}
@@ -455,4 +455,24 @@ Settled on 2026-11-04, after the spec review:
 - Unpriced models are served at zero cost, logged as `unpriced` and counted in a metric.
 - Budget rejections use 402.
 - Every runtime and usage table has an `org_id` column, `default` in v1, and every query filters by it, as the contract requires. Organisation endpoints and org admins ship in the release after v1.
-- After v1, in this order: the OpenAI Responses API (Codex CLI uses it), request-per-minute limits per user, organisations, Bedrock and Vertex adapters, exact-match caching, `LISTEN/NOTIFY` reload.
+- After v1, in this order: the OpenAI Responses API (Codex CLI uses it), organisations, Bedrock and Vertex adapters, exact-match caching, `LISTEN/NOTIFY` reload.
+
+## 15. Release plan
+
+Done:
+
+| Version | What shipped |
+|---|---|
+| v0.1.x | Milestones 1 and 2: config, SQLite, API keys, the echo, OpenAI and Ollama adapters, streams with usage trailers, embeddings, prices |
+| v0.2.0 | Milestone 3: the provider registry, split timeouts, stricter SSE, `GET /v1/models`, the `user_id` column |
+| v0.2.1 | vLLM, release manifests and `--check-update`, `/healthz` and `/readyz` |
+
+Next, one release per plan:
+
+| Version | What it adds |
+|---|---|
+| v0.2.2 | The Anthropic and Gemini adapters, and `/v1/messages` so Claude Code works with a base URL change |
+| v0.2.3 | Limits: USD budgets per user, team and key; token limits (`llm.tokens` with a per-minute rate, input and reasoning caps, reasoning tokens counted apart, an estimate that does not undercount non-Latin text); request rate and concurrency limits (`requests`). All three share the profiles and the counter store in mothership's `docs/scale.md` |
+| v0.2.4 | Fallback with a cooldown for targets that keep failing |
+
+After v0.2.4, in this order, versions to be set: OIDC and the three roles, the admin API and audit log, Postgres and several replicas, then the five-minute demo, which together make v1.
