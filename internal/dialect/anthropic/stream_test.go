@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"reflect"
@@ -39,8 +40,7 @@ func TestStreamEncoder(t *testing.T) {
 		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}`,
 		`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
 		`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"weather","input":{}}}`,
-		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}`,
-		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"Paris\"}"}}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"Paris\"}"}}`,
 		`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":1}`,
 		`event: message_delta` + "\n" + `data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":7,"output_tokens":3}}`,
 		`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
@@ -123,5 +123,54 @@ func TestStreamDecoderError(t *testing.T) {
 	}
 	if d.Done() {
 		t.Fatal("done without message_stop")
+	}
+}
+
+func TestStreamEncoderInterleavedTools(t *testing.T) {
+	e := NewStreamEncoder("msg_1", "m")
+	var frames [][]byte
+	for _, ev := range []schema.Event{
+		{Type: schema.EventStart},
+		{Type: schema.EventToolStart, ToolIndex: 0, ToolID: "a", ToolName: "f"},
+		{Type: schema.EventToolStart, ToolIndex: 1, ToolID: "b", ToolName: "g"},
+		{Type: schema.EventToolDelta, ToolIndex: 0, ToolArgs: `{"x":`},
+		{Type: schema.EventToolDelta, ToolIndex: 1, ToolArgs: `{"y":2}`},
+		{Type: schema.EventText, Text: "between"},
+		{Type: schema.EventToolDelta, ToolIndex: 0, ToolArgs: `1}`},
+		{Type: schema.EventFinish, FinishReason: schema.FinishToolCalls},
+	} {
+		frames = append(frames, e.Frames(ev)...)
+	}
+	frames = append(frames, e.End()...)
+	stopped := map[float64]bool{}
+	args := map[float64]string{}
+	for _, f := range frames {
+		data := f[bytes.Index(f, []byte("data: "))+6:]
+		var ev struct {
+			Type  string  `json:"type"`
+			Index float64 `json:"index"`
+			Delta struct {
+				PartialJSON string `json:"partial_json"`
+			} `json:"delta"`
+		}
+		if err := json.Unmarshal(bytes.TrimSpace(data), &ev); err != nil {
+			t.Fatal(err)
+		}
+		switch ev.Type {
+		case "content_block_stop":
+			stopped[ev.Index] = true
+		case "content_block_delta":
+			if stopped[ev.Index] {
+				t.Fatalf("delta for block %v after it stopped:\n%s", ev.Index, bytes.Join(frames, nil))
+			}
+			args[ev.Index] += ev.Delta.PartialJSON
+		}
+	}
+	joined := map[string]bool{}
+	for _, a := range args {
+		joined[a] = true
+	}
+	if !joined[`{"x":1}`] || !joined[`{"y":2}`] {
+		t.Fatalf("tool arguments %v", args)
 	}
 }

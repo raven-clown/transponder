@@ -123,6 +123,7 @@ func DecodeChatResponse(body []byte) (*schema.ChatResponse, error) {
 // ChunkDecoder turns the chunks of one OpenAI stream into canonical events.
 type ChunkDecoder struct {
 	started bool
+	seen    map[int]bool
 }
 
 type wireChunkIn struct {
@@ -156,7 +157,11 @@ func (d *ChunkDecoder) Events(data []byte) ([]schema.Event, error) {
 			if tc.Index != nil {
 				i = *tc.Index
 			}
-			if tc.ID != "" || tc.Function.Name != "" {
+			if (tc.ID != "" || tc.Function.Name != "") && !d.seen[i] {
+				if d.seen == nil {
+					d.seen = map[int]bool{}
+				}
+				d.seen[i] = true
 				out = append(out, schema.Event{Type: schema.EventToolStart, ToolIndex: i, ToolID: tc.ID, ToolName: tc.Function.Name})
 			}
 			if tc.Function.Arguments != "" {

@@ -3,26 +3,35 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/schema"
 	"github.com/raven-clown/transponder/internal/sse"
 )
 
-// StreamEncoder turns canonical events into Anthropic stream frames. Text and each tool call
-// get their own content block.
+// StreamEncoder turns canonical events into Anthropic stream frames. Text streams as it comes.
+// Tool calls are held until the message finishes and then sent one whole block each, since
+// OpenAI-compatible servers may interleave the arguments of parallel calls, and an Anthropic
+// block cannot take more input once it has stopped.
 type StreamEncoder struct {
 	id, model string
 	started   bool
-	open      int // index of the open block, -1 when none
+	open      int // index of the open text block, -1 when none
 	next      int
-	toolBlock map[int]int
+	tools     []*pendingTool
+	toolOf    map[int]*pendingTool
 	finish    string
 	usage     schema.Usage
 }
 
+type pendingTool struct {
+	id, name string
+	args     strings.Builder
+}
+
 // NewStreamEncoder returns an encoder for one message.
 func NewStreamEncoder(id, model string) *StreamEncoder {
-	return &StreamEncoder{id: id, model: model, open: -1, toolBlock: map[int]int{}}
+	return &StreamEncoder{id: id, model: model, open: -1, toolOf: map[int]*pendingTool{}}
 }
 
 func frame(name string, v any) []byte {
@@ -106,24 +115,22 @@ func (e *StreamEncoder) Frames(ev schema.Event) [][]byte {
 		if ev.Text == "" {
 			break
 		}
-		if _, isTool := e.toolAt(e.open); e.open < 0 || isTool {
+		if e.open < 0 {
 			out = append(out, e.openBlock(textDelta{"text", ""})...)
 		}
 		out = append(out, frame("content_block_delta", blockDelta{"content_block_delta", e.open, textDelta{"text_delta", ev.Text}}))
 	case schema.EventToolStart:
-		out = append(out, e.openBlock(struct {
-			Type  string          `json:"type"`
-			ID    string          `json:"id"`
-			Name  string          `json:"name"`
-			Input json.RawMessage `json:"input"`
-		}{"tool_use", ev.ToolID, ev.ToolName, json.RawMessage(`{}`)})...)
-		e.toolBlock[ev.ToolIndex] = e.open
-	case schema.EventToolDelta:
-		if i, ok := e.toolBlock[ev.ToolIndex]; ok && ev.ToolArgs != "" {
-			out = append(out, frame("content_block_delta", blockDelta{"content_block_delta", i, jsonDelta{"input_json_delta", ev.ToolArgs}}))
+		t := e.tool(ev.ToolIndex)
+		if t.id == "" {
+			t.id = ev.ToolID
 		}
+		if t.name == "" {
+			t.name = ev.ToolName
+		}
+	case schema.EventToolDelta:
+		e.tool(ev.ToolIndex).args.WriteString(ev.ToolArgs)
 	case schema.EventFinish:
-		out = append(out, e.closeBlock()...)
+		out = append(out, e.flushTools()...)
 		e.finish = ev.FinishReason
 	case schema.EventUsage:
 		if ev.Usage != nil {
@@ -133,13 +140,33 @@ func (e *StreamEncoder) Frames(ev schema.Event) [][]byte {
 	return out
 }
 
-func (e *StreamEncoder) toolAt(block int) (int, bool) {
-	for t, b := range e.toolBlock {
-		if b == block {
-			return t, true
-		}
+func (e *StreamEncoder) tool(index int) *pendingTool {
+	t, ok := e.toolOf[index]
+	if !ok {
+		t = &pendingTool{}
+		e.toolOf[index] = t
+		e.tools = append(e.tools, t)
 	}
-	return 0, false
+	return t
+}
+
+// flushTools closes the text block and sends every held tool call as a whole block.
+func (e *StreamEncoder) flushTools() [][]byte {
+	out := e.closeBlock()
+	for _, t := range e.tools {
+		out = append(out, e.openBlock(struct {
+			Type  string          `json:"type"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		}{"tool_use", t.id, t.name, json.RawMessage(`{}`)})...)
+		if t.args.Len() > 0 {
+			out = append(out, frame("content_block_delta", blockDelta{"content_block_delta", e.open, jsonDelta{"input_json_delta", t.args.String()}}))
+		}
+		out = append(out, e.closeBlock()...)
+	}
+	e.tools, e.toolOf = nil, map[int]*pendingTool{}
+	return out
 }
 
 type deltaUsage struct {
@@ -151,7 +178,7 @@ type deltaUsage struct {
 
 // End returns the frames that close the message: the stop reason, the usage and message_stop.
 func (e *StreamEncoder) End() [][]byte {
-	out := append(e.start(), e.closeBlock()...)
+	out := append(e.start(), e.flushTools()...)
 	out = append(out, frame("message_delta", struct {
 		Type  string `json:"type"`
 		Delta struct {

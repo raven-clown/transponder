@@ -103,3 +103,25 @@ func TestEmbedWire(t *testing.T) {
 		t.Fatalf("resp %+v", resp)
 	}
 }
+
+func TestChunkDecoderRepeatedToolStart(t *testing.T) {
+	var d ChunkDecoder
+	var starts int
+	for _, c := range []string{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"f","arguments":"{\"a\""}}]}}]}`,
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"f","arguments":":1}"}}]}}]}`,
+	} {
+		evs, err := d.Events([]byte(c))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range evs {
+			if ev.Type == schema.EventToolStart {
+				starts++
+			}
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("%d tool starts for one call", starts)
+	}
+}
