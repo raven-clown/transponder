@@ -47,5 +47,14 @@ reviews:
       instructions: |
         Third-party actions are pinned to a full commit SHA with the version in a comment. Jobs have a timeout and the smallest permissions they need.
 
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - contributing/AGENTS.md
+      - contributing/CONTRIBUTING.md
+
 chat:
   auto_reply: true
