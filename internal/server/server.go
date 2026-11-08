@@ -47,6 +47,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	mux.HandleFunc("GET /v1/models", g.models)
 	mux.HandleFunc("POST /v1/messages", g.messages)
+	mux.HandleFunc("POST /v1/messages/count_tokens", g.countTokens)
 	mux.Handle("/healthz", Healthz())
 	mux.Handle("/readyz", Readyz(d.Ready))
 	if d.RequestTimeout <= 0 {

@@ -220,3 +220,53 @@ func TestMessagesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestCountTokens(t *testing.T) {
+	var path, model string
+	up := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		var b struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		model = b.Model
+		_, _ = io.WriteString(w, `{"input_tokens":42}`)
+	})
+	e := setupRoutes(t, []router.Route{
+		anthropicRoute("sonnet", "claude-sonnet-5-5", up),
+		{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo"}}},
+	})
+	res, err := e.doPath(http.MethodPost, "/v1/messages/count_tokens", map[string]string{"x-api-key": e.key}, `{"model":"sonnet","messages":[{"role":"user","content":"hi"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.status != http.StatusOK || string(res.body) != `{"input_tokens":42}` || path != "/messages/count_tokens" || model != "claude-sonnet-5-5" {
+		t.Fatalf("status %d body %s, upstream %s %s", res.status, res.body, path, model)
+	}
+	res, err = e.doPath(http.MethodPost, "/v1/messages/count_tokens", map[string]string{"x-api-key": e.key}, `{"model":"other","messages":[]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.status != http.StatusNotFound || anthropicErrorType(t, res) != "not_found_error" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if n := len(e.usage(t)); n != 0 {
+		t.Fatalf("count_tokens wrote %d usage records", n)
+	}
+}
+
+func TestCountTokensUpstreamErrors(t *testing.T) {
+	for status, want := range map[int]int{400: 400, 500: 502} {
+		e := setupRoutes(t, []router.Route{anthropicRoute("*", "", statusUpstream(t, status, `{"type":"error","error":{"type":"invalid_request_error","message":"bad"}}`))})
+		res, err := e.doPath(http.MethodPost, "/v1/messages/count_tokens", map[string]string{"x-api-key": e.key}, `{"model":"m","messages":[]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.status != want || anthropicErrorType(t, res) == "" {
+			t.Fatalf("upstream %d: status %d %s", status, res.status, res.body)
+		}
+		if n := len(e.usage(t)); n != 0 {
+			t.Fatalf("records %d", n)
+		}
+	}
+}

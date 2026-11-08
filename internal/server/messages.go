@@ -218,3 +218,52 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 	c.rec.Status = http.StatusOK
 	g.record(ctx, c.rec)
 }
+
+// countTokens forwards a token count to the route's Anthropic target. Other providers have no
+// equivalent, so a route without one answers 404. Counts are free and not recorded as usage.
+func (g *gateway) countTokens(w http.ResponseWriter, r *http.Request) {
+	c := g.beginWith(w, r, "messages.count_tokens", writeAnthropicError)
+	if c == nil {
+		return
+	}
+	peek, err := anthropic.PeekRequest(c.body)
+	if err != nil {
+		writeAnthropicRequestError(w, err)
+		return
+	}
+	if !g.resolve(c, peek.Model) {
+		return
+	}
+	n, native := nativeTarget(c, "anthropic")
+	if !native {
+		writeAnthropicError(w, http.StatusNotFound, "", "", "", "the route for "+peek.Model+" has no Anthropic target, so it cannot count tokens")
+		return
+	}
+	body, err := openai.RewriteRequest(c.body, c.resolved.Model, false)
+	if err != nil {
+		writeAnthropicRequestError(w, err)
+		return
+	}
+	resp, err := n.Native(r.Context(), &provider.NativeCall{Path: "/messages/count_tokens", Body: body, Header: r.Header})
+	if err != nil {
+		var pe *provider.Error
+		if errors.As(err, &pe) && pe.Status >= 400 && pe.Status < 500 && !pe.Retryable {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(pe.Status)
+			_, _ = w.Write(pe.Body) //nolint:gosec // the provider's JSON error
+			return
+		}
+		g.d.Logger.WarnContext(r.Context(), "count_tokens failed", "provider", c.rec.Provider, "err", err)
+		writeAnthropicError(w, http.StatusBadGateway, "", "", "", "the provider did not answer")
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out, err := readUpstream(resp)
+	if err != nil {
+		writeAnthropicError(w, http.StatusBadGateway, "", "", "", "the provider did not answer")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(out) //nolint:gosec // the provider's JSON, served as application/json
+}
