@@ -9,6 +9,7 @@
 [![release](https://img.shields.io/github/v/release/raven-clown/transponder?style=for-the-badge&color=A855F7)](https://github.com/raven-clown/transponder/releases)
 [![Go Reference](https://img.shields.io/badge/go-reference-A855F7?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/raven-clown/transponder)
 [![license](https://img.shields.io/badge/license-Apache--2.0-A855F7?style=for-the-badge)](LICENSE)
+[![openssf scorecard](https://img.shields.io/ossf-scorecard/github.com/raven-clown/transponder?style=for-the-badge&label=openssf%20scorecard)](https://scorecard.dev/viewer/?uri=github.com/raven-clown/transponder)
 
 </div>
 
@@ -196,6 +197,12 @@ After that: the OpenAI Responses API, per-user request rate limits, organisation
 - Found a bug, or want something new? Open an issue with one of the [issue forms](https://github.com/raven-clown/transponder/issues/new/choose). Each one says what to include.
 - Pull requests come with a template that lists what reviewers check first in this project, so you know what to cover before you open one.
 - Ideas and questions are welcome too.
+
+## Contributors
+
+Thanks to everyone who has helped build transponder.
+
+<a href="https://github.com/raven-clown/transponder/graphs/contributors"><img src="https://contrib.rocks/image?repo=raven-clown/transponder" alt="Contributors to transponder"></a>
 
 ## License
 
