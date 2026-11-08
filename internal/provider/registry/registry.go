@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/raven-clown/transponder/internal/provider"
+	"github.com/raven-clown/transponder/internal/provider/anthropic"
 	"github.com/raven-clown/transponder/internal/provider/cloudflare"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/provider/litellm"
@@ -45,6 +46,9 @@ var specs = []Spec{
 	}},
 	{Type: "cloudflare", NeedsBaseURL: true, New: func(s Settings) provider.Provider {
 		return cloudflare.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "anthropic", New: func(s Settings) provider.Provider {
+		return anthropic.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 	{Type: "openrouter", New: func(s Settings) provider.Provider {
 		return openrouter.New(s.Name, s.BaseURL, s.APIKey, s.Client)

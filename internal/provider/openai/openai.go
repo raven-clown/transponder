@@ -2,9 +2,7 @@
 package openai
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -16,10 +14,6 @@ import (
 
 // DefaultBaseURL is the OpenAI API.
 const DefaultBaseURL = "https://api.openai.com/v1"
-
-const maxErrorBody = 1 << 20
-
-var forwardHeaders = []string{"X-Request-ID", "Traceparent", "Tracestate"}
 
 // Options configure an adapter.
 type Options struct {
@@ -60,35 +54,11 @@ func (a *Adapter) BaseURL() string { return a.baseURL }
 
 // Native posts the body to the API and returns the response when it is 2xx.
 func (a *Adapter) Native(ctx context.Context, call *provider.NativeCall) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+call.Path, bytes.NewReader(call.Body))
-	if err != nil {
-		return nil, &provider.Error{Provider: a.name, Err: err}
-	}
-	req.Header.Set("Content-Type", "application/json")
+	h := http.Header{}
 	if a.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+a.apiKey)
+		h.Set("Authorization", "Bearer "+a.apiKey)
 	}
-	for _, h := range forwardHeaders {
-		if v := call.Header.Get(h); v != "" {
-			req.Header.Set(h, v)
-		}
-	}
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return nil, &provider.Error{Provider: a.name, Retryable: true, Err: err}
-	}
-	if resp.StatusCode/100 == 2 {
-		return resp, nil
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-	return nil, &provider.Error{
-		Provider:  a.name,
-		Status:    resp.StatusCode,
-		Retryable: provider.RetryableStatus(resp.StatusCode),
-		Body:      body,
-		Err:       fmt.Errorf("upstream answered %s", resp.Status),
-	}
+	return provider.Send(ctx, a.client, a.name, a.baseURL+call.Path, call.Body, h, call.Header)
 }
 
 // Chat sends a canonical request as an OpenAI chat completion.
