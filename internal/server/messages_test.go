@@ -293,3 +293,22 @@ func TestMessagesCutStreamEstimatesOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestTranslatedUpstream4xxKeepsStatus(t *testing.T) {
+	oa := statusUpstream(t, 400, `{"error":{"message":"maximum context length exceeded","type":"invalid_request_error"}}`)
+	e := setupRoutes(t, []router.Route{openaiRoute("*", "", oa)})
+	res := e.messages(t, nil, `{"model":"m","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != 400 || anthropicErrorType(t, res) != "invalid_request_error" || !strings.Contains(string(res.body), "maximum context length exceeded") {
+		t.Fatalf("messages to openai: %d %s", res.status, res.body)
+	}
+
+	an := statusUpstream(t, 400, `{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long"}}`)
+	e = setupRoutes(t, []router.Route{anthropicRoute("*", "", an)})
+	res = e.post(t, `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != 400 || !strings.Contains(string(res.body), "prompt is too long") || errorCode(t, res) != "upstream_error" {
+		t.Fatalf("chat to anthropic: %d %s", res.status, res.body)
+	}
+	if r := e.usage(t)[0]; r.Status != 400 {
+		t.Fatalf("record %+v", r)
+	}
+}

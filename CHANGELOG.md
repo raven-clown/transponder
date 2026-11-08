@@ -13,6 +13,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - OpenAI chat completions can now reach Anthropic and Gemini, and every translated call carries tools, tool calls and the system prompt.
 - Prices for current Claude and Gemini models.
 
+### Changed
+
+- When a provider of another dialect rejects a translated request as invalid (a 4xx it would give again on a retry), the caller now gets that status and the provider's reason in its own dialect instead of a 502.
+
 ### Added
 
 - `GET /healthz` answers 200 while the process is up, and `GET /readyz` answers 503 with the names of the dependencies that fail, such as `{"status":"unavailable","failed":["store"]}`, so Kubernetes and load balancers can restart the process or hold traffic. Neither needs an API key.
