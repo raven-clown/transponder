@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: "Short and direct. Say what to change and why in one or two sentences. No emoji, no praise, no em-dashes."
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: false
+  poem: false
+  review_status: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!go.sum"
+    - "!docs/assets/**"
+    - "!**/*.svg"
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Look for real bugs first: wrong error handling, leaked goroutines or response bodies, missing context propagation, races, unbounded reads of request or upstream bodies, and secrets or prompt text reaching logs.
+        Every feature ships in the free build: flag any license check or paid-only code path.
+        Comments are short and say why, not what. Don't ask for doc comments on unexported code.
+    - path: "**/*_test.go"
+      instructions: |
+        Unit tests use no network, only httptest servers or fakes, and never a bare time.Sleep: they wait on a channel, a context or a condition.
+        Prefer table-driven tests. A bug fix needs a test that fails without the fix.
+    - path: "CHANGELOG.md"
+      instructions: |
+        New entries go under Unreleased, in Keep a Changelog sections (Added, Changed, Deprecated, Removed, Fixed, Security), written for users in plain English.
+    - path: "**/*.md"
+      instructions: |
+        Plain English, short sentences, active voice, no em-dashes, no marketing words like seamless, robust or powerful.
+    - path: ".github/workflows/**"
+      instructions: |
+        Third-party actions are pinned to a full commit SHA with the version in a comment. Jobs have a timeout and the smallest permissions they need.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - contributing/AGENTS.md
+      - contributing/CONTRIBUTING.md
+
+chat:
+  auto_reply: true
