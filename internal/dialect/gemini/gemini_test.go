@@ -192,3 +192,14 @@ func TestEncodeRequestSkipsEmptyTurns(t *testing.T) {
 		t.Fatalf("wire %s", b)
 	}
 }
+
+func TestStreamDecoderBlockedPrompt(t *testing.T) {
+	var d StreamDecoder
+	evs, err := d.Events([]byte(`{"promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":4}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 3 || evs[1].Type != schema.EventFinish || evs[1].FinishReason != schema.FinishContentFilter || evs[2].Usage.InputTokens != 4 || !d.Done() {
+		t.Fatalf("events %+v", evs)
+	}
+}

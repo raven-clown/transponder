@@ -136,6 +136,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 
 	out := startSSE(c.w)
 	var dec anthropic.StreamDecoder
+	var upstreamErr *anthropic.StreamError
 	var text strings.Builder
 	for {
 		evs, derr := dec.Events(ev)
@@ -144,8 +145,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 			text.WriteString(e.ToolArgs)
 		}
 		out.write(sse.Frame(ev.Name, ev.Data))
-		var se *anthropic.StreamError
-		if errors.As(derr, &se) {
+		if errors.As(derr, &upstreamErr) {
 			break
 		}
 		if ev, err = rd.Next(); err != nil {
@@ -156,7 +156,9 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 		if err != nil && !errors.Is(err, io.EOF) {
 			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
 		}
-		out.write(anthropic.ErrorFrame("api_error", streamCut))
+		if upstreamErr == nil {
+			out.write(anthropic.ErrorFrame("api_error", streamCut))
+		}
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()

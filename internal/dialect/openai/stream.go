@@ -113,11 +113,7 @@ func EncodeChunk(id, model string, created time.Time, ev schema.Event) ([]byte, 
 		if ev.Usage == nil {
 			return nil, nil
 		}
-		c.Usage = &wireUsage{
-			PromptTokens:     ev.Usage.InputTokens + ev.Usage.CacheReadTokens,
-			CompletionTokens: ev.Usage.OutputTokens,
-			TotalTokens:      ev.Usage.InputTokens + ev.Usage.CacheReadTokens + ev.Usage.OutputTokens,
-		}
+		c.Usage = encodeUsage(*ev.Usage)
 	default:
 		return nil, nil
 	}

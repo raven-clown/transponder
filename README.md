@@ -179,11 +179,12 @@ Each milestone ships as a release when it lands:
 
 1. Released in v0.1.0. Skeleton: config, SQLite store, API keys, a test provider, `/v1/chat/completions` with usage headers
 2. Released in v0.1.0. OpenAI and Ollama adapters, streaming, embeddings
-3. Anthropic API in and out, translation between the two, Claude Code working
-4. Fallback, cooldown, access per route, the Gemini adapter
-5. Budgets, `/v1/usage`, Postgres
-6. Admin API with OpenAPI, audit log, live reload, encrypted provider keys
-7. Metrics, tracing, a five-minute demo, release binaries and container image
+3. Released in v0.2.0. Provider registry, split timeouts, `GET /v1/models`
+4. Released in v0.2.2. Anthropic API in and out, the Gemini adapter, translation between dialects, Claude Code working
+5. Budgets, token limits and request rate limits (v0.2.3)
+6. Fallback with a cooldown, access per route (v0.2.4)
+7. OIDC and roles, the admin API with OpenAPI and an audit log, Postgres and several replicas
+8. Metrics, tracing and a five-minute demo
 
 After that: the OpenAI Responses API, per-user request rate limits, organisations, Bedrock and Vertex, and caching.
 

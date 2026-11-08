@@ -124,8 +124,8 @@ func TestRejectsUnsafeModelNames(t *testing.T) {
 	if _, err := a.ChatStream(ctx, &schema.ChatRequest{Model: "../files"}); !errors.Is(err, provider.ErrUnsupported) {
 		t.Fatalf("ChatStream err = %v", err)
 	}
-	if _, err := a.Embed(ctx, &schema.EmbedRequest{Model: "a/b"}); err == nil {
-		t.Fatal("Embed accepted a/b")
+	if _, err := a.Embed(ctx, &schema.EmbedRequest{Model: "a/b"}); !errors.Is(err, provider.ErrUnsupported) {
+		t.Fatalf("Embed err = %v", err)
 	}
 	if called {
 		t.Fatal("an unsafe model name reached the upstream")

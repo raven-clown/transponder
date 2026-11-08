@@ -122,11 +122,11 @@ func (a *Adapter) ChatStream(ctx context.Context, req *schema.ChatRequest) (sche
 
 // Embed calls batchEmbedContents.
 func (a *Adapter) Embed(ctx context.Context, req *schema.EmbedRequest) (*schema.EmbedResponse, error) {
-	body, err := wire.EncodeEmbedRequest(req.Model, req.Input)
+	p, err := path(req.Model, "batchEmbedContents")
 	if err != nil {
 		return nil, err
 	}
-	p, err := path(req.Model, "batchEmbedContents")
+	body, err := wire.EncodeEmbedRequest(req.Model, req.Input)
 	if err != nil {
 		return nil, err
 	}

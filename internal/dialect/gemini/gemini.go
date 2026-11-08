@@ -298,6 +298,9 @@ func (d *StreamDecoder) Events(data []byte) ([]schema.Event, error) {
 	if w.UsageMetadata != nil {
 		d.usage = w.UsageMetadata
 	}
+	if len(w.Candidates) == 0 && w.PromptFeedback != nil && w.PromptFeedback.BlockReason != "" && !d.done {
+		return append(out, d.finish(schema.FinishContentFilter)...), nil
+	}
 	for _, c := range w.Candidates {
 		for _, p := range c.Content.Parts {
 			switch {
@@ -313,16 +316,19 @@ func (d *StreamDecoder) Events(data []byte) ([]schema.Event, error) {
 			}
 		}
 		if c.FinishReason != "" && !d.done {
-			d.done = true
-			out = append(out, schema.Event{Type: schema.EventFinish, FinishReason: finishReason(c.FinishReason, d.calls > 0)})
-			var u schema.Usage
-			if d.usage != nil {
-				u = d.usage.canonical()
-			}
-			out = append(out, schema.Event{Type: schema.EventUsage, Usage: &u})
+			out = append(out, d.finish(finishReason(c.FinishReason, d.calls > 0))...)
 		}
 	}
 	return out, nil
+}
+
+func (d *StreamDecoder) finish(reason string) []schema.Event {
+	d.done = true
+	var u schema.Usage
+	if d.usage != nil {
+		u = d.usage.canonical()
+	}
+	return []schema.Event{{Type: schema.EventFinish, FinishReason: reason}, {Type: schema.EventUsage, Usage: &u}}
 }
 
 // Done reports whether a finish reason arrived.

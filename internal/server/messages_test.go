@@ -312,3 +312,18 @@ func TestTranslatedUpstream4xxKeepsStatus(t *testing.T) {
 		t.Fatalf("record %+v", r)
 	}
 }
+
+func TestMessagesUpstreamErrorEventOnce(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n"+
+			"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n")
+	})
+	e := setupRoutes(t, []router.Route{anthropicRoute("*", "", up)})
+	res := e.messages(t, nil, `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	if n := strings.Count(string(res.body), "event: error"); n != 1 || !strings.Contains(string(res.body), "overloaded_error") {
+		t.Fatalf("%d error events:\n%s", n, res.body)
+	}
+	if r := e.usage(t)[0]; !r.Estimated {
+		t.Fatalf("record %+v", r)
+	}
+}

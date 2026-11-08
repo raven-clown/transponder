@@ -119,3 +119,14 @@ func TestEncodeChunkTools(t *testing.T) {
 		t.Fatalf("delta frame %s", delta)
 	}
 }
+
+func TestStreamUsageMatchesResponseUsage(t *testing.T) {
+	u := schema.Usage{InputTokens: 5, CacheReadTokens: 3, CacheWriteTokens: 2, OutputTokens: 1}
+	chunk, err := EncodeChunk("c", "m", time.Unix(1, 0), schema.Event{Type: schema.EventUsage, Usage: &u})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(chunk), `"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":3}}`) {
+		t.Fatalf("chunk %s", chunk)
+	}
+}
