@@ -15,7 +15,7 @@
 
 An LLM gateway that knows who is spending what. One Go binary in front of Anthropic, OpenAI, Gemini and Ollama, with fallback across providers, cost per user from your own identity provider, and budgets that hold across replicas. Every feature is free.
 
-> **Status: early, [v0.2.0](https://github.com/raven-clown/transponder/releases/tag/v0.2.0).** Milestones 1 to 3 are released: the binary starts with no config, prints an admin key, and serves chat completions (plain and streamed), embeddings and a model list from OpenAI, Ollama, OpenRouter, LiteLLM, Cloudflare AI Gateway or any OpenAI-compatible server, with token counts and cost on every response. The Anthropic API comes next. The design is settled in [docs/design.md](docs/design.md) and the work is tracked in [issues](https://github.com/raven-clown/transponder/issues). Star or watch the repository to follow along, and see [How to help](#how-to-help) if you want to build it with us.
+> **Status: early, [v0.2.2](https://github.com/raven-clown/transponder/releases/tag/v0.2.2).** Releases up to v0.2.2 are out: the binary starts with no config, prints an admin key, and serves chat completions (plain and streamed), embeddings and a model list from OpenAI, Ollama, OpenRouter, LiteLLM, Cloudflare AI Gateway or any OpenAI-compatible server, with token counts and cost on every response. Claude Code works through `/v1/messages`, and Anthropic and Gemini are providers. Budgets and limits come next. The design is settled in [docs/design.md](docs/design.md) and the work is tracked in [issues](https://github.com/raven-clown/transponder/issues). Star or watch the repository to follow along, and see [How to help](#how-to-help) if you want to build it with us.
 
 ## How it works
 

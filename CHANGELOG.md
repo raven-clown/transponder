@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-08
+
 ### Added
 
 - `POST /v1/messages`, the Anthropic Messages API, so Claude Code and the Anthropic SDKs work with only a base URL change. Requests to Anthropic go through as sent, with only the model changed; streams are copied frame by frame and their usage is recorded. Requests to other providers are translated, tools included.
@@ -101,7 +103,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/raven-clown/transponder/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/raven-clown/transponder/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/raven-clown/transponder/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/raven-clown/transponder/compare/v0.1.3...v0.1.4

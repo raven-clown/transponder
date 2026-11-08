@@ -466,12 +466,12 @@ Done:
 | v0.1.x | Milestones 1 and 2: config, SQLite, API keys, the echo, OpenAI and Ollama adapters, streams with usage trailers, embeddings, prices |
 | v0.2.0 | Milestone 3: the provider registry, split timeouts, stricter SSE, `GET /v1/models`, the `user_id` column |
 | v0.2.1 | vLLM, release manifests and `--check-update`, `/healthz` and `/readyz` |
+| v0.2.2 | The Anthropic and Gemini adapters, `/v1/messages` and `count_tokens`, translation between dialects with tools, so Claude Code works with a base URL change |
 
 Next, one release per plan:
 
 | Version | What it adds |
 |---|---|
-| v0.2.2 | The Anthropic and Gemini adapters, and `/v1/messages` so Claude Code works with a base URL change |
 | v0.2.3 | Limits: USD budgets per user, team and key; token limits (`llm.tokens` with a per-minute rate, input and reasoning caps, reasoning tokens counted apart, an estimate that does not undercount non-Latin text); request rate and concurrency limits (`requests`). All three share the profiles and the counter store in mothership's `docs/scale.md` |
 | v0.2.4 | Fallback with a cooldown for targets that keep failing |
 
