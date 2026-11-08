@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/sse"
 )
 
 func TestSSEReader(t *testing.T) {
@@ -117,33 +118,11 @@ func TestEncodeStreamError(t *testing.T) {
 }
 
 func TestSSEReaderEventTooLarge(t *testing.T) {
-	old := maxEventBytes
-	maxEventBytes = 32
-	defer func() { maxEventBytes = old }()
-	for name, in := range map[string]string{
-		"one long line":    "data: " + strings.Repeat("x", 100),
-		"many short lines": strings.Repeat("data: xxxxxxxx\n", 10) + "\n",
-	} {
-		t.Run(name, func(t *testing.T) {
-			src := &countingReader{r: strings.NewReader(in + strings.Repeat("y", 1<<20))}
-			_, err := NewSSEReader(src).Next()
-			if !errors.Is(err, ErrEventTooLarge) {
-				t.Fatalf("err = %v, want ErrEventTooLarge", err)
-			}
-			if src.n > 1<<16 {
-				t.Fatalf("read %d bytes before giving up", src.n)
-			}
-		})
+	old := sse.MaxEventBytes
+	sse.MaxEventBytes = 32
+	defer func() { sse.MaxEventBytes = old }()
+	_, err := NewSSEReader(strings.NewReader("data: " + strings.Repeat("x", 100))).Next()
+	if !errors.Is(err, ErrEventTooLarge) {
+		t.Fatalf("err = %v", err)
 	}
-}
-
-type countingReader struct {
-	r io.Reader
-	n int
-}
-
-func (c *countingReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	c.n += n
-	return n, err
 }

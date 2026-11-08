@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/sse"
 )
 
 // DoneFrame ends an OpenAI stream.
@@ -18,21 +18,18 @@ var (
 	// ErrNoDone means the stream ended cleanly but before [DONE], so the answer may be cut short.
 	ErrNoDone = errors.New("openai: stream ended before [DONE]")
 	// ErrEventTooLarge means one line or event is over the size limit.
-	ErrEventTooLarge = errors.New("openai: stream event is too large")
+	ErrEventTooLarge = sse.ErrEventTooLarge
 )
 
-// maxEventBytes caps one line and one event, so a broken upstream cannot grow memory without end.
-var maxEventBytes = 16 << 20
-
-// SSEReader reads the data payloads of a server-sent event stream.
+// SSEReader reads the data payloads of an OpenAI stream.
 type SSEReader struct {
-	r    *bufio.Reader
+	r    *sse.Reader
 	done bool
 }
 
 // NewSSEReader reads events from r.
 func NewSSEReader(r io.Reader) *SSEReader {
-	return &SSEReader{r: bufio.NewReader(r)}
+	return &SSEReader{r: sse.NewReader(r)}
 }
 
 // Next returns the next data payload. It returns io.EOF after [DONE], ErrNoDone on a clean
@@ -41,56 +38,18 @@ func (s *SSEReader) Next() ([]byte, error) {
 	if s.done {
 		return nil, io.EOF
 	}
-	var data []byte
-	for {
-		line, err := s.readLine()
-		eof := errors.Is(err, io.EOF)
-		if err != nil && !eof {
-			return nil, err
-		}
-		line = bytes.TrimRight(line, "\r\n")
-		payload, isData := bytes.CutPrefix(line, []byte("data:"))
-		payload = bytes.TrimPrefix(payload, []byte(" "))
-		if isData && bytes.Equal(payload, []byte("[DONE]")) {
-			s.done = true
-			return nil, io.EOF
-		}
-		if eof {
-			if len(line) > 0 || data != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return nil, ErrNoDone
-		}
-		switch {
-		case len(line) == 0:
-			if data != nil {
-				return data, nil
-			}
-		case isData:
-			if data != nil {
-				data = append(data, '\n')
-			}
-			data = append(data, payload...)
-			if len(data) > maxEventBytes {
-				return nil, ErrEventTooLarge
-			}
-		}
+	ev, err := s.r.Next()
+	if bytes.Equal(ev.Data, []byte("[DONE]")) && (err == nil || errors.Is(err, io.ErrUnexpectedEOF)) {
+		s.done = true
+		return nil, io.EOF
 	}
-}
-
-// readLine reads up to and including the next newline, stopping once the line is over the limit.
-func (s *SSEReader) readLine() ([]byte, error) {
-	var line []byte
-	for {
-		chunk, err := s.r.ReadSlice('\n')
-		line = append(line, chunk...)
-		if len(line) > maxEventBytes {
-			return nil, ErrEventTooLarge
-		}
-		if !errors.Is(err, bufio.ErrBufferFull) {
-			return line, err
-		}
+	switch {
+	case errors.Is(err, io.EOF):
+		return nil, ErrNoDone
+	case err != nil:
+		return nil, err
 	}
+	return ev.Data, nil
 }
 
 // ChunkUsage reads the usage of a stream chunk. usageOnly is true for the chunk with no choices

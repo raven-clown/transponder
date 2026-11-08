@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -16,41 +15,36 @@ import (
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/sse"
 )
 
 var usageTrailers = strings.Join([]string{"X-Usage-Input-Tokens", "X-Usage-Output-Tokens", "X-Usage-Cost-USD"}, ", ")
 
 // sse writes an event stream whose usage arrives as trailers.
-type sse struct {
+type sseWriter struct {
 	w  http.ResponseWriter
 	rc *http.ResponseController
 }
 
-func startSSE(w http.ResponseWriter) *sse {
+func startSSE(w http.ResponseWriter) *sseWriter {
 	h := w.Header()
 	h.Set("Trailer", usageTrailers)
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	return &sse{w: w, rc: http.NewResponseController(w)}
+	return &sseWriter{w: w, rc: http.NewResponseController(w)}
 }
 
-func (s *sse) write(frame []byte) {
+func (s *sseWriter) write(frame []byte) {
 	_, _ = s.w.Write(frame) //nolint:gosec // event stream frames, served as text/event-stream
 	_ = s.rc.Flush()
 }
 
-func (s *sse) data(payload []byte) {
-	var frame []byte
-	for line := range bytes.SplitSeq(payload, []byte{'\n'}) {
-		frame = append(frame, "data: "...)
-		frame = append(frame, line...)
-		frame = append(frame, '\n')
-	}
-	s.write(append(frame, '\n'))
+func (s *sseWriter) data(payload []byte) {
+	s.write(sse.Frame("", payload))
 }
 
-func (s *sse) finish(u schema.Usage, cost int64) {
+func (s *sseWriter) finish(u schema.Usage, cost int64) {
 	setUsageHeaders(s.w.Header(), u, cost)
 }
 
