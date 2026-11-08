@@ -10,6 +10,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/anthropic"
 	"github.com/raven-clown/transponder/internal/provider/cloudflare"
 	"github.com/raven-clown/transponder/internal/provider/echo"
+	"github.com/raven-clown/transponder/internal/provider/gemini"
 	"github.com/raven-clown/transponder/internal/provider/litellm"
 	"github.com/raven-clown/transponder/internal/provider/ollama"
 	"github.com/raven-clown/transponder/internal/provider/openai"
@@ -49,6 +50,9 @@ var specs = []Spec{
 	}},
 	{Type: "anthropic", New: func(s Settings) provider.Provider {
 		return anthropic.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "gemini", New: func(s Settings) provider.Provider {
+		return gemini.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 	{Type: "openrouter", New: func(s Settings) provider.Provider {
 		return openrouter.New(s.Name, s.BaseURL, s.APIKey, s.Client)

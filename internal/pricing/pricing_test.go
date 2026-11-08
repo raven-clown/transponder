@@ -19,6 +19,7 @@ func TestCost(t *testing.T) {
 		{"embeddings", "openai", "text-embedding-3-small", schema.Usage{InputTokens: 1_000_000}, 20_000_000, true},
 		{"types have no free pass here", "ollama", "anything", schema.Usage{InputTokens: 10, OutputTokens: 10}, 0, false},
 		{"unpriced", "openai", "unknown", schema.Usage{InputTokens: 10}, 0, false},
+		{"gemini", "gemini", "gemini-2.5-flash", schema.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}, 2_800_000_000, true},
 		{"anthropic with cache", "anthropic", "claude-sonnet-5-5", schema.Usage{InputTokens: 1000, CacheReadTokens: 1000, CacheWriteTokens: 1000, OutputTokens: 100}, 5_600_000, true},
 	}
 	for _, tt := range tests {

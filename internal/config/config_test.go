@@ -110,7 +110,7 @@ func TestLoadRejects(t *testing.T) {
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
 		{name: "negative attempt timeout", body: "settings:\n  attempt_timeout: -1s\n", want: "attempt_timeout"},
 		{name: "request timeout not a duration", body: "settings:\n  request_timeout: soon\n", want: "`soon`"},
-		{name: "unknown type lists the known ones", body: "providers:\n  - {name: b, type: bedrock}\n", want: "cloudflare, echo, litellm, ollama, openai, openrouter"},
+		{name: "unknown type lists the known ones", body: "providers:\n  - {name: b, type: bedrock}\n", want: "known types are anthropic, cloudflare, echo, gemini"},
 		{name: "cloudflare without base URL", body: "providers:\n  - {name: cf, type: cloudflare}\nroutes:\n  - {match: '*', targets: [{provider: cf}]}\n", want: `provider "cf" of type cloudflare needs base_url`},
 		{name: "route without match", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - targets: [{provider: a}]\n", want: "routes[0]"},
 		{name: "providers without routes", body: "providers:\n  - {name: a, type: openai}\n", want: "routes"},
