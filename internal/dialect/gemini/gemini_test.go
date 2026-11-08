@@ -178,3 +178,17 @@ func TestModelPath(t *testing.T) {
 		}
 	}
 }
+
+func TestEncodeRequestSkipsEmptyTurns(t *testing.T) {
+	b, err := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{
+		{Role: schema.RoleUser, Content: "x"},
+		{Role: schema.RoleAssistant},
+		{Role: schema.RoleUser},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compact(t, string(b)) != `{"contents":[{"parts":[{"text":"x"}],"role":"user"}]}` {
+		t.Fatalf("wire %s", b)
+	}
+}

@@ -135,12 +135,16 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 				names[c.ID] = c.Name
 				parts = append(parts, part{FunctionCall: &functionCall{ID: gid, Name: c.Name, Args: argsObject(c.Arguments)}, ThoughtSignature: sig})
 			}
-			add("model", parts...)
+			if len(parts) > 0 {
+				add("model", parts...)
+			}
 		case schema.RoleTool:
 			gid, _ := splitID(m.ToolCallID)
 			add("user", part{FunctionResponse: &functionResponse{ID: gid, Name: names[m.ToolCallID], Response: responseObject(m.Content)}})
 		default:
-			add("user", part{Text: m.Content})
+			if m.Content != "" {
+				add("user", part{Text: m.Content})
+			}
 		}
 	}
 	if len(system) > 0 {

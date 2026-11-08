@@ -209,7 +209,7 @@ func decodeMessage(m wireMessage) ([]schema.Message, error) {
 		}
 	}
 	msg.Content = strings.Join(text, "")
-	if msg.Content != "" || len(msg.ToolCalls) > 0 || len(out) == 0 {
+	if msg.Content != "" || len(msg.ToolCalls) > 0 {
 		out = append(out, msg)
 	}
 	return out, nil
@@ -256,9 +256,13 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 			for _, c := range m.ToolCalls {
 				bs = append(bs, wireBlock{Type: "tool_use", ID: c.ID, Name: c.Name, Input: inputObject(c.Arguments)})
 			}
-			add("assistant", bs...)
+			if len(bs) > 0 {
+				add("assistant", bs...)
+			}
 		default:
-			add("user", wireBlock{Type: "text", Text: m.Content})
+			if m.Content != "" {
+				add("user", wireBlock{Type: "text", Text: m.Content})
+			}
 		}
 	}
 	if len(system) > 0 {

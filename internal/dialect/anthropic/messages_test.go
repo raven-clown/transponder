@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/schema"
@@ -203,5 +204,33 @@ func TestWriteError(t *testing.T) {
 		if got := ErrorType(status); got != want {
 			t.Errorf("ErrorType(%d) = %s", status, got)
 		}
+	}
+}
+
+func TestEncodeRequestSkipsEmptyTurns(t *testing.T) {
+	b, err := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{
+		{Role: schema.RoleUser, Content: "x"},
+		{Role: schema.RoleAssistant, Content: ""},
+		{Role: schema.RoleUser, Content: ""},
+		{Role: schema.RoleUser, Content: "y"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"content":null`) || strings.Contains(string(b), `{"type":"text"}`) {
+		t.Fatalf("empty turn sent: %s", b)
+	}
+	if !strings.Contains(string(b), `"messages":[{"role":"user","content":[{"type":"text","text":"x"},{"type":"text","text":"y"}]}]`) {
+		t.Fatalf("wire %s", b)
+	}
+}
+
+func TestDecodeRequestDropsThinkingOnlyTurn(t *testing.T) {
+	got, err := DecodeRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"x"},{"role":"assistant","content":[{"type":"thinking","thinking":""}]},{"role":"assistant","content":[]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Messages) != 1 {
+		t.Fatalf("messages %+v", got.Messages)
 	}
 }
