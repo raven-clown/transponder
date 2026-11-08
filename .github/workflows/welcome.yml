@@ -1,0 +1,27 @@
+name: welcome
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  greet:
+    name: greet first-time contributors
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
+        with:
+          issue_message: |
+            thanks for opening your first issue here, someone will get back to you soon.
+            if you want to build something yourself, the [good first issues](https://github.com/${{ github.repository }}/labels/good%20first%20issue) are a nice place to start, and a star on the repo helps other people find it.
+          pr_message: |
+            thanks for your first pull request here. checks from forks wait for a maintainer to approve them, so they may sit for a bit, that's normal.
+            [CONTRIBUTING.md](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md) has the checklist, and a star on the repo helps other people find it.
