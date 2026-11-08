@@ -31,13 +31,13 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 		_, _ = c.w.Write(pe.Body)
 		c.rec.Status = pe.Status
 	case errors.Is(err, errUpstreamTooLarge):
-		writeError(c.w, http.StatusBadGateway, "api_error", "upstream_too_large", "", "the provider's response is larger than 64 MiB; ask for fewer inputs or base64 encoding")
+		c.fail(c.w, http.StatusBadGateway, "api_error", "upstream_too_large", "", "the provider's response is larger than 64 MiB; ask for fewer inputs or base64 encoding")
 		c.rec.Status = http.StatusBadGateway
 	case errors.Is(err, provider.ErrUnsupported):
-		writeError(c.w, http.StatusBadRequest, "invalid_request_error", "unsupported", "model", "the provider for this model cannot serve this request")
+		c.fail(c.w, http.StatusBadRequest, "invalid_request_error", "unsupported", "model", "the provider for this model cannot serve this request")
 		c.rec.Status = http.StatusBadRequest
 	default:
-		writeError(c.w, http.StatusBadGateway, "api_error", "upstream_error", "", "the provider did not answer")
+		c.fail(c.w, http.StatusBadGateway, "api_error", "upstream_error", "", "the provider did not answer")
 		c.rec.Status = http.StatusBadGateway
 	}
 	g.record(ctx, c.rec)

@@ -113,7 +113,6 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 }
 
 func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
-	ctx := c.r.Context()
 	req, err := openai.ParseChatRequest(c.body)
 	if err != nil {
 		writeRequestError(c.w, err)
@@ -121,7 +120,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	}
 	req.Model = c.resolved.Model
 	req.Stream = true
-	ctx, started, cancel := g.attempt(ctx)
+	ctx, started, cancel := g.attempt(upstreamContext(c))
 	defer cancel()
 	st, err := c.resolved.Provider.ChatStream(ctx, req)
 	if err != nil {

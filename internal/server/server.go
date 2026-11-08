@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
+	"github.com/raven-clown/transponder/internal/dialect/anthropic"
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/pricing"
+	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/schema"
 	"github.com/raven-clown/transponder/internal/store"
@@ -44,6 +46,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	mux.HandleFunc("GET /v1/models", g.models)
+	mux.HandleFunc("POST /v1/messages", g.messages)
 	mux.Handle("/healthz", Healthz())
 	mux.Handle("/readyz", Readyz(d.Ready))
 	if d.RequestTimeout <= 0 {
@@ -67,10 +70,20 @@ type call struct {
 	body     []byte
 	rec      store.UsageRecord
 	resolved router.Resolved
+	fail     errorFunc
 }
 
-// begin authenticates and reads the body. It writes the error response itself and returns nil when the call cannot go on.
+// errorFunc writes an error in the caller's dialect.
+type errorFunc func(w http.ResponseWriter, status int, errType, code, param, message string)
+
+// begin starts an OpenAI-dialect call.
 func (g *gateway) begin(w http.ResponseWriter, r *http.Request, endpoint string) *call {
+	return g.beginWith(w, r, endpoint, writeError)
+}
+
+// beginWith authenticates and reads the body. It writes the error response itself, in the
+// caller's dialect, and returns nil when the call cannot go on.
+func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint string, writeError errorFunc) *call {
 	start := g.d.Now()
 	id, err := g.d.Auth.Authenticate(r)
 	if err != nil {
@@ -96,7 +109,7 @@ func (g *gateway) begin(w http.ResponseWriter, r *http.Request, endpoint string)
 		}
 		return nil
 	}
-	return &call{w: w, r: r, body: body, rec: store.UsageRecord{
+	return &call{w: w, r: r, body: body, fail: writeError, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -112,7 +125,7 @@ func (g *gateway) begin(w http.ResponseWriter, r *http.Request, endpoint string)
 func (g *gateway) resolve(c *call, model string) bool {
 	res, err := g.d.Router.Resolve(model)
 	if err != nil {
-		writeError(c.w, http.StatusNotFound, "invalid_request_error", "model_not_found", "model", "no route serves model "+model)
+		c.fail(c.w, http.StatusNotFound, "invalid_request_error", "model_not_found", "model", "no route serves model "+model)
 		return false
 	}
 	c.resolved = res
@@ -150,4 +163,16 @@ func (g *gateway) record(ctx context.Context, rec store.UsageRecord) {
 func writeError(w http.ResponseWriter, status int, errType, code, param, message string) {
 	setUsageHeaders(w.Header(), schema.Usage{}, 0)
 	openai.WriteError(w, status, errType, code, param, message)
+}
+
+// writeAnthropicError writes the same errors in the Anthropic shape, where the type follows
+// from the status.
+func writeAnthropicError(w http.ResponseWriter, status int, _, _, _, message string) {
+	setUsageHeaders(w.Header(), schema.Usage{}, 0)
+	anthropic.WriteError(w, status, anthropic.ErrorType(status), message)
+}
+
+// upstreamContext carries the caller's trace headers to adapters called through the canonical methods.
+func upstreamContext(c *call) context.Context {
+	return provider.WithHeader(c.r.Context(), c.r.Header)
 }

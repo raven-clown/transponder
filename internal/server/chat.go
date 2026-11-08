@@ -78,7 +78,7 @@ func (g *gateway) chatCanonical(c *call) {
 		return
 	}
 	req.Model = c.resolved.Model
-	resp, err := c.resolved.Provider.Chat(c.r.Context(), req)
+	resp, err := c.resolved.Provider.Chat(upstreamContext(c), req)
 	if err != nil {
 		g.upstreamFailed(c, err, false)
 		return
