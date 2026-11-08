@@ -106,3 +106,10 @@ func TestFrame(t *testing.T) {
 		})
 	}
 }
+
+func TestReaderEmptyData(t *testing.T) {
+	got, err := readAll(t, "event: ping\ndata:\n\n")
+	if !errors.Is(err, io.EOF) || len(got) != 1 || got[0].Name != "ping" || got[0].Data == nil || len(got[0].Data) != 0 {
+		t.Fatalf("events %+v, %v", got, err)
+	}
+}

@@ -62,14 +62,16 @@ func (s *Reader) Next() (Event, error) {
 			case "event":
 				ev.Name, started = string(value), true
 			case "data":
-				if ev.Data != nil {
-					ev.Data = append(ev.Data, '\n')
-				}
-				ev.Data = append(append([]byte{}, ev.Data...), value...)
-				started = true
-				if len(ev.Data) > MaxEventBytes {
+				if len(ev.Data)+len(value)+1 > MaxEventBytes {
 					return Event{}, ErrEventTooLarge
 				}
+				if ev.Data == nil {
+					ev.Data = []byte{}
+				} else {
+					ev.Data = append(ev.Data, '\n')
+				}
+				ev.Data = append(ev.Data, value...)
+				started = true
 			}
 		}
 		if eof {
