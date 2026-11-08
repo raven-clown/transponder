@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func TestDecodeChatRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Model != "gpt-x" || len(req.Messages) != 2 || req.Messages[1] != (schema.Message{Role: "user", Content: "hi"}) {
+	if req.Model != "gpt-x" || len(req.Messages) != 2 || !reflect.DeepEqual(req.Messages[1], schema.Message{Role: "user", Content: "hi"}) {
 		t.Fatalf("req = %+v", req)
 	}
 	if req.MaxTokens == nil || *req.MaxTokens != 5 || req.Temperature == nil || *req.Temperature != 0.5 || !req.Stream {

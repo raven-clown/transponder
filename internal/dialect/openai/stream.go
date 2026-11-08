@@ -66,8 +66,9 @@ func ChunkUsage(data []byte) (u schema.Usage, ok bool, usageOnly bool) {
 }
 
 type wireDelta struct {
-	Role    string  `json:"role,omitempty"`
-	Content *string `json:"content,omitempty"`
+	Role      string         `json:"role,omitempty"`
+	Content   *string        `json:"content,omitempty"`
+	ToolCalls []wireToolCall `json:"tool_calls,omitempty"`
 }
 
 type wireChunkChoice struct {
@@ -95,6 +96,16 @@ func EncodeChunk(id, model string, created time.Time, ev schema.Event) ([]byte, 
 	case schema.EventText:
 		text := ev.Text
 		c.Choices = append(c.Choices, wireChunkChoice{Delta: wireDelta{Content: &text}})
+	case schema.EventToolStart:
+		i := ev.ToolIndex
+		c.Choices = append(c.Choices, wireChunkChoice{Delta: wireDelta{ToolCalls: []wireToolCall{{
+			Index: &i, ID: ev.ToolID, Type: "function", Function: wireFunctionCall{Name: ev.ToolName},
+		}}}})
+	case schema.EventToolDelta:
+		i := ev.ToolIndex
+		c.Choices = append(c.Choices, wireChunkChoice{Delta: wireDelta{ToolCalls: []wireToolCall{{
+			Index: &i, Function: wireFunctionCall{Arguments: ev.ToolArgs},
+		}}}})
 	case schema.EventFinish:
 		reason := ev.FinishReason
 		c.Choices = append(c.Choices, wireChunkChoice{FinishReason: &reason})
