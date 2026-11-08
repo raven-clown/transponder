@@ -34,6 +34,8 @@ jobs:
     steps:
       # Counts only the same kind as this event, by this author, opened before it.
       - name: comment on a first issue or pull request
+        # bash here runs with pipefail, so a failed lookup fails the step instead of greeting.
+        shell: bash
         run: |
           earlier=$(gh api --paginate "repos/$REPO/issues?state=all&creator=$AUTHOR&per_page=100" \
             --jq ".[] | select((.pull_request != null) == $IS_PR) | select(.number < $NUMBER) | .number" | wc -l)
