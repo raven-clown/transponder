@@ -64,3 +64,17 @@ func RetryableStatus(status int) bool {
 	}
 	return false
 }
+
+type headerKey struct{}
+
+// WithHeader returns a context carrying the headers to forward upstream, such as
+// X-Request-ID and traceparent, for adapters called through the canonical methods.
+func WithHeader(ctx context.Context, h http.Header) context.Context {
+	return context.WithValue(ctx, headerKey{}, h)
+}
+
+// HeaderFrom returns the headers stored by WithHeader.
+func HeaderFrom(ctx context.Context) (http.Header, bool) {
+	h, ok := ctx.Value(headerKey{}).(http.Header)
+	return h, ok
+}

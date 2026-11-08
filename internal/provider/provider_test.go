@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,16 @@ func TestErrorMessage(t *testing.T) {
 	conn := &Error{Provider: "local", Err: cause}
 	if !strings.Contains(conn.Error(), "boom") {
 		t.Fatalf("message %q", conn.Error())
+	}
+}
+
+func TestHeaderContext(t *testing.T) {
+	if _, ok := HeaderFrom(context.Background()); ok {
+		t.Fatal("bare context has headers")
+	}
+	h := http.Header{"X-Request-Id": {"r1"}}
+	got, ok := HeaderFrom(WithHeader(context.Background(), h))
+	if !ok || got.Get("X-Request-ID") != "r1" {
+		t.Fatalf("headers %v", got)
 	}
 }
