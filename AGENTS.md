@@ -36,7 +36,8 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/server`: HTTP mux, middleware, gateway handlers
 - `internal/admin` (planned): `/admin/v1` handlers, pagination, audit writes
 - `internal/schema`: canonical request, response, stream and usage types
-- `internal/dialect/openai`, `internal/dialect/anthropic` (anthropic planned): wire formats and usage parsing
+- `internal/dialect/openai`, `internal/dialect/anthropic`, `internal/dialect/gemini`: each wire format to and from the canonical types, in both directions, with usage parsing
+- `internal/sse`: server-sent event reading and writing shared by the dialects
 - `internal/router`: routes and target choice; access, fallback and cooldown are planned
 - `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
 - `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it

@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- `POST /v1/messages`, the Anthropic Messages API, so Claude Code and the Anthropic SDKs work with only a base URL change. Requests to Anthropic go through as sent, with only the model changed; streams are copied frame by frame and their usage is recorded. Requests to other providers are translated, tools included.
+- `POST /v1/messages/count_tokens`, forwarded to the route's Anthropic target.
+- Anthropic provider (`type: anthropic`). It forwards the caller's `anthropic-version` and `anthropic-beta`.
+- Gemini provider (`type: gemini`) for chat, streams and embeddings through the Gemini API with an API key.
+- OpenAI chat completions can now reach Anthropic and Gemini, and every translated call carries tools, tool calls and the system prompt.
+- Prices for current Claude and Gemini models.
+
+### Added
+
 - `GET /healthz` answers 200 while the process is up, and `GET /readyz` answers 503 with the names of the dependencies that fail, such as `{"status":"unavailable","failed":["store"]}`, so Kubernetes and load balancers can restart the process or hold traffic. Neither needs an API key.
 
 ## [0.2.1] - 2026-11-07

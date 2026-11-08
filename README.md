@@ -107,6 +107,12 @@ With no config every model is answered by `echo`, a built-in test provider. To u
 ```yaml
 # transponder.yaml
 providers:
+  - name: claude
+    type: anthropic       # https://api.anthropic.com/v1 unless base_url is set
+    api_key: ${ANTHROPIC_API_KEY}
+  - name: gemini
+    type: gemini          # Gemini API with an API key
+    api_key: ${GEMINI_API_KEY}
   - name: openai
     type: openai
     api_key: ${OPENAI_API_KEY}
@@ -124,6 +130,12 @@ providers:
     base_url: https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat
     api_key: ${CLOUDFLARE_API_TOKEN}
 routes:
+  - match: "claude-*"
+    targets:
+      - provider: claude
+  - match: "gemini-*"
+    targets:
+      - provider: gemini
   - match: "gpt-*"
     targets:
       - provider: openai
@@ -141,19 +153,25 @@ transponder --config transponder.yaml
 ```
 
 ```shell
-curl localhost:8080/v1/chat/completions   -H "Authorization: Bearer $TRANSPONDER_KEY"   -d '{"model": "fast", "messages": [{"role": "user", "content": "hi"}]}' -i
+curl localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $TRANSPONDER_KEY" \
+  -d '{"model": "fast", "messages": [{"role": "user", "content": "hi"}]}' -i
 # X-Usage-Input-Tokens, X-Usage-Output-Tokens and X-Usage-Cost-USD come back with the answer
 ```
 
-Routes are tried in order and the first match wins. Fallback to the next target, the admin API and the Anthropic API are on the roadmap below; these commands describe where it is going:
+Routes are tried in order and the first match wins.
+
+### Claude Code
+
+Point Claude Code at transponder with a transponder API key:
 
 ```shell
-curl -X POST localhost:8080/admin/v1/providers   -H "Authorization: Bearer $ADMIN_KEY"   -d '{"name": "anthropic", "type": "anthropic", "settings": {"api_key": "sk-ant-..."}}'
+ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY claude
 ```
 
-```shell
-ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$MY_KEY claude
-```
+`/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools included, though features only Anthropic has, such as its server tools and images, are refused on those routes.
+
+Fallback to the next target and the admin API are on the roadmap below.
 
 ## Roadmap
 
