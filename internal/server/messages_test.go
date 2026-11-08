@@ -270,3 +270,26 @@ func TestCountTokensUpstreamErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesCutStreamEstimatesOutput(t *testing.T) {
+	long := strings.Repeat("word ", 100)
+	native := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n"+
+			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""+long+"\"}}\n\n")
+	})
+	translated := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\""+long+"\"}}]}\n\n")
+	})
+	for name, route := range map[string]router.Route{
+		"native":     anthropicRoute("*", "", native),
+		"translated": openaiRoute("*", "", translated),
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setupRoutes(t, []router.Route{route})
+			e.messages(t, nil, `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+			if r := e.usage(t)[0]; !r.Estimated || r.OutputTokens < 100 {
+				t.Fatalf("record %+v", r)
+			}
+		})
+	}
+}

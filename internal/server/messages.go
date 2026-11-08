@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/dialect/anthropic"
 	"github.com/raven-clown/transponder/internal/dialect/openai"
@@ -135,8 +136,13 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 
 	out := startSSE(c.w)
 	var dec anthropic.StreamDecoder
+	var text strings.Builder
 	for {
-		_, derr := dec.Events(ev)
+		evs, derr := dec.Events(ev)
+		for _, e := range evs {
+			text.WriteString(e.Text)
+			text.WriteString(e.ToolArgs)
+		}
 		out.write(sse.Frame(ev.Name, ev.Data))
 		var se *anthropic.StreamError
 		if errors.As(derr, &se) {
@@ -154,6 +160,9 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()
+	if !dec.Done() {
+		u.OutputTokens = max(u.OutputTokens, estimateTokens(text.String()))
+	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
@@ -189,11 +198,14 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 	out := startSSE(c.w)
 	enc := anthropic.NewStreamEncoder(anthropic.NewMessageID(), c.resolved.Model)
 	var u schema.Usage
+	var text strings.Builder
 	haveUsage := false
 	for {
 		if ev.Usage != nil {
 			u, haveUsage = *ev.Usage, true
 		}
+		text.WriteString(ev.Text)
+		text.WriteString(ev.ToolArgs)
 		for _, f := range enc.Frames(ev) {
 			out.write(f)
 		}
@@ -210,7 +222,7 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 		out.write(anthropic.ErrorFrame("api_error", streamCut))
 	}
 	if !haveUsage {
-		u = schema.Usage{InputTokens: estimateTokens(string(c.body))}
+		u = schema.Usage{InputTokens: estimateTokens(string(c.body)), OutputTokens: estimateTokens(text.String())}
 		c.rec.Estimated = true
 	}
 	cost := g.price(ctx, c, u)
