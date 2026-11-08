@@ -110,3 +110,24 @@ func TestErrors(t *testing.T) {
 		t.Fatalf("Embed err = %v", err)
 	}
 }
+
+func TestRejectsUnsafeModelNames(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer srv.Close()
+	a := New("g", srv.URL, "gk", nil)
+	ctx := context.Background()
+	bad := "x:batchEmbedContents?"
+	if _, err := a.Chat(ctx, &schema.ChatRequest{Model: bad}); !errors.Is(err, provider.ErrUnsupported) {
+		t.Fatalf("Chat err = %v", err)
+	}
+	if _, err := a.ChatStream(ctx, &schema.ChatRequest{Model: "../files"}); !errors.Is(err, provider.ErrUnsupported) {
+		t.Fatalf("ChatStream err = %v", err)
+	}
+	if _, err := a.Embed(ctx, &schema.EmbedRequest{Model: "a/b"}); err == nil {
+		t.Fatal("Embed accepted a/b")
+	}
+	if called {
+		t.Fatal("an unsafe model name reached the upstream")
+	}
+}

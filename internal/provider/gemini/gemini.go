@@ -4,6 +4,7 @@ package gemini
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -46,6 +47,15 @@ func (a *Adapter) Dialect() string { return "gemini" }
 // BaseURL returns the API root calls are sent to.
 func (a *Adapter) BaseURL() string { return a.baseURL }
 
+// path checks the model and returns the API path for one of its methods.
+func path(model, method string) (string, error) {
+	p, err := wire.ModelPath(model)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", provider.ErrUnsupported, err)
+	}
+	return p + ":" + method, nil
+}
+
 func (a *Adapter) send(ctx context.Context, path string, body []byte) (*http.Response, error) {
 	h := http.Header{}
 	h.Set("X-Goog-Api-Key", a.apiKey)
@@ -75,7 +85,11 @@ func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.Ch
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.read(ctx, wire.ModelPath(req.Model)+":generateContent", body)
+	p, err := path(req.Model, "generateContent")
+	if err != nil {
+		return nil, err
+	}
+	out, err := a.read(ctx, p, body)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +109,11 @@ func (a *Adapter) ChatStream(ctx context.Context, req *schema.ChatRequest) (sche
 	if err != nil {
 		return nil, err
 	}
-	resp, err := a.send(ctx, wire.ModelPath(req.Model)+":streamGenerateContent?alt=sse", body) //nolint:bodyclose // the stream closes it
+	p, err := path(req.Model, "streamGenerateContent?alt=sse")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.send(ctx, p, body) //nolint:bodyclose // the stream closes it
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +126,11 @@ func (a *Adapter) Embed(ctx context.Context, req *schema.EmbedRequest) (*schema.
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.read(ctx, wire.ModelPath(req.Model)+":batchEmbedContents", body)
+	p, err := path(req.Model, "batchEmbedContents")
+	if err != nil {
+		return nil, err
+	}
+	out, err := a.read(ctx, p, body)
 	if err != nil {
 		return nil, err
 	}

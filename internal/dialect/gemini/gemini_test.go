@@ -165,3 +165,16 @@ func TestEmbed(t *testing.T) {
 		t.Fatalf("resp %+v %v", resp, err)
 	}
 }
+
+func TestModelPath(t *testing.T) {
+	for model, want := range map[string]string{"gemini-2.5-flash": "models/gemini-2.5-flash", "models/gemini-3.1-pro-preview": "models/gemini-3.1-pro-preview", "tuned_model.v2": "models/tuned_model.v2"} {
+		if got, err := ModelPath(model); err != nil || got != want {
+			t.Errorf("ModelPath(%q) = %q, %v", model, got, err)
+		}
+	}
+	for _, bad := range []string{"", "a/../b", "x:generateContent", "m?key=1", "m#frag", "m%2F", "models/", "../models/x", "a b"} {
+		if _, err := ModelPath(bad); err == nil {
+			t.Errorf("ModelPath(%q) accepted", bad)
+		}
+	}
+}

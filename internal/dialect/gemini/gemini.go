@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -323,23 +324,41 @@ func (d *StreamDecoder) Events(data []byte) ([]schema.Event, error) {
 // Done reports whether a finish reason arrived.
 func (d *StreamDecoder) Done() bool { return d.done }
 
-// ModelPath returns the models/{model} resource name.
-func ModelPath(model string) string {
-	if strings.HasPrefix(model, "models/") {
-		return model
+// ErrModelName means a model name has characters no Gemini model name has. The name becomes
+// part of the URL path, so anything else could reach another endpoint with the gateway's key.
+var ErrModelName = errors.New("gemini: model names may only have letters, digits, '.', '_' and '-'")
+
+// ModelPath returns the models/{model} resource name, after checking the name.
+func ModelPath(model string) (string, error) {
+	name := strings.TrimPrefix(model, "models/")
+	if name == "" {
+		return "", ErrModelName
 	}
-	return "models/" + model
+	for _, r := range name {
+		ok := r == '.' || r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !ok {
+			return "", ErrModelName
+		}
+	}
+	if strings.Contains(name, "..") {
+		return "", ErrModelName
+	}
+	return "models/" + name, nil
 }
 
 // EncodeEmbedRequest renders a batchEmbedContents body.
 func EncodeEmbedRequest(model string, input []string) ([]byte, error) {
+	path, err := ModelPath(model)
+	if err != nil {
+		return nil, err
+	}
 	type embedReq struct {
 		Model   string  `json:"model"`
 		Content content `json:"content"`
 	}
 	reqs := make([]embedReq, len(input))
 	for i, in := range input {
-		reqs[i] = embedReq{Model: ModelPath(model), Content: content{Parts: []part{{Text: in}}}}
+		reqs[i] = embedReq{Model: path, Content: content{Parts: []part{{Text: in}}}}
 	}
 	return json.Marshal(struct {
 		Requests []embedReq `json:"requests"`
