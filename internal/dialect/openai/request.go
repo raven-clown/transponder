@@ -9,10 +9,25 @@ import (
 	"github.com/raven-clown/transponder/internal/schema"
 )
 
+// EncodeOptions adjust the request for one kind of server.
+type EncodeOptions struct {
+	// MaxCompletionTokens sends the limit as max_completion_tokens, which OpenAI's reasoning
+	// models require, instead of max_tokens, which other compatible servers know.
+	MaxCompletionTokens bool
+}
+
 // EncodeChatRequest renders a canonical request in the OpenAI wire format. A streamed request
 // asks for usage at the end.
 func EncodeChatRequest(req *schema.ChatRequest) ([]byte, error) {
+	return EncodeChatRequestWith(req, EncodeOptions{})
+}
+
+// EncodeChatRequestWith is EncodeChatRequest with options.
+func EncodeChatRequestWith(req *schema.ChatRequest, o EncodeOptions) ([]byte, error) {
 	w := wireRequest{Model: req.Model, MaxTokens: req.MaxTokens, Temperature: req.Temperature, TopP: req.TopP, Stream: req.Stream}
+	if o.MaxCompletionTokens {
+		w.MaxTokens, w.MaxCompletionTokens = nil, req.MaxTokens
+	}
 	if req.Stream {
 		w.StreamOptions = &wireStreamOptions{IncludeUsage: true}
 	}

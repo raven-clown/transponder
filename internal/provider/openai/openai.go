@@ -21,6 +21,9 @@ type Options struct {
 	BaseURL string
 	APIKey  string
 	Client  *http.Client
+	// MaxCompletionTokens sends max_completion_tokens on translated calls, as OpenAI's own API
+	// wants; compatible servers keep max_tokens.
+	MaxCompletionTokens bool
 }
 
 // Adapter talks to an OpenAI-compatible API.
@@ -29,11 +32,13 @@ type Adapter struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
+	encode  wire.EncodeOptions
 }
 
 // New returns an adapter. An empty BaseURL means the OpenAI API, an empty APIKey sends no Authorization header.
 func New(o Options) *Adapter {
-	a := &Adapter{name: o.Name, baseURL: strings.TrimRight(o.BaseURL, "/"), apiKey: o.APIKey, client: o.Client}
+	a := &Adapter{name: o.Name, baseURL: strings.TrimRight(o.BaseURL, "/"), apiKey: o.APIKey, client: o.Client,
+		encode: wire.EncodeOptions{MaxCompletionTokens: o.MaxCompletionTokens}}
 	if a.baseURL == "" {
 		a.baseURL = DefaultBaseURL
 	}
@@ -65,7 +70,7 @@ func (a *Adapter) Native(ctx context.Context, call *provider.NativeCall) (*http.
 func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.ChatResponse, error) {
 	r := *req
 	r.Stream = false
-	body, err := wire.EncodeChatRequest(&r)
+	body, err := wire.EncodeChatRequestWith(&r, a.encode)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +85,7 @@ func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.Ch
 func (a *Adapter) ChatStream(ctx context.Context, req *schema.ChatRequest) (schema.Stream, error) {
 	r := *req
 	r.Stream = true
-	body, err := wire.EncodeChatRequest(&r)
+	body, err := wire.EncodeChatRequestWith(&r, a.encode)
 	if err != nil {
 		return nil, err
 	}

@@ -265,3 +265,25 @@ func TestCanonicalForwardsHeaders(t *testing.T) {
 		t.Fatalf("X-Request-ID %q", got)
 	}
 }
+
+func TestMaxCompletionTokens(t *testing.T) {
+	for _, useCompletion := range []bool{true, false} {
+		var got map[string]json.RawMessage
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &got)
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"hi"}}]}`)
+		}))
+		n := 32000
+		_, err := New(Options{Name: "oa", BaseURL: srv.URL, MaxCompletionTokens: useCompletion}).Chat(context.Background(), &schema.ChatRequest{Model: "gpt-5", MaxTokens: &n})
+		srv.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, hasMax := got["max_tokens"]
+		_, hasCompletion := got["max_completion_tokens"]
+		if hasCompletion != useCompletion || hasMax == useCompletion {
+			t.Fatalf("MaxCompletionTokens=%v: upstream body %v", useCompletion, got)
+		}
+	}
+}

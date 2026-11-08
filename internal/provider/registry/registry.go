@@ -37,7 +37,7 @@ type Spec struct {
 var specs = []Spec{
 	{Type: "echo", Free: true, New: func(s Settings) provider.Provider { return echo.New(s.Name) }},
 	{Type: "openai", New: func(s Settings) provider.Provider {
-		return openai.New(openai.Options{Name: s.Name, BaseURL: s.BaseURL, APIKey: s.APIKey, Client: s.Client})
+		return openai.New(openai.Options{Name: s.Name, BaseURL: s.BaseURL, APIKey: s.APIKey, Client: s.Client, MaxCompletionTokens: true})
 	}},
 	{Type: "ollama", Free: true, New: func(s Settings) provider.Provider {
 		return ollama.New(s.Name, s.BaseURL, s.APIKey, s.Client)
