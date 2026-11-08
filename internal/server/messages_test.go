@@ -181,12 +181,12 @@ func TestMessagesErrors(t *testing.T) {
 	closed.Close()
 	echoOnly := []router.Route{{Match: "m", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo"}}}}
 	tests := []struct {
-		name     string
-		routes   []router.Route
-		noAuth   bool
-		body     string
-		status   int
-		errType  string
+		name         string
+		routes       []router.Route
+		noAuth       bool
+		body         string
+		status       int
+		errType      string
 		upstreamBody string
 	}{
 		{name: "no key", routes: echoOnly, noAuth: true, body: `{"model":"m"}`, status: 401, errType: "authentication_error"},
