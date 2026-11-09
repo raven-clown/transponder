@@ -16,9 +16,10 @@ func TestEstimate(t *testing.T) {
 		{"empty", "", 0, 0},
 		{"english", "abcdefgh", 2, 2},
 		{"english rounds up", "abcde", 2, 2},
-		{"thai counts a token per character", thai, int64(utf8.RuneCountInString(thai)), int64(utf8.RuneCountInString(thai))},
-		{"mixed", "hi สวัสดี", 7, 7},
-		{"cjk", "你好世界", 4, 4},
+		{"thai counts one and a half tokens a character", thai, int64(utf8.RuneCountInString(thai)) * 3 / 2, int64(utf8.RuneCountInString(thai))*3/2 + 1},
+		{"mixed", "hi สวัสดี", 10, 10},
+		{"cjk", "你好世界", 6, 6},
+		{"chinese that a tokenizer counts high", "我们今天去看了一场很好的电影", 17, 21},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

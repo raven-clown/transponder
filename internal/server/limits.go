@@ -136,8 +136,10 @@ func capOpenAI(body []byte, providerType string, limit int64) []byte {
 			capField(m, "max_tokens", limit, false)
 		case hasMax || providerType != "openai":
 			capField(m, "max_tokens", limit, true)
+			capField(m, "max_completion_tokens", limit, false)
 		default:
 			capField(m, "max_completion_tokens", limit, true)
+			capField(m, "max_tokens", limit, false)
 		}
 	})
 }

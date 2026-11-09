@@ -6,7 +6,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
-- USD budgets per user (`user:*` or an exact user), team and key, daily or monthly. A spent budget answers 402 `budget_exceeded` with the subject, the limit and the reset time, in the caller's dialect.
+- USD budgets per user (`user:*` or an exact user), team and key, daily or monthly. A spent budget answers 402 with the subject, the limit and the reset time: code `budget_exceeded` for OpenAI-dialect callers, and type `billing_error` with code `budget_exceeded` for Anthropic-dialect callers.
 - Profiles in the shared mothership format, from the config or a shared `profiles_file`, bound to keys, users and teams, with a `default_profile`: `requests` rate and concurrency, `llm.tokens` rate and daily and monthly allowances, `llm.cost_usd`, and `llm.max_input_tokens`, `llm.max_output_tokens` and `llm.max_reasoning_tokens`. Calls reserve before they run and settle after, and responses carry `RateLimit-Policy` and `RateLimit` headers.
 - Reasoning tokens are counted apart where OpenAI and Gemini report them, priced at the output rate, stored with the usage and sent in `X-Usage-Reasoning-Tokens`.
 - Limit counters are rebuilt from this month's usage at start, so a restart does not reset anyone's spend.
@@ -14,7 +14,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Changed
 
 - `X-Usage-Output-Tokens` no longer includes reasoning tokens for OpenAI and Gemini; they are in `X-Usage-Reasoning-Tokens`.
-- Token estimates count every non-Latin character as a token, so Thai, CJK and other scripts are no longer undercounted.
+- Token estimates count every non-Latin character as one and a half tokens, so Thai, CJK and other scripts are counted on the high side rather than undercounted. It is a heuristic; a model with a small vocabulary can still use more.
 
 ### Fixed
 

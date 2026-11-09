@@ -126,7 +126,9 @@ func (c *Bootstrap) loadProfilesFile() error {
 		return fmt.Errorf("config: reading profiles_file: %w", err)
 	}
 	var shared sharedProfiles
-	if err := yaml.Unmarshal(raw, &shared); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&shared); err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("config: parsing %s: %w", c.ProfilesFile, err)
 	}
 	c.Profiles = append(c.Profiles, shared.Profiles...)

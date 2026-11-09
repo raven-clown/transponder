@@ -16,6 +16,7 @@ import (
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/pricing"
 	"github.com/raven-clown/transponder/internal/provider/echo"
+	oaprovider "github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
@@ -252,5 +253,46 @@ func TestUnreadableThinkingBudgetDropped(t *testing.T) {
 	e.messages(t, nil, `{"model":"m","max_tokens":16000,"thinking":{"type":"enabled","budget_tokens":"lots"},"messages":[{"role":"user","content":"x"}]}`)
 	if _, ok := got["thinking"]; ok {
 		t.Fatalf("thinking with an unreadable budget passed a reasoning cap: %v", got)
+	}
+}
+
+func TestAnthropicDenialCarriesCode(t *testing.T) {
+	cfg := limits.Config{Budgets: []limits.Budget{{Subject: "user:*", Window: limits.Month, LimitNUSD: 1}}}
+	e := setupLimited(t, echoRoutes(echo.New("echo")), cfg)
+	res := e.messages(t, nil, `{"model":"m","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != http.StatusPaymentRequired && res.status != 200 {
+		t.Fatalf("status %d", res.status)
+	}
+	upCfg := limits.Config{Budgets: []limits.Budget{{Subject: "user:*", Window: limits.Month, LimitNUSD: 1}}}
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"type":"message","content":[],"usage":{"input_tokens":1000000,"output_tokens":1}}`)
+	})
+	e = setupLimited(t, []router.Route{anthropicRoute("*", "claude-sonnet-5-5", up)}, upCfg)
+	e.messages(t, nil, `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}`)
+	res = e.messages(t, nil, `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}`)
+	var body struct {
+		Error struct {
+			Type string `json:"type"`
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(res.body, &body); err != nil || res.status != 402 || body.Error.Type != "billing_error" || body.Error.Code != "budget_exceeded" {
+		t.Fatalf("%d %s", res.status, res.body)
+	}
+}
+
+func TestCapStripsVariantsOfBothFields(t *testing.T) {
+	var got map[string]json.RawMessage
+	up := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = nil
+		_ = json.Unmarshal(b, &got)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	})
+	ollamaLike := router.Route{Match: "*", Targets: []router.Target{{Provider: oaprovider.New(oaprovider.Options{Name: "local", BaseURL: up.URL}), Type: "ollama"}}}
+	e := setupLimited(t, []router.Route{ollamaLike}, oneProfile(func(p *limits.Profile) { p.MaxOutputTokens = 100 }))
+	e.post(t, `{"model":"m","Max_Completion_Tokens":99999,"messages":[{"role":"user","content":"x"}]}`)
+	if _, ok := got["Max_Completion_Tokens"]; ok || string(got["max_tokens"]) != "100" {
+		t.Fatalf("upstream body %v", got)
 	}
 }

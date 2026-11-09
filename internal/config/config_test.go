@@ -286,3 +286,13 @@ func TestLoadLimitsRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadProfilesFileRejectsUnknownKeys(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "profiles.yaml")
+	if err := os.WriteFile(shared, []byte("profiles: []\nprofile_binding:\n  - {subject: \"key:ci\", profile: team}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(writeFile(t, "profiles_file: "+filepath.ToSlash(shared)+"\n"), nil); err == nil || !strings.Contains(err.Error(), "profile_binding") {
+		t.Fatalf("a misspelt key in the profiles file was accepted: %v", err)
+	}
+}

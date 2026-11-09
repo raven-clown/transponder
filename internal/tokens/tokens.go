@@ -1,9 +1,10 @@
 // Package tokens estimates token counts when a provider reports none.
 package tokens
 
-// Estimate counts ASCII at four characters a token and every other character as a token of its
-// own. Thai, CJK and other scripts take far more tokens per character than English, so a flat
-// characters-divided-by-four rule would undercount them; this errs on the high side instead.
+// Estimate counts ASCII at four characters a token and every other character at one and a half
+// tokens. Thai, CJK and other scripts take far more tokens per character than English, and some
+// tokenizers spend more than one token on a single character, so this errs on the high side. It
+// is a heuristic: a model with a small vocabulary can still use more.
 func Estimate(s string) int64 {
 	var ascii, other int64
 	for _, r := range s {
@@ -13,5 +14,5 @@ func Estimate(s string) int64 {
 			other++
 		}
 	}
-	return (ascii+3)/4 + other
+	return (ascii+3)/4 + (other*3+1)/2
 }

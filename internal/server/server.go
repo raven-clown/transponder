@@ -174,9 +174,9 @@ func writeError(w http.ResponseWriter, status int, errType, code, param, message
 
 // writeAnthropicError writes the same errors in the Anthropic shape, where the type follows
 // from the status.
-func writeAnthropicError(w http.ResponseWriter, status int, _, _, _, message string) {
+func writeAnthropicError(w http.ResponseWriter, status int, _, code, _, message string) {
 	setUsageHeaders(w.Header(), schema.Usage{}, 0)
-	anthropic.WriteError(w, status, anthropic.ErrorType(status), message)
+	anthropic.WriteErrorCode(w, status, anthropic.ErrorType(status), code, message)
 }
 
 // upstreamContext carries the caller's trace headers to adapters called through the canonical methods.
