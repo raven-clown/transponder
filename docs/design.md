@@ -467,12 +467,12 @@ Done:
 | v0.2.0 | Milestone 3: the provider registry, split timeouts, stricter SSE, `GET /v1/models`, the `user_id` column |
 | v0.2.1 | vLLM, release manifests and `--check-update`, `/healthz` and `/readyz` |
 | v0.2.2 | The Anthropic and Gemini adapters, `/v1/messages` and `count_tokens`, translation between dialects with tools, so Claude Code works with a base URL change |
+| v0.2.3 | USD budgets per user, team and key; profiles with token limits, reasoning tokens counted apart and request rate and concurrency limits; reserve then settle in memory, rebuilt from usage at start; llama.cpp provider |
 
 Next, one release per plan:
 
 | Version | What it adds |
 |---|---|
-| v0.2.3 | Limits: USD budgets per user, team and key; token limits (`llm.tokens` with a per-minute rate, input and reasoning caps, reasoning tokens counted apart, an estimate that does not undercount non-Latin text); request rate and concurrency limits (`requests`). All three share the profiles and the counter store in mothership's `docs/scale.md` |
 | v0.2.4 | Fallback with a cooldown for targets that keep failing |
 
 After v0.2.4, in this order, versions to be set: OIDC and the three roles, the admin API and audit log, Postgres and several replicas, then the five-minute demo, which together make v1.

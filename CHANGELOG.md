@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-09
+
 ### Added
 
 - USD budgets per user (`user:*` or an exact user), team and key, daily or monthly. A spent budget answers 402 with the subject, the limit and the reset time: code `budget_exceeded` for OpenAI-dialect callers, and type `billing_error` with code `budget_exceeded` for Anthropic-dialect callers.
@@ -120,7 +122,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/raven-clown/transponder/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/raven-clown/transponder/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/raven-clown/transponder/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/raven-clown/transponder/compare/v0.1.4...v0.2.0
