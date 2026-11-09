@@ -245,3 +245,13 @@ func TestKeep(t *testing.T) {
 		t.Fatal("a kept reservation was given back")
 	}
 }
+
+func TestManyChoicesReserveInFull(t *testing.T) {
+	l := limiter(t, Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.TokensPerDay = 100_000 })}})
+	if _, d := l.Admit(ctx, alice, Estimate{OutputTokens: 500, Choices: 1000}); d == nil {
+		t.Fatal("1000 choices of 500 tokens passed a 100000-token allowance")
+	}
+	if _, d := l.Admit(ctx, alice, Estimate{OutputTokens: 1 << 39, Choices: 1 << 40}); d == nil {
+		t.Fatal("an overflowing choice count passed")
+	}
+}

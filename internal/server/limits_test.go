@@ -210,3 +210,47 @@ func TestNChoicesReserveMore(t *testing.T) {
 		t.Fatalf("n=5 at 300 tokens each passed a 1000-token allowance: %d", res.status)
 	}
 }
+
+func TestInputEstimateCountsTextThatLooksLikeData(t *testing.T) {
+	e := setupLimited(t, []router.Route{anthropicRoute("*", "", statusUpstream(t, 500, `{}`))}, oneProfile(func(p *limits.Profile) { p.MaxInputTokens = 100 }))
+	big := strings.Repeat("word ", 200)
+	for name, body := range map[string]string{
+		"text document":         `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"` + big + `"}}]}]}`,
+		"text starting data:":   `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"data:` + big + `"}]}`,
+		"text under signature?": `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"text","text":"` + big + `"}]}]}`,
+	} {
+		res := e.messages(t, nil, body)
+		if res.status != http.StatusBadRequest || !strings.Contains(string(res.body), "over the limit") {
+			t.Fatalf("%s slipped past: %d %s", name, res.status, res.body)
+		}
+	}
+	small := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + strings.Repeat("QUJD", 500) + `"}},{"type":"image_url","image_url":{"url":"data:image/png;base64,` + strings.Repeat("QUJD", 500) + `"}}]}]}`
+	if res := e.messages(t, nil, small); res.status == http.StatusBadRequest {
+		t.Fatalf("base64 images counted as text: %s", res.body)
+	}
+}
+
+func TestRequestedMaxIgnoresCase(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	})
+	e := setupLimited(t, []router.Route{openaiRoute("*", "", up)}, oneProfile(func(p *limits.Profile) { p.TokensPerDay = 1000 }))
+	res := e.post(t, `{"model":"m","max_tokens":10,"Max_Tokens":50000,"messages":[{"role":"user","content":"x"}]}`)
+	if res.status != http.StatusPaymentRequired {
+		t.Fatalf("a case-variant max_tokens was not reserved: %d", res.status)
+	}
+}
+
+func TestUnreadableThinkingBudgetDropped(t *testing.T) {
+	var got map[string]json.RawMessage
+	up := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = io.WriteString(w, `{"type":"message","content":[],"usage":{"input_tokens":1,"output_tokens":1}}`)
+	})
+	e := setupLimited(t, []router.Route{anthropicRoute("*", "", up)}, oneProfile(func(p *limits.Profile) { p.MaxReasoningTokens = 2000 }))
+	e.messages(t, nil, `{"model":"m","max_tokens":16000,"thinking":{"type":"enabled","budget_tokens":"lots"},"messages":[{"role":"user","content":"x"}]}`)
+	if _, ok := got["thinking"]; ok {
+		t.Fatalf("thinking with an unreadable budget passed a reasoning cap: %v", got)
+	}
+}

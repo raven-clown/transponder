@@ -155,7 +155,11 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 	if est.OutputTokens == 0 && !est.NoOutput {
 		est.OutputTokens = DefaultOutputReservation
 	}
-	est.OutputTokens = clamp(est.OutputTokens * max(min(est.Choices, 128), 1))
+	if n := max(est.Choices, 1); est.OutputTokens > maxAmount/n {
+		est.OutputTokens = maxAmount
+	} else {
+		est.OutputTokens *= n
+	}
 	if est.Price != nil {
 		est.CostNUSD = clamp(est.Price(est.InputTokens, est.OutputTokens))
 	}

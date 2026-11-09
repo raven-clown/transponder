@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -73,11 +74,14 @@ func requestedMax(body []byte, fields ...string) int64 {
 	if json.Unmarshal(body, &m) != nil {
 		return 0
 	}
+	// Keys are matched without regard to case, as servers written in Go read them.
 	var out int64
-	for _, f := range fields {
-		var n int64
-		if raw, ok := m[f]; ok && json.Unmarshal(raw, &n) == nil {
-			out = max(out, n)
+	for k, raw := range m {
+		for _, f := range fields {
+			var n int64
+			if strings.EqualFold(k, f) && json.Unmarshal(raw, &n) == nil {
+				out = max(out, n)
+			}
 		}
 	}
 	return out
@@ -155,8 +159,13 @@ func capAnthropic(body []byte, outLimit, reasoningLimit int64) []byte {
 		_ = json.Unmarshal(m["max_tokens"], &maxTokens)
 		drop := false
 		m["thinking"] = editJSON(raw, func(t map[string]json.RawMessage) {
+			raw, has := t["budget_tokens"]
+			if !has {
+				return
+			}
 			var budget int64
-			if json.Unmarshal(t["budget_tokens"], &budget) != nil {
+			if json.Unmarshal(raw, &budget) != nil {
+				drop = reasoningLimit > 0
 				return
 			}
 			// Anthropic wants the thinking budget under max_tokens and at least 1024.
@@ -179,6 +188,9 @@ func capAnthropic(body []byte, outLimit, reasoningLimit int64) []byte {
 	})
 }
 
+// base64DataURI matches an inline image, audio or file payload, which is not text for the model.
+var base64DataURI = regexp.MustCompile(`^data:[a-z]+/[a-zA-Z0-9.+-]+;base64,`)
+
 // minThinkingBudget is the smallest extended thinking budget Anthropic accepts.
 const minThinkingBudget = 1024
 
@@ -197,6 +209,10 @@ func estimateInput(body []byte) int64 {
 		switch x := v.(type) {
 		case map[string]any:
 			for k, val := range x {
+				// Only a base64 source's data is binary; a text document keeps its text there.
+				if k == "data" && x["type"] == "base64" {
+					continue
+				}
 				b.WriteString(k)
 				b.WriteByte(' ')
 				walk(k, val)
@@ -210,7 +226,7 @@ func estimateInput(body []byte) int64 {
 				walk(key, val)
 			}
 		case string:
-			if key == "data" || key == "signature" || strings.HasPrefix(x, "data:") {
+			if key == "signature" || base64DataURI.MatchString(x) {
 				return
 			}
 			b.WriteString(x)
