@@ -43,7 +43,9 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it
 - `internal/store`, `internal/store/sqlite`: store interfaces, SQLite with embedded migrations in `internal/store/sqlite/migrations`
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
-- `internal/budget`, `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): budgets, live config, sealed secrets, logs and metrics
+- `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface; only the memory store exists so far
+- `internal/tokens`: the token estimate used when a provider reports no usage
+- `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): live config, sealed secrets, logs and metrics
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
 

@@ -4,6 +4,22 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- USD budgets per user (`user:*` or an exact user), team and key, daily or monthly. A spent budget answers 402 `budget_exceeded` with the subject, the limit and the reset time, in the caller's dialect.
+- Profiles in the shared mothership format, from the config or a shared `profiles_file`, bound to keys, users and teams, with a `default_profile`: `requests` rate and concurrency, `llm.tokens` rate and daily and monthly allowances, `llm.cost_usd`, and `llm.max_input_tokens`, `llm.max_output_tokens` and `llm.max_reasoning_tokens`. Calls reserve before they run and settle after, and responses carry `RateLimit-Policy` and `RateLimit` headers.
+- Reasoning tokens are counted apart where OpenAI and Gemini report them, priced at the output rate, stored with the usage and sent in `X-Usage-Reasoning-Tokens`.
+- Limit counters are rebuilt from this month's usage at start, so a restart does not reset anyone's spend.
+
+### Changed
+
+- `X-Usage-Output-Tokens` no longer includes reasoning tokens for OpenAI and Gemini; they are in `X-Usage-Reasoning-Tokens`.
+- Token estimates count every non-Latin character as a token, so Thai, CJK and other scripts are no longer undercounted.
+
+### Fixed
+
+- Anthropic cache writes kept for an hour are priced at their own rate, twice the input price, instead of the five-minute rate.
+
 ## [0.2.2] - 2026-11-08
 
 ### Added
