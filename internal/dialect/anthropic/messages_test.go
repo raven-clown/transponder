@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/sse"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -232,5 +233,19 @@ func TestDecodeRequestDropsThinkingOnlyTurn(t *testing.T) {
 	}
 	if len(got.Messages) != 1 {
 		t.Fatalf("messages %+v", got.Messages)
+	}
+}
+
+func TestParseUsageOneHourWrites(t *testing.T) {
+	u, ok := ParseUsage([]byte(`{"usage":{"input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":300,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":200}}}`))
+	if !ok || u.CacheWriteTokens != 300 || u.CacheWrite1hTokens != 200 {
+		t.Fatalf("usage %+v", u)
+	}
+	var d StreamDecoder
+	if _, err := d.Events(sse.Event{Data: []byte(`{"type":"message_start","message":{"usage":{"input_tokens":1,"cache_creation_input_tokens":50,"cache_creation":{"ephemeral_1h_input_tokens":50}}}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if d.Usage().CacheWrite1hTokens != 50 {
+		t.Fatalf("stream usage %+v", d.Usage())
 	}
 }

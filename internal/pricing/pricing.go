@@ -21,7 +21,7 @@ var embedded []byte
 
 // Price is nano-USD per million tokens.
 type Price struct {
-	Input, Output, CacheRead, CacheWrite int64
+	Input, Output, CacheRead, CacheWrite, CacheWrite1h int64
 }
 
 // Table maps "type/model" to a price.
@@ -43,10 +43,11 @@ func mustParse(b []byte) *Table {
 }
 
 type entry struct {
-	Input      string `yaml:"input"`
-	Output     string `yaml:"output"`
-	CacheRead  string `yaml:"cache_read"`
-	CacheWrite string `yaml:"cache_write"`
+	Input        string `yaml:"input"`
+	Output       string `yaml:"output"`
+	CacheRead    string `yaml:"cache_read"`
+	CacheWrite   string `yaml:"cache_write"`
+	CacheWrite1h string `yaml:"cache_write_1h"`
 }
 
 // Parse reads a price file of USD strings per million tokens.
@@ -66,7 +67,7 @@ func Parse(data []byte) (*Table, error) {
 		for _, f := range []struct {
 			s   string
 			dst *int64
-		}{{e.Input, &p.Input}, {e.Output, &p.Output}, {e.CacheRead, &p.CacheRead}, {e.CacheWrite, &p.CacheWrite}} {
+		}{{e.Input, &p.Input}, {e.Output, &p.Output}, {e.CacheRead, &p.CacheRead}, {e.CacheWrite, &p.CacheWrite}, {e.CacheWrite1h, &p.CacheWrite1h}} {
 			if f.s == "" {
 				continue
 			}
@@ -87,6 +88,11 @@ func (t *Table) Cost(typ, model string, u schema.Usage) (nusd int64, priced bool
 	if !ok {
 		return 0, false
 	}
-	sum := u.InputTokens*p.Input + u.OutputTokens*p.Output + u.CacheReadTokens*p.CacheRead + u.CacheWriteTokens*p.CacheWrite
+	oneHour := p.CacheWrite1h
+	if oneHour == 0 {
+		oneHour = p.CacheWrite
+	}
+	sum := u.InputTokens*p.Input + u.OutputTokens*p.Output + u.CacheReadTokens*p.CacheRead +
+		(u.CacheWriteTokens-u.CacheWrite1hTokens)*p.CacheWrite + u.CacheWrite1hTokens*oneHour
 	return (sum + 500_000) / 1_000_000, true
 }

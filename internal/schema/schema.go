@@ -84,6 +84,9 @@ type Usage struct {
 	OutputTokens     int64
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	// CacheWrite1hTokens is the part of CacheWriteTokens cached for an hour, which Anthropic
+	// prices higher than the five-minute default.
+	CacheWrite1hTokens int64
 }
 
 // EventType names a stream event.

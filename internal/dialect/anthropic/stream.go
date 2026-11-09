@@ -239,6 +239,9 @@ type wireEvent struct {
 		OutputTokens             *int64 `json:"output_tokens"`
 		CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens"`
 		CacheReadInputTokens     *int64 `json:"cache_read_input_tokens"`
+		CacheCreation            *struct {
+			Ephemeral1h *int64 `json:"ephemeral_1h_input_tokens"`
+		} `json:"cache_creation"`
 	} `json:"usage"`
 	Error *wireErrorDetail `json:"error"`
 }
@@ -309,6 +312,9 @@ func (d *StreamDecoder) addUsage(w wireEvent) {
 	set(&d.usage.InputTokens, w.Usage.InputTokens)
 	set(&d.usage.CacheWriteTokens, w.Usage.CacheCreationInputTokens)
 	set(&d.usage.CacheReadTokens, w.Usage.CacheReadInputTokens)
+	if w.Usage.CacheCreation != nil {
+		set(&d.usage.CacheWrite1hTokens, w.Usage.CacheCreation.Ephemeral1h)
+	}
 }
 
 // Done reports whether message_stop arrived.
