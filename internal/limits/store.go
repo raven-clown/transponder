@@ -151,7 +151,8 @@ func (s *MemoryStore) Add(_ context.Context, key string, n, limit int64, w Windo
 	defer s.mu.Unlock()
 	c := s.current(key, w, now)
 	r := Result{Used: c.n, Limit: limit, Reset: w.Reset(now)}
-	if c.n+n > limit {
+	// Written as a subtraction so a huge n cannot overflow past the check.
+	if n < 0 || n > limit-c.n {
 		return r, nil
 	}
 	c.n += n
@@ -184,6 +185,10 @@ func (s *MemoryStore) Used(_ context.Context, key string, w Window, now time.Tim
 // Take implements Store with GCRA: the bucket holds up to N units and refills one unit every
 // Per/N. A cost larger than N can never pass.
 func (s *MemoryStore) Take(_ context.Context, key string, cost int64, r Rate, now time.Time) (Bucket, error) {
+	if cost > r.N {
+		return Bucket{RetryAfter: r.Per}, nil
+	}
+	cost = max(cost, 0)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	iv := r.interval()
@@ -195,9 +200,6 @@ func (s *MemoryStore) Take(_ context.Context, key string, cost int64, r Rate, no
 	if allowAt := next.Add(-r.Per); allowAt.After(now) {
 		b := Bucket{RetryAfter: allowAt.Sub(now), Reset: tat.Sub(now)}
 		b.Remaining = remaining(r, tat.Sub(now))
-		if cost > r.N {
-			b.RetryAfter = r.Per
-		}
 		return b, nil
 	}
 	s.tats[key] = next
@@ -212,6 +214,9 @@ func remaining(r Rate, ahead time.Duration) int64 {
 func (s *MemoryStore) Settle(_ context.Context, key string, delta int64, r Rate, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A bucket never holds more than N units, so a larger settle is clamped before it can
+	// overflow the duration math.
+	delta = min(max(delta, -r.N), r.N)
 	tat := s.tats[key]
 	if tat.Before(now) {
 		tat = now

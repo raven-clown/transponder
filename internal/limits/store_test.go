@@ -146,3 +146,36 @@ func TestAcquire(t *testing.T) {
 		t.Fatalf("in flight %d", n)
 	}
 }
+
+func TestHugeAndNegativeAmounts(t *testing.T) {
+	s := NewMemoryStore()
+	now := time.Now()
+	if r, _ := s.Add(ctx, "k", 5, 10, Day, now); !r.OK {
+		t.Fatal(r)
+	}
+	if r, _ := s.Add(ctx, "k", 1<<62, 10, Day, now); r.OK {
+		t.Fatalf("huge add passed: %+v", r)
+	}
+	if r, _ := s.Add(ctx, "k", -1<<62, 10, Day, now); r.OK || r.Used != 5 {
+		t.Fatalf("negative add changed the counter: %+v", r)
+	}
+	rate := Rate{N: 10, Per: time.Minute}
+	if b, _ := s.Take(ctx, "r", 1<<62, rate, now); b.OK {
+		t.Fatalf("huge take passed: %+v", b)
+	}
+	if b, _ := s.Take(ctx, "r", -1<<62, rate, now); b.OK && b.Remaining > 10 {
+		t.Fatalf("negative take added room: %+v", b)
+	}
+	if err := s.Settle(ctx, "r", 1<<62, rate, now); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := s.Take(ctx, "r", 1, rate, now); b.OK {
+		t.Fatalf("a huge settle did not fill the bucket: %+v", b)
+	}
+	if err := s.Settle(ctx, "r", -1<<62, rate, now); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := s.Take(ctx, "r", 10, rate, now); !b.OK {
+		t.Fatalf("bucket did not empty after a huge give-back: %+v", b)
+	}
+}
