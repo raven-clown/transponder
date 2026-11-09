@@ -20,11 +20,13 @@ import (
 
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/pricing"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/provider/registry"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
+	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
 
@@ -130,6 +132,10 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
+	limiter, err := buildLimiter(ctx, cfg, db, time.Now)
+	if err != nil {
+		return err
+	}
 	gw := server.New(server.Deps{
 		Auth:   auth.NewAuthenticator(db, time.Now),
 		Router: rt,
@@ -141,6 +147,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          map[string]server.Pinger{"store": db},
+		Limiter:        limiter,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.
@@ -211,4 +218,23 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 		routes = append(routes, rt)
 	}
 	return router.New(routes), nil
+}
+
+// buildLimiter returns the limiter for the profiles and budgets in cfg, with this month's usage
+// added back so a restart does not reset anyone's spend. It returns nil when nothing is limited.
+func buildLimiter(ctx context.Context, cfg *config.Bootstrap, usage store.UsageStore, now func() time.Time) (*limits.Limiter, error) {
+	lc, err := cfg.LimitsConfig()
+	if err != nil || lc.Empty() {
+		return nil, err
+	}
+	l := limits.New(lc, limits.NewMemoryStore(), now)
+	err = usage.UsageSince(ctx, store.DefaultOrg, limits.Month.Start(now()), func(r store.UsageRecord) error {
+		tokens := r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens + r.OutputTokens + r.ReasoningTokens
+		l.Seed(ctx, limits.Caller{User: r.User, Teams: r.Teams, Key: r.Key}, r.Time, tokens, r.CostNUSD)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading this month's usage for the limits: %w", err)
+	}
+	return l, nil
 }

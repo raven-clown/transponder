@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/config"
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
@@ -476,5 +477,33 @@ func TestSlowStreamNotCut(t *testing.T) {
 	status, body := postChat(t, ln.Addr().String(), key, `{"model":"m","stream":true,"messages":[{"role":"user","content":"x"}]}`)
 	if status != http.StatusOK || !strings.HasSuffix(string(body), "data: [DONE]\n\n") || strings.Contains(string(body), "upstream_error") {
 		t.Fatalf("status %d: %s", status, body)
+	}
+}
+
+func TestBuildLimiterSeedsFromUsage(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	now := time.Now()
+	if err := db.RecordUsage(ctx, store.UsageRecord{OrgID: store.DefaultOrg, Time: now, User: "alice", CostNUSD: 900_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
+	l, err := buildLimiter(ctx, cfg, db, func() time.Time { return now })
+	if err != nil || l == nil {
+		t.Fatalf("limiter %v, %v", l, err)
+	}
+	if _, d := l.Admit(ctx, limits.Caller{User: "alice"}, limits.Estimate{CostNUSD: 200_000_000}); d == nil {
+		t.Fatal("this month's spend was not seeded")
+	}
+	if _, d := l.Admit(ctx, limits.Caller{User: "bob"}, limits.Estimate{CostNUSD: 200_000_000}); d != nil {
+		t.Fatalf("bob denied: %+v", d)
+	}
+	none, err := buildLimiter(ctx, &config.Bootstrap{}, db, time.Now)
+	if err != nil || none != nil {
+		t.Fatalf("limiter without limits %v, %v", none, err)
 	}
 }

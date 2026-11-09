@@ -66,4 +66,6 @@ type UsageRecord struct {
 type UsageStore interface {
 	RecordUsage(ctx context.Context, r UsageRecord) error
 	RecentUsage(ctx context.Context, orgID string, limit int) ([]UsageRecord, error)
+	// UsageSince calls fn for each of orgID's records from since on, oldest first.
+	UsageSince(ctx context.Context, orgID string, since time.Time, fn func(UsageRecord) error) error
 }
