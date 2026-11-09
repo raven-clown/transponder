@@ -210,7 +210,7 @@ func TestNilTicketCaps(t *testing.T) {
 func TestCostPricedAfterTheCap(t *testing.T) {
 	cfg := Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.MaxOutputTokens, p.USDPerMonth = 1000, 1_000_000_000 })}}
 	l := limiter(t, cfg)
-	price := func(in, out int64) int64 { return out * 10_000 }
+	price := func(_, out int64) int64 { return out * 10_000 }
 	tk := mustAdmit(t, l, alice, Estimate{OutputTokens: 200000, Price: price})
 	tk.Release()
 	if _, d := l.Admit(ctx, alice, Estimate{OutputTokens: 1 << 62, Price: price}); d != nil {
