@@ -39,6 +39,9 @@ func (r Rate) String() string {
 	return strconv.FormatInt(r.N, 10) + "/" + r.Per.String()
 }
 
+// maxDebt is the longest a settled overrun can hold a rate back.
+const maxDebt = 365 * 24 * time.Hour
+
 // interval is the time one unit takes to come back.
 func (r Rate) interval() time.Duration { return r.Per / time.Duration(r.N) }
 
@@ -165,7 +168,7 @@ func (s *MemoryStore) Adjust(_ context.Context, key string, delta int64, w Windo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.counters[windowKey(key, w)]
-	if !ok {
+	if !ok || c.start.Before(w.Start(at)) {
 		c = s.current(key, w, at)
 	}
 	if !c.start.Equal(w.Start(at)) {
@@ -214,14 +217,16 @@ func remaining(r Rate, ahead time.Duration) int64 {
 func (s *MemoryStore) Settle(_ context.Context, key string, delta int64, r Rate, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// A bucket never holds more than N units, so a larger settle is clamped before it can
-	// overflow the duration math.
-	delta = min(max(delta, -r.N), r.N)
+	// Debt carries over, so a call far over the rate waits as long as it used. It is capped at a
+	// year of the rate, which keeps the duration math from overflowing. A give-back is at most
+	// the N a reservation can hold.
+	iv := r.interval()
+	delta = min(max(delta, -r.N), int64(maxDebt/iv))
 	tat := s.tats[key]
 	if tat.Before(now) {
 		tat = now
 	}
-	tat = tat.Add(time.Duration(delta) * r.interval())
+	tat = tat.Add(time.Duration(delta) * iv)
 	if tat.Before(now) {
 		tat = now
 	}

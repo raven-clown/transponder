@@ -175,7 +175,31 @@ func TestHugeAndNegativeAmounts(t *testing.T) {
 	if err := s.Settle(ctx, "r", -1<<62, rate, now); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := s.Take(ctx, "r", 10, rate, now); !b.OK {
-		t.Fatalf("bucket did not empty after a huge give-back: %+v", b)
+}
+
+func TestSettleKeepsDebt(t *testing.T) {
+	s := NewMemoryStore()
+	rate := Rate{N: 1000, Per: time.Minute}
+	now := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
+	if b, _ := s.Take(ctx, "r", 1000, rate, now); !b.OK {
+		t.Fatal(b)
+	}
+	if err := s.Settle(ctx, "r", 31000, rate, now); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.Take(ctx, "r", 1, rate, now)
+	if b.OK || b.RetryAfter < 31*time.Minute {
+		t.Fatalf("a call 32 times the rate cost %s of waiting: %+v", b.RetryAfter, b)
+	}
+}
+
+func TestAdjustMovesToANewerWindow(t *testing.T) {
+	s := NewMemoryStore()
+	oct := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	nov := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	_ = s.Adjust(ctx, "k", 7, Month, oct)
+	_ = s.Adjust(ctx, "k", 5, Month, nov)
+	if u, _ := s.Used(ctx, "k", Month, nov); u != 5 {
+		t.Fatalf("used %d, want 5", u)
 	}
 }

@@ -207,3 +207,82 @@ func TestLoadRejectsBadBoolEnv(t *testing.T) {
 		t.Fatal("expected an error for a value that is not true or false")
 	}
 }
+
+const limitsYAML = `
+default_profile: free
+profiles:
+  - name: free
+    priority: 1
+    limits:
+      requests: {rate: 60/m, concurrency: 4}
+      llm.tokens: {per_day: 100000}
+      tools.calls: {rate: 30/m}
+  - name: pro
+    limits:
+      llm.tokens: {per_day: 2000000}
+profile_bindings:
+  - {subject: "user:alice", profile: pro}
+budgets:
+  - {subject: "user:*", period: monthly, limit_usd: 20}
+  - {subject: "team:platform", period: daily, limit_usd: 50.5}
+limits:
+  store: memory
+  on_store_error: local
+`
+
+func TestLoadLimits(t *testing.T) {
+	c, err := Load(writeFile(t, limitsYAML), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc, err := c.LimitsConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lc.DefaultProfile != "free" || len(lc.Profiles) != 2 || lc.Profiles[0].Concurrency != 4 || lc.Profiles[1].TokensPerDay != 2000000 ||
+		len(lc.Bindings) != 1 || lc.Bindings[0].Profile != "pro" || len(lc.Budgets) != 2 || lc.Budgets[1].LimitNUSD != 50_500_000_000 {
+		t.Fatalf("limits %+v", lc)
+	}
+	empty, err := (&Bootstrap{}).LimitsConfig()
+	if err != nil || !empty.Empty() {
+		t.Fatalf("no limits configured: %+v %v", empty, err)
+	}
+}
+
+func TestLoadProfilesFile(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "profiles.yaml")
+	if err := os.WriteFile(shared, []byte("profiles:\n  - name: team\n    limits:\n      requests: {rate: 10/s}\n      memory.items: 5\ndefault_profile: team\nprofile_bindings:\n  - {subject: \"key:ci\", profile: team}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(writeFile(t, "profiles_file: "+filepath.ToSlash(shared)+"\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc, err := c.LimitsConfig()
+	if err != nil || lc.DefaultProfile != "team" || len(lc.Profiles) != 1 || lc.Profiles[0].RequestRate == nil || len(lc.Bindings) != 1 {
+		t.Fatalf("limits %+v %v", lc, err)
+	}
+	if _, err := Load(writeFile(t, "profiles_file: "+filepath.ToSlash(filepath.Join(t.TempDir(), "missing.yaml"))+"\n"), nil); err == nil {
+		t.Fatal("missing profiles file accepted")
+	}
+}
+
+func TestLoadLimitsRejects(t *testing.T) {
+	for name, body := range map[string]string{
+		"unknown llm key":         "profiles:\n  - name: p\n    limits:\n      llm.speed: 1\n",
+		"unknown default":         "default_profile: gold\n",
+		"binding to unknown":      "profiles:\n  - name: p\n    limits: {}\nprofile_bindings:\n  - {subject: \"user:a\", profile: q}\n",
+		"binding bad subject":     "profiles:\n  - name: p\n    limits: {}\nprofile_bindings:\n  - {subject: \"org:a\", profile: p}\n",
+		"duplicate profile":       "profiles:\n  - name: p\n    limits: {}\n  - name: p\n    limits: {}\n",
+		"profile without name":    "profiles:\n  - limits: {}\n",
+		"bad budget":              "budgets:\n  - {subject: \"user:*\", period: weekly, limit_usd: 1}\n",
+		"store not supported yet": "limits: {store: valkey}\n",
+		"bad on_store_error":      "limits: {on_store_error: panic}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeFile(t, body), nil); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}

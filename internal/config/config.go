@@ -16,6 +16,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/registry"
 )
 
@@ -34,6 +35,106 @@ type Bootstrap struct {
 	Providers []Provider `yaml:"providers"`
 	Routes    []Route    `yaml:"routes"`
 	Settings  Settings   `yaml:"settings"`
+
+	Profiles        []ProfileConfig `yaml:"profiles"`
+	ProfilesFile    string          `yaml:"profiles_file"`
+	DefaultProfile  string          `yaml:"default_profile"`
+	ProfileBindings []BindingConfig `yaml:"profile_bindings"`
+	Budgets         []BudgetConfig  `yaml:"budgets"`
+	Limits          LimitsStore     `yaml:"limits"`
+}
+
+// ProfileConfig is a named set of limits in the shared mothership format.
+type ProfileConfig struct {
+	Name     string         `yaml:"name"`
+	Priority int            `yaml:"priority"`
+	Limits   map[string]any `yaml:"limits"`
+}
+
+// BindingConfig gives a key:, user: or team: subject a profile.
+type BindingConfig struct {
+	Subject string `yaml:"subject"`
+	Profile string `yaml:"profile"`
+}
+
+// BudgetConfig caps what a subject spends in USD per day or month.
+type BudgetConfig struct {
+	Subject  string  `yaml:"subject"`
+	Period   string  `yaml:"period"`
+	LimitUSD float64 `yaml:"limit_usd"`
+}
+
+// LimitsStore says where limit counters are kept.
+type LimitsStore struct {
+	Store        string `yaml:"store"`
+	OnStoreError string `yaml:"on_store_error"`
+}
+
+// sharedProfiles is what transponder reads from profiles_file.
+type sharedProfiles struct {
+	Profiles        []ProfileConfig `yaml:"profiles"`
+	DefaultProfile  string          `yaml:"default_profile"`
+	ProfileBindings []BindingConfig `yaml:"profile_bindings"`
+}
+
+// LimitsConfig turns the profiles, bindings and budgets into what the limiter enforces.
+func (c *Bootstrap) LimitsConfig() (limits.Config, error) {
+	var out limits.Config
+	names := map[string]bool{}
+	for i, pc := range c.Profiles {
+		if pc.Name == "" {
+			return out, fmt.Errorf("config: profiles[%d] has no name", i)
+		}
+		if names[pc.Name] {
+			return out, fmt.Errorf("config: profile %q is declared twice", pc.Name)
+		}
+		names[pc.Name] = true
+		p, err := limits.ParseProfile(pc.Name, pc.Limits)
+		if err != nil {
+			return out, fmt.Errorf("config: %w", err)
+		}
+		out.Profiles = append(out.Profiles, p)
+	}
+	if c.DefaultProfile != "" && !names[c.DefaultProfile] {
+		return out, fmt.Errorf("config: default_profile %q is not a declared profile", c.DefaultProfile)
+	}
+	out.DefaultProfile = c.DefaultProfile
+	for _, b := range c.ProfileBindings {
+		kind, id, _ := strings.Cut(b.Subject, ":")
+		if id == "" || (kind != "key" && kind != "user" && kind != "team") {
+			return out, fmt.Errorf("config: profile binding subject %q must be key:<name>, user:<id> or team:<name>", b.Subject)
+		}
+		if !names[b.Profile] {
+			return out, fmt.Errorf("config: profile binding for %s names %q, which is not a declared profile", b.Subject, b.Profile)
+		}
+		out.Bindings = append(out.Bindings, limits.Binding{Subject: b.Subject, Profile: b.Profile})
+	}
+	for _, bc := range c.Budgets {
+		b, err := limits.ParseBudget(bc.Subject, bc.Period, bc.LimitUSD)
+		if err != nil {
+			return out, fmt.Errorf("config: %w", err)
+		}
+		out.Budgets = append(out.Budgets, b)
+	}
+	return out, nil
+}
+
+// loadProfilesFile adds the profiles, default and bindings of the shared profiles file.
+func (c *Bootstrap) loadProfilesFile() error {
+	raw, err := os.ReadFile(filepath.Clean(c.ProfilesFile))
+	if err != nil {
+		return fmt.Errorf("config: reading profiles_file: %w", err)
+	}
+	var shared sharedProfiles
+	if err := yaml.Unmarshal(raw, &shared); err != nil {
+		return fmt.Errorf("config: parsing %s: %w", c.ProfilesFile, err)
+	}
+	c.Profiles = append(c.Profiles, shared.Profiles...)
+	if c.DefaultProfile == "" {
+		c.DefaultProfile = shared.DefaultProfile
+	}
+	c.ProfileBindings = append(c.ProfileBindings, shared.ProfileBindings...)
+	return nil
 }
 
 // Settings tune how calls to providers are made.
@@ -112,6 +213,11 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 	if c.Store.SQLite == "" && c.Store.Postgres == "" {
 		c.Store.SQLite = "./transponder.db"
 	}
+	if c.ProfilesFile != "" {
+		if err := c.loadProfilesFile(); err != nil {
+			return nil, err
+		}
+	}
 	if c.Settings.AttemptTimeout == 0 {
 		c.Settings.AttemptTimeout = time.Minute
 	}
@@ -122,6 +228,21 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 }
 
 func (c *Bootstrap) validate() error {
+	switch c.Limits.Store {
+	case "", "memory":
+	case "sql", "valkey":
+		return fmt.Errorf("config: limits.store %q is not supported yet; use memory", c.Limits.Store)
+	default:
+		return fmt.Errorf("config: limits.store %q must be memory", c.Limits.Store)
+	}
+	switch c.Limits.OnStoreError {
+	case "", "local", "deny":
+	default:
+		return fmt.Errorf("config: limits.on_store_error %q must be local or deny", c.Limits.OnStoreError)
+	}
+	if _, err := c.LimitsConfig(); err != nil {
+		return err
+	}
 	if c.Store.SQLite != "" && c.Store.Postgres != "" {
 		return errors.New("config: set only one of store.sqlite and store.postgres")
 	}
