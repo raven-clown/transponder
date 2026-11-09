@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/tokens"
 )
 
 // skipSignature stands in for a thought signature on a function call that did not come from
@@ -392,7 +392,7 @@ func DecodeEmbedResponse(body []byte, model string, input []string) (*schema.Emb
 		resp.Vectors = append(resp.Vectors, e.Values)
 	}
 	for _, in := range input {
-		resp.Usage.InputTokens += int64((utf8.RuneCountInString(in) + 3) / 4)
+		resp.Usage.InputTokens += tokens.Estimate(in)
 	}
 	return resp, nil
 }
