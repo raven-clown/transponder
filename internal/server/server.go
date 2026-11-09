@@ -12,6 +12,7 @@ import (
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/dialect/anthropic"
 	"github.com/raven-clown/transponder/internal/dialect/openai"
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/pricing"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/router"
@@ -35,6 +36,8 @@ type Deps struct {
 	AttemptTimeout time.Duration
 	// RequestTimeout bounds each call, streams included. Zero means no limit.
 	RequestTimeout time.Duration
+	// Limiter enforces budgets, token limits and request limits. Nil means none.
+	Limiter *limits.Limiter
 	// Ready are the dependencies /readyz pings, by name.
 	Ready map[string]Pinger
 }
@@ -72,6 +75,8 @@ type call struct {
 	rec      store.UsageRecord
 	resolved router.Resolved
 	fail     errorFunc
+	caller   limits.Caller
+	ticket   *limits.Ticket
 }
 
 // errorFunc writes an error in the caller's dialect.
@@ -110,7 +115,7 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		}
 		return nil
 	}
-	return &call{w: w, r: r, body: body, fail: writeError, rec: store.UsageRecord{
+	return &call{w: w, r: r, body: body, fail: writeError, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
 		RequestID: r.Header.Get("X-Request-ID"),

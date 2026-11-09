@@ -48,7 +48,7 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 		c.fail(c.w, http.StatusBadGateway, "api_error", "upstream_error", "", "the provider did not answer")
 		c.rec.Status = http.StatusBadGateway
 	}
-	g.record(ctx, c.rec)
+	g.recordCall(ctx, c)
 }
 
 var errUpstreamTooLarge = errors.New("the provider's response is larger than the gateway accepts")

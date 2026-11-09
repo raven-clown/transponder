@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/raven-clown/transponder/internal/dialect/openai"
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/schema"
 )
@@ -18,6 +19,7 @@ func (g *gateway) chat(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
+	defer c.done()
 	peek, err := openai.PeekRequest(c.body)
 	if err != nil {
 		writeRequestError(w, err)
@@ -25,6 +27,12 @@ func (g *gateway) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if !g.resolve(c, peek.Model) {
 		return
+	}
+	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_completion_tokens", "max_tokens")}) {
+		return
+	}
+	if out, _ := c.ticket.Caps(); out > 0 {
+		c.body = capOpenAI(c.body, c.resolved.Type, out)
 	}
 	n, native := nativeTarget(c, "openai")
 	switch {
@@ -63,7 +71,7 @@ func (g *gateway) chatNative(c *call, n provider.Native) {
 	}
 	cost := g.price(c.r.Context(), c, u)
 	c.rec.Status = resp.StatusCode
-	g.record(c.r.Context(), c.rec)
+	g.recordCall(c.r.Context(), c)
 
 	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
@@ -90,7 +98,7 @@ func (g *gateway) chatCanonical(c *call) {
 	}
 	cost := g.price(c.r.Context(), c, resp.Usage)
 	c.rec.Status = http.StatusOK
-	g.record(c.r.Context(), c.rec)
+	g.recordCall(c.r.Context(), c)
 
 	setUsageHeaders(c.w.Header(), resp.Usage, cost)
 	c.w.Header().Set("Content-Type", "application/json")

@@ -22,6 +22,8 @@ func ErrorType(status int) string {
 		return "invalid_request_error"
 	case http.StatusUnauthorized:
 		return "authentication_error"
+	case http.StatusPaymentRequired:
+		return "billing_error"
 	case http.StatusForbidden:
 		return "permission_error"
 	case http.StatusNotFound:

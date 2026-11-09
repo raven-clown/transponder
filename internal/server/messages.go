@@ -9,6 +9,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/dialect/anthropic"
 	"github.com/raven-clown/transponder/internal/dialect/openai"
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/schema"
 	"github.com/raven-clown/transponder/internal/sse"
@@ -23,6 +24,7 @@ func (g *gateway) messages(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
+	defer c.done()
 	peek, err := anthropic.PeekRequest(c.body)
 	if err != nil {
 		writeAnthropicRequestError(w, err)
@@ -30,6 +32,12 @@ func (g *gateway) messages(w http.ResponseWriter, r *http.Request) {
 	}
 	if !g.resolve(c, peek.Model) {
 		return
+	}
+	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_tokens")}) {
+		return
+	}
+	if out, reasoning := c.ticket.Caps(); out > 0 || reasoning > 0 {
+		c.body = capAnthropic(c.body, out, reasoning)
 	}
 	n, native := nativeTarget(c, "anthropic")
 	switch {
@@ -72,7 +80,7 @@ func (g *gateway) messagesNative(c *call, n provider.Native) {
 	}
 	cost := g.price(c.r.Context(), c, u)
 	c.rec.Status = resp.StatusCode
-	g.record(c.r.Context(), c.rec)
+	g.recordCall(c.r.Context(), c)
 
 	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
@@ -100,7 +108,7 @@ func (g *gateway) messagesTranslated(c *call) {
 	}
 	cost := g.price(c.r.Context(), c, resp.Usage)
 	c.rec.Status = http.StatusOK
-	g.record(c.r.Context(), c.rec)
+	g.recordCall(c.r.Context(), c)
 
 	setUsageHeaders(c.w.Header(), resp.Usage, cost)
 	c.w.Header().Set("Content-Type", "application/json")
@@ -168,7 +176,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
-	g.record(ctx, c.rec)
+	g.recordCall(ctx, c)
 }
 
 // messagesStreamTranslated streams from a provider of another dialect as Anthropic events.
@@ -230,7 +238,7 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
-	g.record(ctx, c.rec)
+	g.recordCall(ctx, c)
 }
 
 // countTokens forwards a token count to the route's Anthropic target. Other providers have no

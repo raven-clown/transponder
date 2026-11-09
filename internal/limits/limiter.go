@@ -259,8 +259,14 @@ func (l *Limiter) budgetsFor(c Caller) []Budget {
 
 func clamp(n int64) int64 { return min(max(n, 0), maxAmount) }
 
-// Caps returns the output and reasoning token caps of the caller's profile, zero when none.
-func (t *Ticket) Caps() (maxOutput, maxReasoning int64) { return t.maxOut, t.maxReasoning }
+// Caps returns the output and reasoning token caps of the caller's profile, zero when none or
+// when there is no ticket.
+func (t *Ticket) Caps() (maxOutput, maxReasoning int64) {
+	if t == nil {
+		return 0, 0
+	}
+	return t.maxOut, t.maxReasoning
+}
 
 // Settle replaces the reservations with what the call used. Only the first call counts.
 func (t *Ticket) Settle(tokens, costNUSD int64) {

@@ -199,3 +199,10 @@ func TestSeed(t *testing.T) {
 		t.Fatalf("budget denial %+v", d)
 	}
 }
+
+func TestNilTicketCaps(t *testing.T) {
+	var tk *Ticket
+	if out, r := tk.Caps(); out != 0 || r != 0 {
+		t.Fatal("nil ticket has caps")
+	}
+}
