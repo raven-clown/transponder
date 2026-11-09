@@ -253,10 +253,15 @@ type wireOutMsg struct {
 }
 
 type wireUsage struct {
-	PromptTokens        int64              `json:"prompt_tokens"`
-	CompletionTokens    int64              `json:"completion_tokens"`
-	TotalTokens         int64              `json:"total_tokens"`
-	PromptTokensDetails *wirePromptDetails `json:"prompt_tokens_details,omitempty"`
+	PromptTokens            int64                  `json:"prompt_tokens"`
+	CompletionTokens        int64                  `json:"completion_tokens"`
+	TotalTokens             int64                  `json:"total_tokens"`
+	PromptTokensDetails     *wirePromptDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *wireCompletionDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type wireCompletionDetails struct {
+	ReasoningTokens int64 `json:"reasoning_tokens"`
 }
 
 type wirePromptDetails struct {
@@ -265,9 +270,13 @@ type wirePromptDetails struct {
 
 func encodeUsage(u schema.Usage) *wireUsage {
 	prompt := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens
-	w := &wireUsage{PromptTokens: prompt, CompletionTokens: u.OutputTokens, TotalTokens: prompt + u.OutputTokens}
+	completion := u.OutputTokens + u.ReasoningTokens
+	w := &wireUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: prompt + completion}
 	if u.CacheReadTokens > 0 {
 		w.PromptTokensDetails = &wirePromptDetails{CachedTokens: u.CacheReadTokens}
+	}
+	if u.ReasoningTokens > 0 {
+		w.CompletionTokensDetails = &wireCompletionDetails{ReasoningTokens: u.ReasoningTokens}
 	}
 	return w
 }

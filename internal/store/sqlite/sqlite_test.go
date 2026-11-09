@@ -84,16 +84,16 @@ func TestOpenTwice(t *testing.T) {
 func TestMigrateRollsBack(t *testing.T) {
 	db := openTemp(t)
 	fsys := fstest.MapFS{
-		"0002_good.sql": {Data: []byte("CREATE TABLE good (id INTEGER);")},
-		"0003_bad.sql":  {Data: []byte("CREATE TABLE half (id INTEGER); THIS IS NOT SQL;")},
+		"0100_good.sql": {Data: []byte("CREATE TABLE good (id INTEGER);")},
+		"0101_bad.sql":  {Data: []byte("CREATE TABLE half (id INTEGER); THIS IS NOT SQL;")},
 	}
 	err := migrate(context.Background(), db.w, fsys)
-	if err == nil || !strings.Contains(err.Error(), "0003_bad.sql") {
-		t.Fatalf("err = %v, want it to name 0003_bad.sql", err)
+	if err == nil || !strings.Contains(err.Error(), "0101_bad.sql") {
+		t.Fatalf("err = %v, want it to name 0101_bad.sql", err)
 	}
 	got := appliedVersions(t, db)
-	if got[len(got)-1] != 2 {
-		t.Fatalf("applied = %v, want last version 2", got)
+	if got[len(got)-1] != 100 {
+		t.Fatalf("applied = %v, want last version 100", got)
 	}
 	var n int
 	if err := db.sql.QueryRowContext(context.Background(), "SELECT count(*) FROM sqlite_master WHERE name = 'half'").Scan(&n); err != nil {

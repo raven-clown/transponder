@@ -204,12 +204,13 @@ type usageMetadata struct {
 	ThoughtsTokenCount      int64 `json:"thoughtsTokenCount"`
 }
 
-// canonical counts thinking as output, as Gemini bills it.
+// canonical keeps thinking apart as reasoning tokens, which are billed at the output price.
 func (u usageMetadata) canonical() schema.Usage {
 	return schema.Usage{
 		InputTokens:     u.PromptTokenCount - u.CachedContentTokenCount,
 		CacheReadTokens: u.CachedContentTokenCount,
-		OutputTokens:    u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		OutputTokens:    u.CandidatesTokenCount,
+		ReasoningTokens: u.ThoughtsTokenCount,
 	}
 }
 

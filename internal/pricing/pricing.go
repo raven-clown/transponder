@@ -92,7 +92,7 @@ func (t *Table) Cost(typ, model string, u schema.Usage) (nusd int64, priced bool
 	if oneHour == 0 {
 		oneHour = p.CacheWrite
 	}
-	sum := u.InputTokens*p.Input + u.OutputTokens*p.Output + u.CacheReadTokens*p.CacheRead +
+	sum := u.InputTokens*p.Input + (u.OutputTokens+u.ReasoningTokens)*p.Output + u.CacheReadTokens*p.CacheRead +
 		(u.CacheWriteTokens-u.CacheWrite1hTokens)*p.CacheWrite + u.CacheWrite1hTokens*oneHour
 	return (sum + 500_000) / 1_000_000, true
 }

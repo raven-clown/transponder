@@ -142,6 +142,7 @@ func (g *gateway) price(ctx context.Context, c *call, u schema.Usage) int64 {
 	c.rec.OutputTokens = u.OutputTokens
 	c.rec.CacheReadTokens = u.CacheReadTokens
 	c.rec.CacheWriteTokens = u.CacheWriteTokens
+	c.rec.ReasoningTokens = u.ReasoningTokens
 	if c.resolved.Free {
 		c.rec.CostNUSD = 0
 		return 0

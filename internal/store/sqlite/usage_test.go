@@ -32,6 +32,7 @@ func record(i int64, org string) store.UsageRecord {
 		CacheReadTokens:  3,
 		CacheWriteTokens: 4,
 		CostNUSD:         4542000,
+		ReasoningTokens:  7,
 		Estimated:        true,
 		Status:           200,
 		Latency:          150 * time.Millisecond,

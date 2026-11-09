@@ -87,6 +87,9 @@ type Usage struct {
 	// CacheWrite1hTokens is the part of CacheWriteTokens cached for an hour, which Anthropic
 	// prices higher than the five-minute default.
 	CacheWrite1hTokens int64
+	// ReasoningTokens are thinking tokens a provider reports apart from the output. They are
+	// billed at the output price. Providers that count them inside the output leave this zero.
+	ReasoningTokens int64
 }
 
 // EventType names a stream event.

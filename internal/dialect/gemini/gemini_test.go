@@ -100,7 +100,7 @@ func TestDecodeResponse(t *testing.T) {
 	}
 	want := &schema.ChatResponse{ID: "r1", Model: "gemini-2.5-flash", FinishReason: schema.FinishToolCalls,
 		Message: schema.Message{Role: schema.RoleAssistant, Content: "Let me check.", ToolCalls: []schema.ToolCall{{ID: ToolCallID("gem-1", "sig=="), Name: "weather", Arguments: `{"city":"Paris"}`}}},
-		Usage:   schema.Usage{InputTokens: 60, CacheReadTokens: 40, OutputTokens: 15}}
+		Usage:   schema.Usage{InputTokens: 60, CacheReadTokens: 40, OutputTokens: 10, ReasoningTokens: 5}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
 	}

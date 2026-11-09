@@ -18,7 +18,7 @@ import (
 	"github.com/raven-clown/transponder/internal/sse"
 )
 
-var usageTrailers = strings.Join([]string{"X-Usage-Input-Tokens", "X-Usage-Output-Tokens", "X-Usage-Cost-USD"}, ", ")
+var usageTrailers = strings.Join([]string{"X-Usage-Input-Tokens", "X-Usage-Output-Tokens", "X-Usage-Reasoning-Tokens", "X-Usage-Cost-USD"}, ", ")
 
 // sse writes an event stream whose usage arrives as trailers.
 type sseWriter struct {

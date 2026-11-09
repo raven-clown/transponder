@@ -190,7 +190,7 @@ func (e *StreamEncoder) End() [][]byte {
 		StopReason   string  `json:"stop_reason"`
 		StopSequence *string `json:"stop_sequence"`
 	}{StopReason: stopReason(e.finish)}, Usage: deltaUsage{
-		InputTokens: e.usage.InputTokens, OutputTokens: e.usage.OutputTokens,
+		InputTokens: e.usage.InputTokens, OutputTokens: e.usage.OutputTokens + e.usage.ReasoningTokens,
 		CacheCreationInputTokens: e.usage.CacheWriteTokens, CacheReadInputTokens: e.usage.CacheReadTokens,
 	}}))
 	return append(out, frame("message_stop", struct {

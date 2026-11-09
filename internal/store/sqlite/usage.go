@@ -18,12 +18,12 @@ func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
 	}
 	_, err = db.w.ExecContext(ctx, `INSERT INTO usage
 		(org_id, time, request_id, user_id, teams, key, project, route, provider, model, endpoint,
-		 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nusd, estimated,
-		 status, latency_ms, fallbacks)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_nusd,
+		 estimated, status, latency_ms, fallbacks)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.OrgID, r.Time.UnixMilli(), r.RequestID, r.User, string(teams), r.Key, r.Project, r.Route,
 		r.Provider, r.Model, r.Endpoint, r.InputTokens, r.OutputTokens, r.CacheReadTokens,
-		r.CacheWriteTokens, r.CostNUSD, r.Estimated, r.Status, r.Latency.Milliseconds(), r.Fallbacks)
+		r.CacheWriteTokens, r.ReasoningTokens, r.CostNUSD, r.Estimated, r.Status, r.Latency.Milliseconds(), r.Fallbacks)
 	return err
 }
 
@@ -31,7 +31,7 @@ func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
 func (db *DB) RecentUsage(ctx context.Context, orgID string, limit int) ([]store.UsageRecord, error) {
 	rows, err := db.sql.QueryContext(ctx, `SELECT org_id, time, request_id, user_id, teams, key, project,
 		route, provider, model, endpoint, input_tokens, output_tokens, cache_read_tokens,
-		cache_write_tokens, cost_nusd, estimated, status, latency_ms, fallbacks
+		cache_write_tokens, reasoning_tokens, cost_nusd, estimated, status, latency_ms, fallbacks
 		FROM usage WHERE org_id = ? ORDER BY time DESC, id DESC LIMIT ?`, orgID, limit)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (db *DB) RecentUsage(ctx context.Context, orgID string, limit int) ([]store
 		)
 		if err := rows.Scan(&r.OrgID, &at, &r.RequestID, &r.User, &teams, &r.Key, &r.Project,
 			&r.Route, &r.Provider, &r.Model, &r.Endpoint, &r.InputTokens, &r.OutputTokens,
-			&r.CacheReadTokens, &r.CacheWriteTokens, &r.CostNUSD, &estimated, &r.Status, &ms,
+			&r.CacheReadTokens, &r.CacheWriteTokens, &r.ReasoningTokens, &r.CostNUSD, &estimated, &r.Status, &ms,
 			&r.Fallbacks); err != nil {
 			return nil, err
 		}

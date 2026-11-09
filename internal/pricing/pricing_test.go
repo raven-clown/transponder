@@ -20,6 +20,7 @@ func TestCost(t *testing.T) {
 		{"types have no free pass here", "ollama", "anything", schema.Usage{InputTokens: 10, OutputTokens: 10}, 0, false},
 		{"unpriced", "openai", "unknown", schema.Usage{InputTokens: 10}, 0, false},
 		{"gemini", "gemini", "gemini-2.5-flash", schema.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}, 2_800_000_000, true},
+		{"reasoning at the output price", "openai", "gpt-4o-mini", schema.Usage{OutputTokens: 500, ReasoningTokens: 500}, 600_000, true},
 		{"anthropic one-hour cache writes", "anthropic", "claude-sonnet-5-5", schema.Usage{CacheWriteTokens: 1000, CacheWrite1hTokens: 1000}, 4_000_000, true},
 		{"anthropic with cache", "anthropic", "claude-sonnet-5-5", schema.Usage{InputTokens: 1000, CacheReadTokens: 1000, CacheWriteTokens: 1000, OutputTokens: 100}, 5_600_000, true},
 	}

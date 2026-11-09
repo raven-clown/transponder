@@ -102,13 +102,21 @@ type wireUsageIn struct {
 	PromptTokensDetails *struct {
 		CachedTokens int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails *struct {
+		ReasoningTokens int64 `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
+// canonical splits cached input out of prompt tokens and reasoning out of completion tokens.
 func (u *wireUsageIn) canonical() schema.Usage {
 	out := schema.Usage{InputTokens: u.PromptTokens, OutputTokens: u.CompletionTokens}
 	if u.PromptTokensDetails != nil {
 		out.CacheReadTokens = u.PromptTokensDetails.CachedTokens
 		out.InputTokens -= out.CacheReadTokens
+	}
+	if u.CompletionTokensDetails != nil {
+		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
+		out.OutputTokens -= out.ReasoningTokens
 	}
 	return out
 }

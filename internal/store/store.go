@@ -54,6 +54,7 @@ type UsageRecord struct {
 	OutputTokens     int64
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	ReasoningTokens  int64
 	CostNUSD         int64
 	Estimated        bool
 	Status           int

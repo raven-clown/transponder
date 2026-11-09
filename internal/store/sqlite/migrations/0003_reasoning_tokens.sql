@@ -1,0 +1,1 @@
+ALTER TABLE usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0;

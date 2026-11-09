@@ -3,7 +3,9 @@ package openai
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/raven-clown/transponder/internal/schema"
 )
@@ -107,5 +109,16 @@ func TestParseChatRequest(t *testing.T) {
 	req, err := ParseChatRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
 	if err != nil || req.Model != "m" || req.Messages[0].Content != "hi" {
 		t.Fatalf("ParseChatRequest = %+v, %v", req, err)
+	}
+}
+
+func TestParseUsageReasoning(t *testing.T) {
+	u, ok := ParseUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":60}}}`))
+	if !ok || u.OutputTokens != 40 || u.ReasoningTokens != 60 {
+		t.Fatalf("usage %+v", u)
+	}
+	b, err := EncodeChatResponse(&schema.ChatResponse{Usage: schema.Usage{InputTokens: 10, OutputTokens: 40, ReasoningTokens: 60}}, time.Unix(1, 0))
+	if err != nil || !strings.Contains(string(b), `"completion_tokens":100,"total_tokens":110`) || !strings.Contains(string(b), `"completion_tokens_details":{"reasoning_tokens":60}`) {
+		t.Fatalf("encoded %s %v", b, err)
 	}
 }

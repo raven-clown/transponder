@@ -335,8 +335,9 @@ func (u wireUsage) canonical() schema.Usage {
 	return out
 }
 
+// encodeUsage counts reasoning inside the output, as Anthropic does.
 func encodeUsage(u schema.Usage) wireUsage {
-	return wireUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CacheCreationInputTokens: u.CacheWriteTokens, CacheReadInputTokens: u.CacheReadTokens}
+	return wireUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens + u.ReasoningTokens, CacheCreationInputTokens: u.CacheWriteTokens, CacheReadInputTokens: u.CacheReadTokens}
 }
 
 type wireResponse struct {
