@@ -10,6 +10,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Profiles in the shared mothership format, from the config or a shared `profiles_file`, bound to keys, users and teams, with a `default_profile`: `requests` rate and concurrency, `llm.tokens` rate and daily and monthly allowances, `llm.cost_usd`, and `llm.max_input_tokens`, `llm.max_output_tokens` and `llm.max_reasoning_tokens`. Calls reserve before they run and settle after, and responses carry `RateLimit-Policy` and `RateLimit` headers.
 - Reasoning tokens are counted apart where OpenAI and Gemini report them, priced at the output rate, stored with the usage and sent in `X-Usage-Reasoning-Tokens`.
 - Limit counters are rebuilt from this month's usage at start, so a restart does not reset anyone's spend.
+- llama.cpp server provider (`type: llamacpp`) defaulting to `http://localhost:8080/v1` and forwarding `api_key` as a bearer token. Targets using `llamacpp` count as free in usage costs. Note that `llama-server` listens on `:8080` by default, so pass `--port` or configure `listen_addr` if running both on the same machine.
 
 ### Changed
 

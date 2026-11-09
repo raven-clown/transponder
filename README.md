@@ -28,7 +28,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 - Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Serves `/healthz` (the process is up) and `/readyz` (the store answers) without an API key, for liveness and readiness probes.
-- Sends each call to Anthropic, OpenAI, Gemini or Ollama, and to any OpenAI-compatible server such as vLLM or LM Studio.
+- Sends each call to Anthropic, OpenAI, Gemini or Ollama, and to any OpenAI-compatible server such as vLLM, [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) or LM Studio.
 - Falls back to the next provider when one is down, rate limited or out of credit, and skips a provider that keeps failing for a while.
 - Knows the caller from an OIDC token (Okta, Entra, Keycloak, Zitadel, Google, Auth0 and others) or an API key, and records tokens and cost in USD for every call.
 - Puts a daily or monthly budget on a user, a team or a key, and stops the calls once it is spent.
@@ -123,6 +123,9 @@ providers:
     type: litellm         # http://localhost:4000/v1 unless base_url is set
   - name: vllm
     type: vllm            # http://localhost:8000/v1 unless base_url is set
+  - name: llamacpp
+    type: llamacpp        # http://localhost:8080/v1 unless base_url is set. Note: llama-server listens on :8080 by default, so set base_url (e.g. http://localhost:8081/v1) or pass --port to transponder when running on the same host
+    base_url: http://localhost:8081/v1
   - name: router
     type: openrouter      # https://openrouter.ai/api/v1 unless base_url is set
     api_key: ${OPENROUTER_API_KEY}
