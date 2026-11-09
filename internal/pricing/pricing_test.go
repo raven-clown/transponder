@@ -74,3 +74,14 @@ func TestDefaultLoads(t *testing.T) {
 		}
 	}
 }
+
+func TestCostDoesNotOverflow(t *testing.T) {
+	got, priced := Default().Cost("anthropic", "claude-fable-5-1", schema.Usage{OutputTokens: 1_000_000_000})
+	if !priced || got != 50_000_000_000_000 {
+		t.Fatalf("1e9 output tokens on fable = %d", got)
+	}
+	got, _ = Default().Cost("anthropic", "claude-fable-5-1", schema.Usage{OutputTokens: 1 << 62})
+	if got <= 0 {
+		t.Fatalf("a huge count wrapped to %d", got)
+	}
+}

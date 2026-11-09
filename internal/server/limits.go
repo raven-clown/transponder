@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/schema"
@@ -20,7 +21,10 @@ func (g *gateway) admit(c *call, est limits.Estimate) bool {
 		return true
 	}
 	if !c.resolved.Free {
-		est.CostNUSD, _ = g.d.Prices.Cost(c.resolved.Type, c.resolved.Model, schema.Usage{InputTokens: est.InputTokens, OutputTokens: est.OutputTokens})
+		est.Price = func(in, out int64) int64 {
+			cost, _ := g.d.Prices.Cost(c.resolved.Type, c.resolved.Model, schema.Usage{InputTokens: in, OutputTokens: out})
+			return cost
+		}
 	}
 	t, d := g.d.Limiter.Admit(c.r.Context(), c.caller, est)
 	if d != nil {
@@ -51,6 +55,10 @@ func (c *call) done() {
 
 // recordCall settles the call's reservations to its real usage and stores the usage record.
 func (g *gateway) recordCall(ctx context.Context, c *call) {
+	if c.ticket != nil && c.r.Context().Err() != nil && c.rec.Status >= http.StatusInternalServerError {
+		// The caller left before the answer; the provider may still have done and billed the work.
+		c.ticket.Keep()
+	}
 	if c.ticket != nil {
 		r := c.rec
 		c.ticket.Settle(r.InputTokens+r.CacheReadTokens+r.CacheWriteTokens+r.OutputTokens+r.ReasoningTokens, r.CostNUSD)
@@ -58,24 +66,33 @@ func (g *gateway) recordCall(ctx context.Context, c *call) {
 	g.record(ctx, c.rec)
 }
 
-// requestedMax reads the first of fields that holds a number.
+// requestedMax reads the largest number among fields, since providers disagree on which of
+// max_tokens and max_completion_tokens wins.
 func requestedMax(body []byte, fields ...string) int64 {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(body, &m) != nil {
 		return 0
 	}
+	var out int64
 	for _, f := range fields {
 		var n int64
 		if raw, ok := m[f]; ok && json.Unmarshal(raw, &n) == nil {
-			return n
+			out = max(out, n)
 		}
 	}
-	return 0
+	return out
 }
 
 // capField lowers a numeric field of the JSON object to limit, setting it when missing if
 // setMissing. Bodies that are not objects come back unchanged.
 func capField(m map[string]json.RawMessage, field string, limit int64, setMissing bool) {
+	// Servers written in Go read JSON keys without regard to case, so a Max_Tokens next to
+	// max_tokens could outrank the cap there.
+	for k := range m {
+		if k != field && strings.EqualFold(k, field) {
+			delete(m, k)
+		}
+	}
 	raw, ok := m[field]
 	var n int64
 	if ok && json.Unmarshal(raw, &n) == nil && n <= limit {
@@ -130,44 +147,76 @@ func capAnthropic(body []byte, outLimit, reasoningLimit int64) []byte {
 		if outLimit > 0 {
 			capField(m, "max_tokens", outLimit, true)
 		}
-		if raw, ok := m["thinking"]; ok && reasoningLimit > 0 {
-			m["thinking"] = editJSON(raw, func(t map[string]json.RawMessage) {
-				capField(t, "budget_tokens", reasoningLimit, false)
-			})
+		raw, ok := m["thinking"]
+		if !ok {
+			return
+		}
+		var maxTokens int64
+		_ = json.Unmarshal(m["max_tokens"], &maxTokens)
+		drop := false
+		m["thinking"] = editJSON(raw, func(t map[string]json.RawMessage) {
+			var budget int64
+			if json.Unmarshal(t["budget_tokens"], &budget) != nil {
+				return
+			}
+			// Anthropic wants the thinking budget under max_tokens and at least 1024.
+			limit := budget
+			if reasoningLimit > 0 {
+				limit = min(limit, reasoningLimit)
+			}
+			if maxTokens > 0 {
+				limit = min(limit, maxTokens-1)
+			}
+			if limit < minThinkingBudget {
+				drop = true
+				return
+			}
+			capField(t, "budget_tokens", limit, false)
+		})
+		if drop {
+			delete(m, "thinking")
 		}
 	})
 }
 
-// requestText gathers the text fields of a request body, for estimating its input tokens.
-func requestText(body []byte) string {
+// minThinkingBudget is the smallest extended thinking budget Anthropic accepts.
+const minThinkingBudget = 1024
+
+// estimateInput counts every key and string in a request body, and every number in an array,
+// which is how token-array inputs arrive. Tool schemas, tool arguments and descriptions all reach
+// the model, so they all count. Base64 payloads and signatures do not.
+func estimateInput(body []byte) int64 {
 	var v any
 	if json.Unmarshal(body, &v) != nil {
-		return string(body)
+		return tokens.Estimate(string(body))
 	}
 	var b bytes.Buffer
-	var walk func(any)
-	walk = func(v any) {
+	var numbers int64
+	var walk func(key string, v any)
+	walk = func(key string, v any) {
 		switch x := v.(type) {
 		case map[string]any:
 			for k, val := range x {
-				if s, ok := val.(string); ok && (k == "text" || k == "content" || k == "system" || k == "input") {
-					b.WriteString(s)
-					continue
-				}
-				walk(val)
+				b.WriteString(k)
+				b.WriteByte(' ')
+				walk(k, val)
 			}
 		case []any:
 			for _, val := range x {
-				if s, ok := val.(string); ok {
-					b.WriteString(s)
+				if _, ok := val.(float64); ok {
+					numbers++
 					continue
 				}
-				walk(val)
+				walk(key, val)
 			}
+		case string:
+			if key == "data" || key == "signature" || strings.HasPrefix(x, "data:") {
+				return
+			}
+			b.WriteString(x)
+			b.WriteByte(' ')
 		}
 	}
-	walk(v)
-	return b.String()
+	walk("", v)
+	return tokens.Estimate(b.String()) + numbers
 }
-
-func estimateInput(body []byte) int64 { return tokens.Estimate(requestText(body)) }

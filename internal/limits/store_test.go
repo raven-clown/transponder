@@ -203,3 +203,20 @@ func TestAdjustMovesToANewerWindow(t *testing.T) {
 		t.Fatalf("used %d, want 5", u)
 	}
 }
+
+func TestAddAtTheLimit(t *testing.T) {
+	s := NewMemoryStore()
+	now := time.Now()
+	if r, _ := s.Add(ctx, "k", 10, 10, Day, now); !r.OK {
+		t.Fatal(r)
+	}
+	if r, _ := s.Add(ctx, "k", 0, 10, Day, now); r.OK {
+		t.Fatalf("a zero amount passed a spent limit: %+v", r)
+	}
+}
+
+func TestParseRateTooFast(t *testing.T) {
+	if _, err := ParseRate("2000000000/s"); err == nil {
+		t.Fatal("a rate faster than one per nanosecond was accepted")
+	}
+}

@@ -204,8 +204,9 @@ profile_bindings:
 ```
 
 - `llm.tokens` counts input, output and reasoning tokens together. Reasoning tokens are counted apart where the provider reports them (OpenAI, Gemini) and come back in `X-Usage-Reasoning-Tokens`.
-- A call reserves its estimated input, its output cap and their cost before it runs, and settles to the real usage after. A failed call gives the reservation back.
-- `llm.max_output_tokens` and `llm.max_reasoning_tokens` lower `max_tokens` and Anthropic's thinking budget, never raise them. A prompt over `llm.max_input_tokens` gets 400 `input_too_large`.
+- A call reserves its estimated input, its output limit (4096 tokens when it sets none and no profile cap applies) and their cost before it runs, and settles to the real usage after. A failed call gives the reservation back; a call the client abandons keeps it, since the provider may still bill the work.
+- An exact `user:<id>` budget replaces `user:*` for its own period only, so a larger monthly budget for one user keeps the daily `user:*` cap.
+- `llm.max_output_tokens` and `llm.max_reasoning_tokens` lower `max_tokens` and Anthropic's thinking budget, never raise them. The thinking budget is also kept under `max_tokens`, and dropped when that leaves less than Anthropic's minimum of 1024. A prompt over `llm.max_input_tokens` gets 400 `input_too_large`.
 - A spent budget is 402 `budget_exceeded`, a spent token allowance 402 `quota_exceeded`, a rate 429 `rate_limited` with `Retry-After`, too many calls at once 429 `concurrency_limited`. Responses carry `RateLimit-Policy` and `RateLimit` headers for the rates that apply.
 - Counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation. With several replicas each keeps its own counters until the shared store lands.
 

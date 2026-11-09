@@ -82,6 +82,9 @@ func Parse(data []byte) (*Table, error) {
 	return t, nil
 }
 
+// maxTokens caps each count before pricing; no call comes near it.
+const maxTokens = int64(1) << 40
+
 // Cost returns the cost of u in nano-USD. priced is false when the model has no entry.
 func (t *Table) Cost(typ, model string, u schema.Usage) (nusd int64, priced bool) {
 	p, ok := t.prices[typ+"/"+model]
@@ -92,7 +95,19 @@ func (t *Table) Cost(typ, model string, u schema.Usage) (nusd int64, priced bool
 	if oneHour == 0 {
 		oneHour = p.CacheWrite
 	}
-	sum := u.InputTokens*p.Input + (u.OutputTokens+u.ReasoningTokens)*p.Output + u.CacheReadTokens*p.CacheRead +
-		(u.CacheWriteTokens-u.CacheWrite1hTokens)*p.CacheWrite + u.CacheWrite1hTokens*oneHour
-	return (sum + 500_000) / 1_000_000, true
+	var whole, rest int64
+	for _, term := range [][2]int64{
+		{u.InputTokens, p.Input},
+		{u.OutputTokens + u.ReasoningTokens, p.Output},
+		{u.CacheReadTokens, p.CacheRead},
+		{u.CacheWriteTokens - u.CacheWrite1hTokens, p.CacheWrite},
+		{u.CacheWrite1hTokens, oneHour},
+	} {
+		// Split each count into millions and the rest, so tokens times a price per million
+		// cannot overflow for any count a provider could report.
+		n := min(max(term[0], 0), maxTokens)
+		whole += n / 1_000_000 * term[1]
+		rest += n % 1_000_000 * term[1]
+	}
+	return whole + (rest+500_000)/1_000_000, true
 }

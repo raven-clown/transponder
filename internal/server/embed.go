@@ -24,7 +24,7 @@ func (g *gateway) embeddings(w http.ResponseWriter, r *http.Request) {
 	if !g.resolve(c, peek.Model) {
 		return
 	}
-	if !g.admit(c, limits.Estimate{InputTokens: estimateTokens(embedText(c.body))}) {
+	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), NoOutput: true}) {
 		return
 	}
 	if n, ok := nativeTarget(c, "openai"); ok {

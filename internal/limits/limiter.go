@@ -29,11 +29,19 @@ func (c Caller) subject() string {
 	return "key:" + c.Key
 }
 
+// DefaultOutputReservation is reserved for the output of a call that sets no output limit, when
+// no profile cap applies either.
+const DefaultOutputReservation = 4096
+
 // Estimate is what a call is expected to use, reserved before it runs.
 type Estimate struct {
 	InputTokens  int64
-	OutputTokens int64 // the output cap the call runs with
+	OutputTokens int64 // the output limit the call asks for, per choice; zero when it sets none
+	Choices      int64 // completions asked for; zero means one
+	NoOutput     bool  // embeddings and other calls that produce no tokens
 	CostNUSD     int64
+	// Price, when set, prices the estimate once the output cap is applied, and replaces CostNUSD.
+	Price func(inputTokens, outputTokens int64) int64
 }
 
 // Denied says why a call may not run.
@@ -143,6 +151,15 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 		if p.MaxOutputTokens > 0 && (est.OutputTokens == 0 || est.OutputTokens > p.MaxOutputTokens) {
 			est.OutputTokens = p.MaxOutputTokens
 		}
+	}
+	if est.OutputTokens == 0 && !est.NoOutput {
+		est.OutputTokens = DefaultOutputReservation
+	}
+	est.OutputTokens = clamp(est.OutputTokens * max(min(est.Choices, 128), 1))
+	if est.Price != nil {
+		est.CostNUSD = clamp(est.Price(est.InputTokens, est.OutputTokens))
+	}
+	if hasProfile {
 		if p.Concurrency > 0 {
 			ok, release, _ := l.store.Acquire(ctx, "conc|"+subj, p.Concurrency)
 			if !ok {
@@ -231,16 +248,18 @@ func (t *Ticket) take(ctx context.Context, name, key string, amount int64, r Rat
 
 func (l *Limiter) budgetsFor(c Caller) []Budget {
 	var out []Budget
-	exactUser := false
+	exactUser := map[Window]bool{}
 	for _, b := range l.cfg.Budgets {
 		if c.User != "" && b.Subject == "user:"+c.User {
-			exactUser = true
+			exactUser[b.Window] = true
 		}
 	}
 	for _, b := range l.cfg.Budgets {
 		switch {
 		case b.Subject == "user:*":
-			if c.User != "" && !exactUser {
+			// An exact user rule replaces user:* for its own period only, so raising one user's
+			// monthly budget does not drop their daily one.
+			if c.User != "" && !exactUser[b.Window] {
 				out = append(out, b)
 			}
 		case c.User != "" && b.Subject == "user:"+c.User,
@@ -290,6 +309,14 @@ func (t *Ticket) Settle(tokens, costNUSD int64) {
 			_ = t.l.store.Settle(ctx, r.key, tokens-r.amount, r.rate, t.l.now())
 		}
 	}
+}
+
+// Keep marks the reservation as spent as it stands, for a call whose provider did the work but
+// whose real usage is unknown, such as one the caller abandoned before the answer.
+func (t *Ticket) Keep() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.settled = true
 }
 
 // Release frees the concurrency slot and gives back any reservation that was not settled. It is

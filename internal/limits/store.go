@@ -27,6 +27,9 @@ func ParseRate(s string) (Rate, error) {
 	if !ok || !known || err != nil || n <= 0 {
 		return Rate{}, fmt.Errorf("rate %q must be a positive number per s, m, h or d, such as 60/m", s)
 	}
+	if per/time.Duration(n) == 0 {
+		return Rate{}, fmt.Errorf("rate %q is too fast to count; use at most one per nanosecond", s)
+	}
 	return Rate{N: n, Per: per}, nil
 }
 
@@ -155,7 +158,7 @@ func (s *MemoryStore) Add(_ context.Context, key string, n, limit int64, w Windo
 	c := s.current(key, w, now)
 	r := Result{Used: c.n, Limit: limit, Reset: w.Reset(now)}
 	// Written as a subtraction so a huge n cannot overflow past the check.
-	if n < 0 || n > limit-c.n {
+	if n < 0 || c.n >= limit || n > limit-c.n {
 		return r, nil
 	}
 	c.n += n

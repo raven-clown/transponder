@@ -110,12 +110,12 @@ func TestTokenRate(t *testing.T) {
 	r := Rate{N: 1000, Per: time.Minute}
 	l := limiter(t, Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.TokenRate = &r })}})
 	big := mustAdmit(t, l, alice, Estimate{InputTokens: 100, OutputTokens: 32000})
-	_, d := l.Admit(ctx, alice, Estimate{InputTokens: 10})
+	_, d := l.Admit(ctx, alice, Estimate{InputTokens: 9, OutputTokens: 1})
 	if d == nil || d.Status != 429 || d.Code != "rate_limited" {
 		t.Fatalf("denial %+v", d)
 	}
 	big.Settle(200, 0)
-	mustAdmit(t, l, alice, Estimate{InputTokens: 10})
+	mustAdmit(t, l, alice, Estimate{InputTokens: 9, OutputTokens: 1})
 }
 
 func TestBudgets(t *testing.T) {
@@ -149,10 +149,10 @@ func TestDeniedRollsBack(t *testing.T) {
 		Profiles:       []Profile{profile("p", func(p *Profile) { p.TokensPerDay, p.Concurrency = 1000, 1 })},
 		Budgets:        []Budget{{Subject: "user:*", Window: Day, LimitNUSD: 10}},
 	})
-	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 900, CostNUSD: 11}); d == nil || d.Code != "budget_exceeded" {
+	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 899, OutputTokens: 1, CostNUSD: 11}); d == nil || d.Code != "budget_exceeded" {
 		t.Fatalf("denial %+v", d)
 	}
-	mustAdmit(t, l, alice, Estimate{InputTokens: 1000, CostNUSD: 10})
+	mustAdmit(t, l, alice, Estimate{InputTokens: 999, OutputTokens: 1, CostNUSD: 10})
 }
 
 func TestProfilePrecedence(t *testing.T) {
@@ -195,7 +195,7 @@ func TestSeed(t *testing.T) {
 	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 20}); d == nil || d.Code != "quota_exceeded" {
 		t.Fatalf("token denial %+v", d)
 	}
-	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 5, CostNUSD: 6}); d == nil || d.Subject != "team:platform" {
+	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 4, OutputTokens: 1, CostNUSD: 6}); d == nil || d.Subject != "team:platform" {
 		t.Fatalf("budget denial %+v", d)
 	}
 }
@@ -204,5 +204,44 @@ func TestNilTicketCaps(t *testing.T) {
 	var tk *Ticket
 	if out, r := tk.Caps(); out != 0 || r != 0 {
 		t.Fatal("nil ticket has caps")
+	}
+}
+
+func TestCostPricedAfterTheCap(t *testing.T) {
+	cfg := Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.MaxOutputTokens, p.USDPerMonth = 1000, 1_000_000_000 })}}
+	l := limiter(t, cfg)
+	price := func(in, out int64) int64 { return out * 10_000 }
+	tk := mustAdmit(t, l, alice, Estimate{OutputTokens: 200000, Price: price})
+	tk.Release()
+	if _, d := l.Admit(ctx, alice, Estimate{OutputTokens: 1 << 62, Price: price}); d != nil {
+		t.Fatalf("huge max_tokens with a cap denied: %+v", d)
+	}
+}
+
+func TestDefaultOutputReservation(t *testing.T) {
+	l := limiter(t, Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.TokensPerDay = DefaultOutputReservation + 100 })}})
+	mustAdmit(t, l, alice, Estimate{InputTokens: 10})
+	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 10}); d == nil {
+		t.Fatal("calls with no max_tokens reserved no output")
+	}
+}
+
+func TestExactUserReplacesPerWindow(t *testing.T) {
+	l := limiter(t, Config{Budgets: []Budget{
+		{Subject: "user:*", Window: Day, LimitNUSD: 1_000_000_000},
+		{Subject: "user:alice", Window: Month, LimitNUSD: 100_000_000_000},
+	}})
+	if _, d := l.Admit(ctx, alice, Estimate{CostNUSD: 50_000_000_000}); d == nil || d.Subject != "user:alice" {
+		t.Fatalf("the daily user:* cap was dropped: %+v", d)
+	}
+}
+
+func TestKeep(t *testing.T) {
+	l := limiter(t, Config{DefaultProfile: "p", Profiles: []Profile{profile("p", func(p *Profile) { p.TokensPerDay = 1000 })}})
+	tk := mustAdmit(t, l, alice, Estimate{InputTokens: 599, OutputTokens: 1})
+	tk.Keep()
+	tk.Release()
+	if _, d := l.Admit(ctx, alice, Estimate{InputTokens: 599, OutputTokens: 1}); d == nil {
+		t.Fatal("a kept reservation was given back")
 	}
 }
