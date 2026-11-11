@@ -242,6 +242,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "m", provider: "l", typ: "llamacpp", upstream: "m",
 		},
+		{
+			name: "xai route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "x", Type: "xai", APIKey: "xai-test"}},
+				Routes:    []config.Route{{Match: "grok-*", Targets: []config.Target{{Provider: "x"}}}},
+			},
+			model: "grok-4.7", provider: "x", typ: "xai", upstream: "grok-4.7",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -304,6 +312,42 @@ func TestBuildRouterVLLMDefault(t *testing.T) {
 	got, _ := r.Resolve("x")
 	a, ok := got.Provider.(interface{ BaseURL() string })
 	if !ok || a.BaseURL() != "http://localhost:8000/v1" {
+		t.Fatalf("provider %T", got.Provider)
+	}
+}
+
+func TestBuildRouterXAIDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "xai", Type: "xai", APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "xai"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("grok-4.7")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok {
+		t.Fatalf("provider %T", got.Provider)
+	}
+	if a.BaseURL() != "https://api.x.ai/v1" || got.Free {
+		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}
+
+func TestBuildRouterXAIBaseURLOverride(t *testing.T) {
+	const custom = "https://us.api.x.ai/v1"
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "xai", Type: "xai", BaseURL: custom, APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "xai"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("grok-4.7")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != custom {
 		t.Fatalf("provider %T", got.Provider)
 	}
 }

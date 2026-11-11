@@ -17,6 +17,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/provider/openrouter"
 	"github.com/raven-clown/transponder/internal/provider/vllm"
+	"github.com/raven-clown/transponder/internal/provider/xai"
 )
 
 // Settings are the values a provider is built from.
@@ -57,6 +58,9 @@ var specs = []Spec{
 	}},
 	{Type: "openrouter", New: func(s Settings) provider.Provider {
 		return openrouter.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "xai", New: func(s Settings) provider.Provider {
+		return xai.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 	{Type: "vllm", Free: true, New: func(s Settings) provider.Provider {
 		return vllm.New(s.Name, s.BaseURL, s.APIKey, s.Client)

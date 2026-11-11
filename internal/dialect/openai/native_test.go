@@ -113,10 +113,26 @@ func TestParseChatRequest(t *testing.T) {
 }
 
 func TestParseUsageReasoning(t *testing.T) {
-	u, ok := ParseUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":60}}}`))
+	u, ok := ParseUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110,"completion_tokens_details":{"reasoning_tokens":60}}}`))
 	if !ok || u.OutputTokens != 40 || u.ReasoningTokens != 60 {
 		t.Fatalf("usage %+v", u)
 	}
+	// Documented xAI chat completion: reasoning is not inside completion_tokens.
+	// https://docs.x.ai/developers/advanced-api-usage/deferred-chat-completions
+	xai := []byte(`{"id":"3f4ddfca-b997-3bd4-80d4-8112278a1508","choices":[{"message":{"role":"assistant","content":"42"},"finish_reason":"stop"}],"usage":{"prompt_tokens":26,"completion_tokens":168,"total_tokens":498,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":304}}}`)
+	u, ok = ParseUsage(xai)
+	if !ok || u.InputTokens != 22 || u.CacheReadTokens != 4 || u.OutputTokens != 168 || u.ReasoningTokens != 304 {
+		t.Fatalf("xai native usage %+v", u)
+	}
+	resp, err := DecodeChatResponse(xai)
+	if err != nil || resp.Usage.InputTokens != 22 || resp.Usage.CacheReadTokens != 4 || resp.Usage.OutputTokens != 168 || resp.Usage.ReasoningTokens != 304 {
+		t.Fatalf("xai translated usage %+v %v", resp, err)
+	}
+	cu, cok, _ := ChunkUsage(xai)
+	if !cok || cu != u {
+		t.Fatalf("xai chunk usage %+v", cu)
+	}
+
 	b, err := EncodeChatResponse(&schema.ChatResponse{Usage: schema.Usage{InputTokens: 10, OutputTokens: 40, ReasoningTokens: 60}}, time.Unix(1, 0))
 	if err != nil || !strings.Contains(string(b), `"completion_tokens":100,"total_tokens":110`) || !strings.Contains(string(b), `"completion_tokens_details":{"reasoning_tokens":60}`) {
 		t.Fatalf("encoded %s %v", b, err)

@@ -134,6 +134,36 @@ func TestLoadRejects(t *testing.T) {
 	}
 }
 
+func TestLoadXAI(t *testing.T) {
+	p := writeFile(t, `providers:
+  - name: xai
+    type: xai
+    api_key: ${XAI_API_KEY}
+  - name: us
+    type: xai
+    api_key: ${XAI_API_KEY}
+    base_url: https://us.api.x.ai/v1
+routes:
+  - match: "grok-*"
+    targets:
+      - provider: xai
+  - match: "us-*"
+    targets:
+      - provider: us
+`)
+	c, err := Load(p, []string{"XAI_API_KEY=xai-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Provider{
+		{Name: "xai", Type: "xai", APIKey: "xai-test"},
+		{Name: "us", Type: "xai", BaseURL: "https://us.api.x.ai/v1", APIKey: "xai-test"},
+	}
+	if !reflect.DeepEqual(c.Providers, want) {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+}
+
 func TestLoadProvidersAndRoutes(t *testing.T) {
 	p := writeFile(t, `providers:
   - name: openai
