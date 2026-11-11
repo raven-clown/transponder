@@ -99,6 +99,7 @@ func RewriteRequest(body []byte, model string, forceUsage bool) ([]byte, error) 
 type wireUsageIn struct {
 	PromptTokens        int64 `json:"prompt_tokens"`
 	CompletionTokens    int64 `json:"completion_tokens"`
+	TotalTokens         int64 `json:"total_tokens"`
 	PromptTokensDetails *struct {
 		CachedTokens int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
@@ -107,7 +108,9 @@ type wireUsageIn struct {
 	} `json:"completion_tokens_details"`
 }
 
-// canonical splits cached input out of prompt tokens and reasoning out of completion tokens.
+// canonical splits cached input out of prompt tokens. OpenAI includes reasoning in
+// completion tokens, so those are split out too. xAI reports reasoning apart: its
+// total_tokens is prompt + completion + reasoning, and subtracting would drop them.
 func (u *wireUsageIn) canonical() schema.Usage {
 	out := schema.Usage{InputTokens: u.PromptTokens, OutputTokens: u.CompletionTokens}
 	if u.PromptTokensDetails != nil {
@@ -116,9 +119,20 @@ func (u *wireUsageIn) canonical() schema.Usage {
 	}
 	if u.CompletionTokensDetails != nil {
 		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
-		out.OutputTokens -= out.ReasoningTokens
+		if !u.reasoningApart() {
+			out.OutputTokens -= out.ReasoningTokens
+		}
 	}
 	return out
+}
+
+// reasoningApart is true when reasoning tokens are not already inside completion tokens.
+func (u *wireUsageIn) reasoningApart() bool {
+	if u.CompletionTokensDetails == nil || u.TotalTokens == 0 {
+		return false
+	}
+	r := u.CompletionTokensDetails.ReasoningTokens
+	return r > 0 && u.TotalTokens == u.PromptTokens+u.CompletionTokens+r
 }
 
 // ParseUsage reads the usage object of a chat completion or embeddings response.

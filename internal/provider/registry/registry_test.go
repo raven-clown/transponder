@@ -18,6 +18,7 @@ func TestLookup(t *testing.T) {
 		{typ: "litellm"},
 		{typ: "cloudflare", needsBaseURL: true},
 		{typ: "openrouter"},
+		{typ: "xai"},
 		{typ: "anthropic"},
 		{typ: "gemini"},
 		{typ: "vllm", free: true},
