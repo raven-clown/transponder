@@ -145,6 +145,10 @@ type Settings struct {
 	AttemptTimeout time.Duration `yaml:"attempt_timeout"`
 	// RequestTimeout bounds a whole call, streaming included.
 	RequestTimeout time.Duration `yaml:"request_timeout"`
+	// CooldownFailures is how many failures in a row put a target last in its routes.
+	CooldownFailures int `yaml:"cooldown_failures"`
+	// Cooldown is how long such a target stays last.
+	Cooldown time.Duration `yaml:"cooldown"`
 }
 
 // Provider is one backend declared in the file.
@@ -226,6 +230,12 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 	if c.Settings.RequestTimeout == 0 {
 		c.Settings.RequestTimeout = 10 * time.Minute
 	}
+	if c.Settings.CooldownFailures == 0 {
+		c.Settings.CooldownFailures = 3
+	}
+	if c.Settings.Cooldown == 0 {
+		c.Settings.Cooldown = 30 * time.Second
+	}
 	return c, c.validate()
 }
 
@@ -255,6 +265,12 @@ func (c *Bootstrap) validate() error {
 	}
 	if c.Settings.AttemptTimeout < 0 {
 		return fmt.Errorf("config: settings.attempt_timeout %s must be positive", c.Settings.AttemptTimeout)
+	}
+	if c.Settings.CooldownFailures < 0 {
+		return fmt.Errorf("config: settings.cooldown_failures %d must be positive", c.Settings.CooldownFailures)
+	}
+	if c.Settings.Cooldown < 0 {
+		return fmt.Errorf("config: settings.cooldown %s must be positive", c.Settings.Cooldown)
 	}
 	if c.Settings.RequestTimeout < 0 {
 		return fmt.Errorf("config: settings.request_timeout %s must be positive", c.Settings.RequestTimeout)

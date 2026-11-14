@@ -39,6 +39,10 @@ func TestLoadSettings(t *testing.T) {
 	if c.Settings.AttemptTimeout != 7*time.Second || c.Settings.RequestTimeout != time.Minute {
 		t.Fatalf("settings %+v", c.Settings)
 	}
+	c, err = Load(writeFile(t, "settings:\n  cooldown_failures: 5\n  cooldown: 2m\n"), nil)
+	if err != nil || c.Settings.CooldownFailures != 5 || c.Settings.Cooldown != 2*time.Minute {
+		t.Fatalf("cooldown settings %+v, %v", c.Settings, err)
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -61,7 +65,7 @@ log_level: debug
 		SecretsKey: "abc",
 		OTel:       OTel{Endpoint: "http://otel:4318"},
 		LogLevel:   "debug",
-		Settings:   Settings{AttemptTimeout: time.Minute, RequestTimeout: 10 * time.Minute},
+		Settings:   Settings{AttemptTimeout: time.Minute, RequestTimeout: 10 * time.Minute, CooldownFailures: 3, Cooldown: 30 * time.Second},
 	}
 	if !reflect.DeepEqual(*c, want) {
 		t.Fatalf("got %+v, want %+v", *c, want)
@@ -108,6 +112,8 @@ func TestLoadRejects(t *testing.T) {
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
+		{name: "negative cooldown", body: "settings:\n  cooldown: -1s\n", want: "cooldown"},
+		{name: "negative cooldown failures", body: "settings:\n  cooldown_failures: -1\n", want: "cooldown_failures"},
 		{name: "negative attempt timeout", body: "settings:\n  attempt_timeout: -1s\n", want: "attempt_timeout"},
 		{name: "request timeout not a duration", body: "settings:\n  request_timeout: soon\n", want: "`soon`"},
 		{name: "unknown type lists the known ones", body: "providers:\n  - {name: b, type: bedrock}\n", want: "known types are anthropic, cloudflare, echo, gemini"},
