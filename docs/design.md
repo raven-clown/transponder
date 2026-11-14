@@ -238,7 +238,7 @@ routes:
 
 A target is retried on the next one when the call fails with a connection error, a timeout, 408, 429, any 5xx, Anthropic's 529, or 401 and 403 from the upstream (that means transponder's provider key is bad, which is not the caller's fault). It is not retried on other 4xx: a bad request stays bad on every provider.
 
-Cooldown: after 3 failures in a row a target is skipped for 30 seconds. Both numbers are runtime settings. A target in cooldown is still tried when it is the only one left. Cooldown state is kept per replica in memory; it is a short-lived signal and sharing it is not worth a round trip. There is no retry of the same target in v1; fallback is the retry.
+Cooldown: after 3 failures in a row a target is put last in its routes for 30 seconds (`settings.cooldown_failures` and `settings.cooldown`). It is still tried once every other target has failed, and one more failure after the cooldown starts it again. A success clears it. A stream that breaks after its first byte cannot fall back but counts as a failure; a caller who leaves, a request the provider rejects as wrong and a target that cannot take the request do not. The state is keyed by provider and upstream model. Cooldown state is kept per replica in memory; it is a short-lived signal and sharing it is not worth a round trip. There is no retry of the same target in v1; fallback is the retry.
 
 Streaming: transponder reads the upstream until its first event before writing anything to the client. A failure before that point falls back like any other call. After the first byte is sent the target is committed, and a later failure ends the stream with an error event in the caller's dialect.
 
@@ -473,6 +473,6 @@ Next, one release per plan:
 
 | Version | What it adds |
 |---|---|
-| v0.2.4 | Fallback with a cooldown for targets that keep failing |
+| v0.2.4 | Fallback with a cooldown for targets that keep failing, and `GET /v1/usage` |
 
 After v0.2.4, in this order, versions to be set: OIDC and the three roles, the admin API and audit log, Postgres and several replicas, then the five-minute demo, which together make v1.
