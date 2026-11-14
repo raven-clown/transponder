@@ -575,3 +575,23 @@ func TestBuildLimiterSeedsFromUsage(t *testing.T) {
 		t.Fatalf("limiter without limits %v, %v", none, err)
 	}
 }
+
+func TestBuildRouterCooldownSettings(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "a", Type: "echo"}, {Name: "b", Type: "echo"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "a"}, {Provider: "b"}}}},
+		Settings:  config.Settings{CooldownFailures: 1, Cooldown: time.Hour},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := r.Plan("m")
+	if len(p.Targets) != 2 || p.Targets[0].Provider.Name() != "a" {
+		t.Fatalf("plan %+v", p)
+	}
+	r.Report(p.Targets[0], false)
+	if p, _ = r.Plan("m"); p.Targets[0].Provider.Name() != "b" {
+		t.Fatalf("one failure did not cool the target with cooldown_failures 1: %+v", p)
+	}
+}

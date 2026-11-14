@@ -6,6 +6,22 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
+- Fallback: a route's targets are tried in order, and the next one takes over when a target is unreachable, times out, answers 408, 429, a 5xx or 529, rejects the gateway's key, fails a stream before its first event, or cannot take the request. A request the provider rejects as wrong is not retried elsewhere, and nothing falls back once a byte has reached the caller.
+- Cooldown: after `settings.cooldown_failures` (3) failures in a row a target is tried last for `settings.cooldown` (30s).
+- `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` on routed responses, and `fallbacks` in the usage record.
+- `GET /v1/usage` shows the caller what they have used and have left of each budget and token allowance that applies to them.
+
+### Changed
+
+- With limits on, a call reserves the price of its route's dearest target instead of the first one, so a free first target cannot let calls through that a paid fallback would bill.
+- `POST /v1/messages/count_tokens` goes to the first Anthropic target of the route, wherever it is in the list.
+
+### Fixed
+
+- A tool call id made by Gemini is shortened to one OpenAI accepts when a later turn of the conversation goes to an OpenAI target.
+
+### Added
+
 - xAI (Grok) provider (`type: xai`) defaulting to `https://api.x.ai/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default.
 - xAI reasoning tokens are counted apart from completion tokens, as in its chat completion usage, and priced at the output rate.
 - Prices for grok-4.7, grok-4.6, grok-4.5 and grok-4.3, using the rate for a prompt under 200k tokens on the global endpoint. Longer prompts, and the US endpoint, cost more than these rates.

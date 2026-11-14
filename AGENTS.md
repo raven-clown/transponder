@@ -38,7 +38,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic`, `internal/dialect/gemini`: each wire format to and from the canonical types, in both directions, with usage parsing
 - `internal/sse`: server-sent event reading and writing shared by the dialects
-- `internal/router`: routes and target choice; access, fallback and cooldown are planned
+- `internal/router`: routes, the plan of targets for a call and the cooldown of failing ones; access per route is planned
 - `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
 - `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it
 - `internal/store`, `internal/store/sqlite`: store interfaces, SQLite with embedded migrations in `internal/store/sqlite/migrations`

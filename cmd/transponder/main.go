@@ -217,7 +217,11 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 		}
 		routes = append(routes, rt)
 	}
-	return router.New(routes), nil
+	r := router.New(routes)
+	if cfg.Settings.CooldownFailures > 0 && cfg.Settings.Cooldown > 0 {
+		r.SetCooldown(cfg.Settings.CooldownFailures, cfg.Settings.Cooldown, time.Now)
+	}
+	return r, nil
 }
 
 // buildLimiter returns the limiter for the profiles and budgets in cfg, with this month's usage

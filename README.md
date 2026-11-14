@@ -175,6 +175,32 @@ curl localhost:8080/v1/chat/completions \
 
 Routes are tried in order and the first match wins.
 
+### Fallback
+
+A route can list several targets. They are tried in order, and the first that answers serves the call:
+
+```yaml
+routes:
+  - match: "claude-*"
+    targets:
+      - provider: claude
+      - provider: openai
+        model: gpt-5
+      - provider: local
+        model: qwen3:8b
+settings:
+  cooldown_failures: 3   # failures in a row before a target goes last
+  cooldown: 30s          # for how long
+```
+
+- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image going to a provider the translation does not cover.
+- A request the provider rejects as wrong (any other 4xx) is not sent elsewhere. Nor is anything retried once the first byte has reached the caller, after the caller has gone, or past `request_timeout`. The same target is never tried twice in one call.
+- After three failures in a row a target is put last for 30 seconds, so calls stop waiting on it. It is still tried when every other target has failed. This is kept per process, by provider and upstream model.
+- A call that is not streamed has no timeout of its own per target, so a target that hangs holds it until `request_timeout`. Streams move on after `attempt_timeout`.
+- `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` say which target answered and how many were tried before it. The usage record has the same.
+- With limits on, a call reserves the price of the route's dearest target and settles at what the answering target cost.
+- `POST /v1/messages/count_tokens` goes to the first Anthropic target of the route.
+
 ### Claude Code
 
 Point Claude Code at transponder with a transponder API key:
@@ -185,7 +211,7 @@ ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY c
 
 `/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools included, though features only Anthropic has, such as its server tools and images, are refused on those routes.
 
-Fallback to the next target and the admin API are on the roadmap below.
+The admin API is on the roadmap below.
 
 ### Limits
 
@@ -223,6 +249,7 @@ profile_bindings:
 - An exact `user:<id>` budget replaces `user:*` for its own period only, so a larger monthly budget for one user keeps the daily `user:*` cap.
 - `llm.max_output_tokens` lowers `max_tokens` or `max_completion_tokens`, never raises them. `llm.max_reasoning_tokens` lowers Anthropic's thinking budget, which is also kept under `max_tokens` and dropped when that leaves less than Anthropic's minimum of 1024. OpenAI and Gemini chat requests get no separate reasoning cap; for OpenAI, `max_completion_tokens` bounds reasoning and output together. A prompt over `llm.max_input_tokens` gets 400 `input_too_large`.
 - A spent budget is 402 `budget_exceeded`, a spent token allowance 402 `quota_exceeded`, a rate 429 `rate_limited` with `Retry-After`, too many calls at once 429 `concurrency_limited`. OpenAI-dialect callers get these as `error.code`; Anthropic-dialect callers get Anthropic's `error.type` (`billing_error`, `rate_limit_error`, `invalid_request_error`) with the same code in `error.code`. Responses carry `RateLimit-Policy` and `RateLimit` headers for the rates that apply.
+- `GET /v1/usage` shows the caller each budget and token allowance that applies to them: the limit, what is used (calls in flight count at what they reserved), what is left and when it resets.
 - Counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's recorded spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation, and by kept reservations lost in a restart. With several replicas each keeps its own counters until the shared store lands.
 
 ## Roadmap
@@ -234,8 +261,8 @@ Each milestone ships as a release when it lands:
 3. Released in v0.2.0. Provider registry, split timeouts, `GET /v1/models`
 4. Released in v0.2.2. Anthropic API in and out, the Gemini adapter, translation between dialects, Claude Code working
 5. Released in v0.2.3. Budgets, token limits and request limits
-6. Fallback with a cooldown, access per route (v0.2.4)
-7. OIDC and roles, the admin API with OpenAPI and an audit log, Postgres and several replicas
+6. Released in v0.2.4. Fallback across targets with a cooldown, `GET /v1/usage`
+7. Access per route, OIDC and roles, the admin API with OpenAPI and an audit log, Postgres and several replicas
 8. Metrics, tracing and a five-minute demo
 
 After that: the OpenAI Responses API, a shared counter store for several replicas, organisations, Bedrock and Vertex, and caching.
