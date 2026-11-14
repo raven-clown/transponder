@@ -39,39 +39,38 @@ func (g *gateway) messages(w http.ResponseWriter, r *http.Request) {
 	if out, reasoning := c.ticket.Caps(); out > 0 || reasoning > 0 {
 		c.body = capAnthropic(c.body, out, reasoning)
 	}
-	n, native := nativeTarget(c, "anthropic")
-	switch {
-	case peek.Stream && native:
-		g.messagesStreamNative(c, n)
-	case peek.Stream:
-		g.messagesStreamTranslated(c)
-	case native:
-		g.messagesNative(c, n)
-	default:
-		g.messagesTranslated(c)
-	}
+	g.run(c, func() error {
+		n, native := nativeTarget(c, "anthropic")
+		switch {
+		case peek.Stream && native:
+			return g.messagesStreamNative(c, n)
+		case peek.Stream:
+			return g.messagesStreamTranslated(c)
+		case native:
+			return g.messagesNative(c, n)
+		default:
+			return g.messagesTranslated(c)
+		}
+	})
 }
 
 func writeAnthropicRequestError(w http.ResponseWriter, err error) {
 	writeAnthropicError(w, http.StatusBadRequest, "", "", "", err.Error())
 }
 
-func (g *gateway) messagesNative(c *call, n provider.Native) {
+func (g *gateway) messagesNative(c *call, n provider.Native) error {
 	body, err := openai.RewriteRequest(c.body, c.resolved.Model, false)
 	if err != nil {
-		writeAnthropicRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	resp, err := n.Native(c.r.Context(), &provider.NativeCall{Path: "/messages", Body: body, Header: c.r.Header})
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out, err := readUpstream(resp)
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	u, ok := anthropic.ParseUsage(out)
 	if !ok {
@@ -86,25 +85,24 @@ func (g *gateway) messagesNative(c *call, n provider.Native) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(resp.StatusCode)
 	_, _ = c.w.Write(out) //nolint:gosec // the provider's JSON, served as application/json
+	return nil
 }
 
-func (g *gateway) messagesTranslated(c *call) {
+func (g *gateway) messagesTranslated(c *call) error {
 	req, err := anthropic.DecodeRequest(c.body)
 	if err != nil {
-		writeAnthropicRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	req.Model = c.resolved.Model
 	req.Stream = false
 	resp, err := c.resolved.Provider.Chat(upstreamContext(c), req)
 	if err != nil {
-		g.upstreamFailed(c, err, false)
-		return
+		return failed(err, false)
 	}
 	body, err := anthropic.EncodeResponse(resp)
 	if err != nil {
 		writeAnthropicError(c.w, http.StatusInternalServerError, "", "", "", "could not encode the response")
-		return
+		return nil //nolint:nilerr // the 500 above is the answer
 	}
 	cost := g.price(c.r.Context(), c, resp.Usage)
 	c.rec.Status = http.StatusOK
@@ -114,22 +112,21 @@ func (g *gateway) messagesTranslated(c *call) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
+	return nil
 }
 
 // messagesStreamNative copies an Anthropic stream frame by frame, event names included, and
 // reads the usage on the way.
-func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
+func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 	body, err := openai.RewriteRequest(c.body, c.resolved.Model, false)
 	if err != nil {
-		writeAnthropicRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	ctx, started, cancel := g.attempt(c.r.Context())
 	defer cancel()
 	resp, err := n.Native(ctx, &provider.NativeCall{Path: "/messages", Body: body, Header: c.r.Header})
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	rd := sse.NewReader(resp.Body)
@@ -138,8 +135,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 		err = errAttemptTimeout
 	}
 	if err != nil {
-		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
-		return
+		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -177,14 +173,14 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) {
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
 	g.recordCall(ctx, c)
+	return nil
 }
 
 // messagesStreamTranslated streams from a provider of another dialect as Anthropic events.
-func (g *gateway) messagesStreamTranslated(c *call) {
+func (g *gateway) messagesStreamTranslated(c *call) error {
 	req, err := anthropic.DecodeRequest(c.body)
 	if err != nil {
-		writeAnthropicRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	req.Model = c.resolved.Model
 	req.Stream = true
@@ -192,8 +188,7 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 	defer cancel()
 	st, err := c.resolved.Provider.ChatStream(ctx, req)
 	if err != nil {
-		g.upstreamFailed(c, err, false)
-		return
+		return failed(err, false)
 	}
 	defer func() { _ = st.Close() }()
 	ev, err := st.Recv()
@@ -201,8 +196,7 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 		err = errAttemptTimeout
 	}
 	if err != nil {
-		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
-		return
+		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -239,6 +233,7 @@ func (g *gateway) messagesStreamTranslated(c *call) {
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
 	g.recordCall(ctx, c)
+	return nil
 }
 
 // countTokens forwards a token count to the route's Anthropic target. Other providers have no
@@ -256,7 +251,15 @@ func (g *gateway) countTokens(w http.ResponseWriter, r *http.Request) {
 	if !g.resolve(c, peek.Model) {
 		return
 	}
-	n, native := nativeTarget(c, "anthropic")
+	// Counting goes to the first target of the route that speaks Anthropic.
+	var n provider.Native
+	native := false
+	for _, t := range c.plan.Targets {
+		g.use(c, t, 0)
+		if n, native = nativeTarget(c, "anthropic"); native {
+			break
+		}
+	}
 	if !native {
 		writeAnthropicError(w, http.StatusNotFound, "", "", "", "the route for "+peek.Model+" has no Anthropic target, so it cannot count tokens")
 		return

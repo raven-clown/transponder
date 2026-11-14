@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/tokens"
 )
@@ -18,6 +19,88 @@ func nativeTarget(c *call, dialect string) (provider.Native, bool) {
 	}
 	n, ok := c.resolved.Provider.(provider.Native)
 	return n, ok
+}
+
+// attemptError says an attempt on one target failed before anything was written to the caller.
+type attemptError struct {
+	err error
+	// same means the target speaks the caller's dialect, so its error body can be passed on.
+	same bool
+	// input means the target cannot take this request; nothing was sent to it.
+	input bool
+}
+
+func (e *attemptError) Error() string { return e.err.Error() }
+func (e *attemptError) Unwrap() error { return e.err }
+
+// failed reports a provider call that did not answer.
+func failed(err error, same bool) error {
+	return &attemptError{err: err, same: same, input: errors.Is(err, provider.ErrUnsupported)}
+}
+
+// badInput reports a request this target cannot take as it is.
+func badInput(err error) error { return &attemptError{err: err, input: true} }
+
+// retryable reports whether another target may succeed where this one failed.
+func retryable(err error) bool {
+	var pe *provider.Error
+	if errors.As(err, &pe) {
+		return pe.Retryable
+	}
+	return !errors.Is(err, errUpstreamTooLarge)
+}
+
+// run tries the plan's targets in order until one answers. attempt returns nil once it has
+// written a response, and an error when its target failed before anything reached the caller.
+// It stops at the first error another provider would not fix: the caller's own bad request, a
+// caller who has left, or a request past its deadline.
+func (g *gateway) run(c *call, attempt func() error) {
+	ctx := c.r.Context()
+	var upstream, input *attemptError
+	for i, t := range c.plan.Targets {
+		g.use(c, t, i)
+		err := attempt()
+		if err == nil {
+			g.d.Router.Report(t, true)
+			return
+		}
+		var ae *attemptError
+		if !errors.As(err, &ae) {
+			ae = &attemptError{err: err}
+		}
+		if ae.input {
+			input = ae
+			continue
+		}
+		upstream = ae
+		if ctx.Err() != nil || !retryable(ae.err) {
+			break
+		}
+		g.d.Router.Report(t, false)
+		if i < len(c.plan.Targets)-1 {
+			g.d.Logger.WarnContext(ctx, "falling back", "route", c.plan.Route, "provider", c.rec.Provider, "model", t.Model, "err", ae.err)
+		}
+	}
+	switch {
+	case upstream != nil:
+		// An outage outranks a target that could not take the request.
+		g.upstreamFailed(c, upstream.err, upstream.same)
+	case input != nil:
+		g.rejected(c, input.err)
+	}
+}
+
+// rejected answers a request no target of the route can take.
+func (g *gateway) rejected(c *call, err error) {
+	var bad *openai.RequestError
+	switch {
+	case errors.Is(err, provider.ErrUnsupported):
+		g.upstreamFailed(c, err, false)
+	case errors.As(err, &bad):
+		c.fail(c.w, http.StatusBadRequest, "invalid_request_error", bad.Code, bad.Param, bad.Message)
+	default:
+		c.fail(c.w, http.StatusBadRequest, "invalid_request_error", "", "", err.Error())
+	}
 }
 
 // upstreamFailed answers a failed provider call and records it. A bad request from an upstream of

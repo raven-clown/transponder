@@ -31,38 +31,41 @@ func (g *gateway) chat(w http.ResponseWriter, r *http.Request) {
 	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_completion_tokens", "max_tokens"), Choices: requestedMax(c.body, "n")}) {
 		return
 	}
-	if out, _ := c.ticket.Caps(); out > 0 {
-		c.body = capOpenAI(c.body, c.resolved.Type, out)
-	}
-	n, native := nativeTarget(c, "openai")
-	switch {
-	case peek.Stream && native:
-		g.chatStreamNative(c, n, peek.IncludeUsage)
-	case peek.Stream:
-		g.chatStreamCanonical(c, peek.IncludeUsage)
-	case native:
-		g.chatNative(c, n)
-	default:
-		g.chatCanonical(c)
-	}
+	out, _ := c.ticket.Caps()
+	orig := c.body
+	g.run(c, func() error {
+		// The cap is written per target, since OpenAI and its look-alikes name the field differently.
+		c.body = orig
+		if out > 0 {
+			c.body = capOpenAI(orig, c.resolved.Type, out)
+		}
+		n, native := nativeTarget(c, "openai")
+		switch {
+		case peek.Stream && native:
+			return g.chatStreamNative(c, n, peek.IncludeUsage)
+		case peek.Stream:
+			return g.chatStreamCanonical(c, peek.IncludeUsage)
+		case native:
+			return g.chatNative(c, n)
+		default:
+			return g.chatCanonical(c)
+		}
+	})
 }
 
-func (g *gateway) chatNative(c *call, n provider.Native) {
+func (g *gateway) chatNative(c *call, n provider.Native) error {
 	body, err := openai.RewriteRequest(c.body, c.resolved.Model, false)
 	if err != nil {
-		writeRequestError(c.w, &openai.RequestError{Code: "invalid_json", Message: err.Error()})
-		return
+		return badInput(&openai.RequestError{Code: "invalid_json", Message: err.Error()})
 	}
 	resp, err := n.Native(c.r.Context(), &provider.NativeCall{Path: "/chat/completions", Body: body, Header: c.r.Header})
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out, err := readUpstream(resp)
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	u, ok := openai.ParseUsage(out)
 	if !ok {
@@ -77,24 +80,23 @@ func (g *gateway) chatNative(c *call, n provider.Native) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(resp.StatusCode)
 	_, _ = c.w.Write(out)
+	return nil
 }
 
-func (g *gateway) chatCanonical(c *call) {
+func (g *gateway) chatCanonical(c *call) error {
 	req, err := openai.ParseChatRequest(c.body)
 	if err != nil {
-		writeRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	req.Model = c.resolved.Model
 	resp, err := c.resolved.Provider.Chat(upstreamContext(c), req)
 	if err != nil {
-		g.upstreamFailed(c, err, false)
-		return
+		return failed(err, false)
 	}
 	body, err := openai.EncodeChatResponse(resp, c.rec.Time)
 	if err != nil {
 		writeError(c.w, http.StatusInternalServerError, "api_error", "", "", "could not encode the response")
-		return
+		return nil //nolint:nilerr // the 500 above is the answer
 	}
 	cost := g.price(c.r.Context(), c, resp.Usage)
 	c.rec.Status = http.StatusOK
@@ -104,6 +106,7 @@ func (g *gateway) chatCanonical(c *call) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
+	return nil
 }
 
 func writeRequestError(w http.ResponseWriter, err error) {

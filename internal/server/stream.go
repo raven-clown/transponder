@@ -48,19 +48,17 @@ func (s *sseWriter) finish(u schema.Usage, cost int64) {
 	setUsageHeaders(s.w.Header(), u, cost)
 }
 
-func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool) {
+func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool) error {
 	ctx := c.r.Context()
 	body, err := openai.RewriteRequest(c.body, c.resolved.Model, true)
 	if err != nil {
-		writeRequestError(c.w, &openai.RequestError{Code: "invalid_json", Message: err.Error()})
-		return
+		return badInput(&openai.RequestError{Code: "invalid_json", Message: err.Error()})
 	}
 	ctx, started, cancel := g.attempt(ctx)
 	defer cancel()
 	resp, err := n.Native(ctx, &provider.NativeCall{Path: "/chat/completions", Body: body, Header: c.r.Header})
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	rd := openai.NewSSEReader(resp.Body)
@@ -69,8 +67,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		err = errAttemptTimeout
 	}
 	if err != nil {
-		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
-		return
+		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -110,13 +107,13 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
 	g.recordCall(ctx, c)
+	return nil
 }
 
-func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
+func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 	req, err := openai.ParseChatRequest(c.body)
 	if err != nil {
-		writeRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	req.Model = c.resolved.Model
 	req.Stream = true
@@ -124,8 +121,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	defer cancel()
 	st, err := c.resolved.Provider.ChatStream(ctx, req)
 	if err != nil {
-		g.upstreamFailed(c, err, false)
-		return
+		return failed(err, false)
 	}
 	defer func() { _ = st.Close() }()
 	first, err := st.Recv()
@@ -133,8 +129,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 		err = errAttemptTimeout
 	}
 	if err != nil {
-		g.upstreamFailed(c, fmt.Errorf("stream ended before its first event: %w", err), false)
-		return
+		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
 	}
 
 	id := "chatcmpl-" + randomHex()
@@ -173,6 +168,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) {
 	out.finish(u, cost)
 	c.rec.Status = http.StatusOK
 	g.recordCall(ctx, c)
+	return nil
 }
 
 var errAttemptTimeout = errors.New("the provider did not start the stream within the attempt timeout")

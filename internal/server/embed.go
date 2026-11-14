@@ -27,29 +27,27 @@ func (g *gateway) embeddings(w http.ResponseWriter, r *http.Request) {
 	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), NoOutput: true}) {
 		return
 	}
-	if n, ok := nativeTarget(c, "openai"); ok {
-		g.embedNative(c, n)
-		return
-	}
-	g.embedCanonical(c)
+	g.run(c, func() error {
+		if n, ok := nativeTarget(c, "openai"); ok {
+			return g.embedNative(c, n)
+		}
+		return g.embedCanonical(c)
+	})
 }
 
-func (g *gateway) embedNative(c *call, n provider.Native) {
+func (g *gateway) embedNative(c *call, n provider.Native) error {
 	body, err := openai.RewriteRequest(c.body, c.resolved.Model, false)
 	if err != nil {
-		writeRequestError(c.w, &openai.RequestError{Code: "invalid_json", Message: err.Error()})
-		return
+		return badInput(&openai.RequestError{Code: "invalid_json", Message: err.Error()})
 	}
 	resp, err := n.Native(c.r.Context(), &provider.NativeCall{Path: "/embeddings", Body: body, Header: c.r.Header})
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out, err := readUpstream(resp)
 	if err != nil {
-		g.upstreamFailed(c, err, true)
-		return
+		return failed(err, true)
 	}
 	u, ok := openai.ParseUsage(out)
 	if !ok {
@@ -64,24 +62,23 @@ func (g *gateway) embedNative(c *call, n provider.Native) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(resp.StatusCode)
 	_, _ = c.w.Write(out)
+	return nil
 }
 
-func (g *gateway) embedCanonical(c *call) {
+func (g *gateway) embedCanonical(c *call) error {
 	req, err := openai.ParseEmbedRequest(c.body)
 	if err != nil {
-		writeRequestError(c.w, err)
-		return
+		return badInput(err)
 	}
 	req.Model = c.resolved.Model
 	resp, err := c.resolved.Provider.Embed(upstreamContext(c), req)
 	if err != nil {
-		g.upstreamFailed(c, err, false)
-		return
+		return failed(err, false)
 	}
 	body, err := openai.EncodeEmbedResponse(resp)
 	if err != nil {
 		writeError(c.w, http.StatusInternalServerError, "api_error", "", "", "could not encode the response")
-		return
+		return nil //nolint:nilerr // the 500 above is the answer
 	}
 	cost := g.price(c.r.Context(), c, resp.Usage)
 	c.rec.Status = http.StatusOK
@@ -91,6 +88,7 @@ func (g *gateway) embedCanonical(c *call) {
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
+	return nil
 }
 
 func embedText(body []byte) string {

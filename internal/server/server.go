@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
@@ -73,7 +74,8 @@ type call struct {
 	r        *http.Request
 	body     []byte
 	rec      store.UsageRecord
-	resolved router.Resolved
+	plan     router.Plan
+	resolved router.Resolved // the target being tried
 	fail     errorFunc
 	caller   limits.Caller
 	ticket   *limits.Ticket
@@ -127,18 +129,29 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	}}
 }
 
-// resolve picks the target for model, or writes 404 and records nothing.
+// resolve finds the targets for model, or writes 404 and records nothing.
 func (g *gateway) resolve(c *call, model string) bool {
-	res, err := g.d.Router.Resolve(model)
+	plan, err := g.d.Router.Plan(model)
 	if err != nil {
 		c.fail(c.w, http.StatusNotFound, "invalid_request_error", "model_not_found", "model", "no route serves model "+model)
 		return false
 	}
-	c.resolved = res
-	c.rec.Route = res.Route
-	c.rec.Provider = res.Provider.Name()
-	c.rec.Model = res.Model
+	c.plan = plan
+	c.rec.Route = plan.Route
+	g.use(c, plan.Targets[0], 0)
 	return true
+}
+
+// use makes t the target being tried, after fallbacks earlier targets failed.
+func (g *gateway) use(c *call, t router.Resolved, fallbacks int) {
+	c.resolved = t
+	c.rec.Provider = t.Provider.Name()
+	c.rec.Model = t.Model
+	c.rec.Fallbacks = fallbacks
+	h := c.w.Header()
+	h.Set("X-Transponder-Provider", c.rec.Provider)
+	h.Set("X-Transponder-Model", t.Model)
+	h.Set("X-Transponder-Fallbacks", strconv.Itoa(fallbacks))
 }
 
 // price fills the usage and cost of the record and returns the cost.
