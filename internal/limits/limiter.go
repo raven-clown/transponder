@@ -179,41 +179,7 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 		}
 	}
 	tokens := clamp(est.InputTokens + est.OutputTokens)
-	type check struct {
-		key     string
-		window  Window
-		limit   int64
-		usd     bool
-		subject string
-	}
-	var checks []check
-	addCheck := func(key string, w Window, limit int64, usd bool, subject string) {
-		if limit <= 0 {
-			return
-		}
-		for i, ch := range checks {
-			if ch.key == key && ch.window == w {
-				if limit < ch.limit {
-					checks[i].limit, checks[i].subject = limit, subject
-				}
-				return
-			}
-		}
-		checks = append(checks, check{key, w, limit, usd, subject})
-	}
-	if hasProfile {
-		addCheck("tok|"+subj, Day, p.TokensPerDay, false, subj)
-		addCheck("tok|"+subj, Month, p.TokensPerMonth, false, subj)
-		addCheck("usd|"+subj, Day, p.USDPerDay, true, subj)
-		addCheck("usd|"+subj, Month, p.USDPerMonth, true, subj)
-	}
-	for _, b := range l.budgetsFor(c) {
-		subject := b.Subject
-		if subject == "user:*" {
-			subject = "user:" + c.User
-		}
-		addCheck("usd|"+subject, b.Window, b.LimitNUSD, true, subject)
-	}
+	checks := l.checks(c, p, hasProfile)
 	for _, ch := range checks {
 		amount := tokens
 		if ch.usd {
@@ -364,4 +330,78 @@ func (l *Limiter) Seed(ctx context.Context, c Caller, at time.Time, tokens, cost
 			_ = l.store.Adjust(ctx, k, clamp(costNUSD), w, at)
 		}
 	}
+}
+
+// check is one counter a call is held against.
+type check struct {
+	key     string
+	window  Window
+	limit   int64
+	usd     bool
+	subject string
+}
+
+// checks lists the token allowances and budgets that apply to c. A profile's llm.cost_usd and a
+// budget on the same subject and period share a counter, and the lower limit holds.
+func (l *Limiter) checks(c Caller, p Profile, hasProfile bool) []check {
+	subj := c.subject()
+	var out []check
+	add := func(key string, w Window, limit int64, usd bool, subject string) {
+		if limit <= 0 {
+			return
+		}
+		for i, ch := range out {
+			if ch.key == key && ch.window == w {
+				if limit < ch.limit {
+					out[i].limit, out[i].subject = limit, subject
+				}
+				return
+			}
+		}
+		out = append(out, check{key, w, limit, usd, subject})
+	}
+	if hasProfile {
+		add("tok|"+subj, Day, p.TokensPerDay, false, subj)
+		add("tok|"+subj, Month, p.TokensPerMonth, false, subj)
+		add("usd|"+subj, Day, p.USDPerDay, true, subj)
+		add("usd|"+subj, Month, p.USDPerMonth, true, subj)
+	}
+	for _, b := range l.budgetsFor(c) {
+		subject := b.Subject
+		if subject == "user:*" {
+			subject = "user:" + c.User
+		}
+		add("usd|"+subject, b.Window, b.LimitNUSD, true, subject)
+	}
+	return out
+}
+
+// Subject names the caller's own counter: user:<id>, or key:<name> for a caller with no user.
+func (c Caller) Subject() string { return c.subject() }
+
+// RuleStatus is how much of one allowance or budget is used. Limit and Used are tokens for
+// Kind "tokens" and nano-USD for Kind "budget". Used includes calls still in flight.
+type RuleStatus struct {
+	Kind    string
+	Subject string
+	Window  Window
+	Limit   int64
+	Used    int64
+	Reset   time.Time
+}
+
+// Status reports every token allowance and budget that applies to c.
+func (l *Limiter) Status(ctx context.Context, c Caller) []RuleStatus {
+	now := l.now()
+	p, hasProfile := l.Profile(c)
+	var out []RuleStatus
+	for _, ch := range l.checks(c, p, hasProfile) {
+		used, _ := l.store.Used(ctx, ch.key, ch.window, now)
+		kind := "tokens"
+		if ch.usd {
+			kind = "budget"
+		}
+		out = append(out, RuleStatus{Kind: kind, Subject: ch.subject, Window: ch.window, Limit: ch.limit, Used: used, Reset: ch.window.Reset(now)})
+	}
+	return out
 }

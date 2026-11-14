@@ -296,3 +296,56 @@ func TestCapStripsVariantsOfBothFields(t *testing.T) {
 		t.Fatalf("upstream body %v", got)
 	}
 }
+
+func TestUsageEndpoint(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":1000,"completion_tokens":500}}`)
+	})
+	cfg := oneProfile(func(p *limits.Profile) { p.TokensPerDay = 100000 })
+	cfg.Budgets = []limits.Budget{{Subject: "user:*", Window: limits.Month, LimitNUSD: 20_000_000_000}}
+	e := setupLimited(t, []router.Route{openaiRoute("*", "gpt-4o-mini", up)}, cfg)
+	e.post(t, `{"model":"m","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`)
+
+	res, err := e.doPath(http.MethodGet, "/v1/usage", e.auth(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Object  string `json:"object"`
+		Subject string `json:"subject"`
+		Limits  []struct {
+			Type         string `json:"type"`
+			Subject      string `json:"subject"`
+			Period       string `json:"period"`
+			Limit        *int64 `json:"limit"`
+			Used         *int64 `json:"used"`
+			Remaining    *int64 `json:"remaining"`
+			LimitUSD     string `json:"limit_usd"`
+			UsedUSD      string `json:"used_usd"`
+			RemainingUSD string `json:"remaining_usd"`
+			ResetsAt     string `json:"resets_at"`
+		} `json:"limits"`
+	}
+	if err := json.Unmarshal(res.body, &body); err != nil || res.status != http.StatusOK {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if body.Object != "usage" || body.Subject != "user:alice" || len(body.Limits) != 2 {
+		t.Fatalf("body %s", res.body)
+	}
+	tok, usd := body.Limits[0], body.Limits[1]
+	if tok.Type != "tokens" || tok.Period != "daily" || *tok.Limit != 100000 || *tok.Used != 1500 || *tok.Remaining != 98500 || tok.ResetsAt == "" || tok.LimitUSD != "" {
+		t.Fatalf("tokens rule %s", res.body)
+	}
+	if usd.Type != "budget" || usd.Period != "monthly" || usd.LimitUSD != "20.000000" || usd.UsedUSD != "0.000450" || usd.RemainingUSD != "19.999550" || usd.Limit != nil {
+		t.Fatalf("budget rule %s", res.body)
+	}
+
+	if res, _ := e.doPath(http.MethodGet, "/v1/usage", nil, ""); res.status != http.StatusUnauthorized {
+		t.Fatalf("no key: %d", res.status)
+	}
+	plain := setup(t, echo.New("echo"))
+	res, err = plain.doPath(http.MethodGet, "/v1/usage", plain.auth(), "")
+	if err != nil || res.status != http.StatusOK || string(res.body) != `{"object":"usage","subject":"user:alice","limits":[]}` {
+		t.Fatalf("no limits: %d %s %v", res.status, res.body, err)
+	}
+}

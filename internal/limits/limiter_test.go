@@ -2,6 +2,7 @@ package limits
 
 import (
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -253,5 +254,34 @@ func TestManyChoicesReserveInFull(t *testing.T) {
 	}
 	if _, d := l.Admit(ctx, alice, Estimate{OutputTokens: 1 << 39, Choices: 1 << 40}); d == nil {
 		t.Fatal("an overflowing choice count passed")
+	}
+}
+
+func TestStatus(t *testing.T) {
+	l := limiter(t, Config{
+		DefaultProfile: "p",
+		Profiles:       []Profile{profile("p", func(p *Profile) { p.TokensPerDay, p.USDPerMonth = 1000, 5_000_000_000 })},
+		Budgets: []Budget{
+			{Subject: "user:*", Window: Month, LimitNUSD: 20_000_000_000},
+			{Subject: "team:platform", Window: Day, LimitNUSD: 50_000_000_000},
+			{Subject: "team:other", Window: Day, LimitNUSD: 1},
+		},
+	})
+	tk := mustAdmit(t, l, alice, Estimate{InputTokens: 10, OutputTokens: 10, CostNUSD: 7})
+	tk.Settle(300, 1_500_000_000)
+	got := l.Status(ctx, alice)
+	want := []RuleStatus{
+		{Kind: "tokens", Subject: "user:alice", Window: Day, Limit: 1000, Used: 300, Reset: Day.Reset(t0)},
+		{Kind: "budget", Subject: "user:alice", Window: Month, Limit: 5_000_000_000, Used: 1_500_000_000, Reset: Month.Reset(t0)},
+		{Kind: "budget", Subject: "team:platform", Window: Day, Limit: 50_000_000_000, Used: 1_500_000_000, Reset: Day.Reset(t0)},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("status\n got %+v\nwant %+v", got, want)
+	}
+	if s := limiter(t, Config{}).Status(ctx, alice); len(s) != 0 {
+		t.Fatalf("status with no limits %+v", s)
+	}
+	if alice.Subject() != "user:alice" || (Caller{Key: "ci"}).Subject() != "key:ci" {
+		t.Fatal("subjects")
 	}
 }

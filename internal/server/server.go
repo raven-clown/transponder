@@ -50,6 +50,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	mux.HandleFunc("GET /v1/models", g.models)
+	mux.HandleFunc("GET /v1/usage", g.usage)
 	mux.HandleFunc("POST /v1/messages", g.messages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", g.countTokens)
 	mux.Handle("/healthz", Healthz())
