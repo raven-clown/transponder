@@ -58,6 +58,7 @@ func (g *gateway) chatNative(c *call, n provider.Native) error {
 	if err != nil {
 		return badInput(&openai.RequestError{Code: "invalid_json", Message: err.Error()})
 	}
+	body = openai.ShortenToolCallIDs(body)
 	resp, err := n.Native(c.r.Context(), &provider.NativeCall{Path: "/chat/completions", Body: body, Header: c.r.Header})
 	if err != nil {
 		return failed(err, true)

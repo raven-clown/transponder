@@ -134,6 +134,9 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 	if err == nil && !started() {
 		err = errAttemptTimeout
 	}
+	if err == nil && ev.Name == "error" {
+		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
+	}
 	if err != nil {
 		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
 	}
@@ -163,6 +166,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		if upstreamErr == nil {
 			out.write(anthropic.ErrorFrame("api_error", streamCut))
 		}
+		c.cut = true
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()
@@ -224,6 +228,7 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 	} else {
 		g.d.Logger.WarnContext(ctx, "provider stream broke", "provider", c.rec.Provider, "err", err)
 		out.write(anthropic.ErrorFrame("api_error", streamCut))
+		c.cut = true
 	}
 	if !haveUsage {
 		u = schema.Usage{InputTokens: estimateTokens(string(c.body)), OutputTokens: estimateTokens(text.String())}

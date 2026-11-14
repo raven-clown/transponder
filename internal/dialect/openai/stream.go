@@ -134,3 +134,12 @@ func frame(payload []byte) []byte {
 	out := append([]byte("data: "), payload...)
 	return append(out, '\n', '\n')
 }
+
+// IsStreamError reports whether a stream payload is an error object instead of a chunk.
+func IsStreamError(data []byte) bool {
+	var w struct {
+		Error   json.RawMessage   `json:"error"`
+		Choices []json.RawMessage `json:"choices"`
+	}
+	return json.Unmarshal(data, &w) == nil && len(w.Choices) == 0 && len(w.Error) > 0 && string(w.Error) != "null"
+}

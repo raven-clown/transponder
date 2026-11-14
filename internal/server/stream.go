@@ -54,6 +54,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	if err != nil {
 		return badInput(&openai.RequestError{Code: "invalid_json", Message: err.Error()})
 	}
+	body = openai.ShortenToolCallIDs(body)
 	ctx, started, cancel := g.attempt(ctx)
 	defer cancel()
 	resp, err := n.Native(ctx, &provider.NativeCall{Path: "/chat/completions", Body: body, Header: c.r.Header})
@@ -65,6 +66,9 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	first, err := rd.Next()
 	if err == nil && !started() {
 		err = errAttemptTimeout
+	}
+	if err == nil && openai.IsStreamError(first) {
+		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(first))
 	}
 	if err != nil {
 		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
@@ -95,6 +99,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		if err != nil {
 			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
 			out.write(openai.EncodeStreamError("upstream_error", "the provider stopped in the middle of the stream"))
+			c.cut = true
 			break
 		}
 		pass(data)
@@ -157,6 +162,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 		if err != nil {
 			g.d.Logger.WarnContext(ctx, "provider stream broke", "provider", c.rec.Provider, "err", err)
 			out.write(openai.EncodeStreamError("upstream_error", "the provider stopped in the middle of the stream"))
+			c.cut = true
 			break
 		}
 	}

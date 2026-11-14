@@ -3,6 +3,7 @@ package router
 import (
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -159,4 +160,24 @@ func TestCooldown(t *testing.T) {
 	}
 	other, _ := New([]Route{{Match: "*", Targets: []Target{{Provider: a, Model: "x"}}}}).Plan("m")
 	r.Report(other.Targets[0], false)
+}
+
+func TestHealthIsBounded(t *testing.T) {
+	a := echo.New("a")
+	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	r := New([]Route{{Match: "*", Targets: []Target{{Provider: a}}}})
+	r.SetCooldown(3, 30*time.Second, func() time.Time { return now })
+	cooled := Resolved{Provider: a, Model: "kept"}
+	for range 3 {
+		r.Report(cooled, false)
+	}
+	for i := range 5000 {
+		r.Report(Resolved{Provider: a, Model: "made-up-" + strconv.Itoa(i)}, false)
+	}
+	if n := len(r.health); n > maxHealth+1 {
+		t.Fatalf("%d health entries kept", n)
+	}
+	if h, ok := r.health[healthKey(cooled)]; !ok || !now.Before(h.until) {
+		t.Fatal("a target in cooldown was swept")
+	}
 }

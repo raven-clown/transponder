@@ -50,6 +50,9 @@ const (
 	DefaultCooldown         = 30 * time.Second
 )
 
+// maxHealth is how many targets the router tracks before it drops the ones not in cooldown.
+const maxHealth = 1024
+
 type health struct {
 	fails int
 	until time.Time
@@ -147,6 +150,16 @@ func (r *Router) Report(t Resolved, ok bool) {
 	}
 	h := r.health[key]
 	if h == nil {
+		// A target that keeps the caller's model has one entry per model name, so the table is
+		// swept before it can grow without end. Targets in cooldown are kept.
+		if len(r.health) >= maxHealth {
+			now := r.now()
+			for k, e := range r.health {
+				if !now.Before(e.until) {
+					delete(r.health, k)
+				}
+			}
+		}
 		h = &health{}
 		r.health[key] = h
 	}

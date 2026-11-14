@@ -77,6 +77,7 @@ type call struct {
 	rec      store.UsageRecord
 	plan     router.Plan
 	resolved router.Resolved // the target being tried
+	cut      bool            // the answering target's stream broke after it had started
 	fail     errorFunc
 	caller   limits.Caller
 	ticket   *limits.Ticket

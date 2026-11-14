@@ -9,6 +9,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider"
+	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/tokens"
 )
 
@@ -57,11 +58,20 @@ func retryable(err error) bool {
 func (g *gateway) run(c *call, attempt func() error) {
 	ctx := c.r.Context()
 	var upstream, input *attemptError
+	var failedTarget router.Resolved
+	failedAt := 0
 	for i, t := range c.plan.Targets {
 		g.use(c, t, i)
 		err := attempt()
 		if err == nil {
-			g.d.Router.Report(t, true)
+			// A stream that broke after its first byte cannot fall back, but it still counts
+			// against the target, unless it broke because the caller left.
+			switch {
+			case !c.cut:
+				g.d.Router.Report(t, true)
+			case ctx.Err() == nil:
+				g.d.Router.Report(t, false)
+			}
 			return
 		}
 		var ae *attemptError
@@ -72,7 +82,7 @@ func (g *gateway) run(c *call, attempt func() error) {
 			input = ae
 			continue
 		}
-		upstream = ae
+		upstream, failedTarget, failedAt = ae, t, i
 		if ctx.Err() != nil || !retryable(ae.err) {
 			break
 		}
@@ -83,7 +93,9 @@ func (g *gateway) run(c *call, attempt func() error) {
 	}
 	switch {
 	case upstream != nil:
-		// An outage outranks a target that could not take the request.
+		// An outage outranks a target that could not take the request, and the answer names
+		// the target that had it, not one that was skipped after it.
+		g.use(c, failedTarget, failedAt)
 		g.upstreamFailed(c, upstream.err, upstream.same)
 	case input != nil:
 		g.rejected(c, input.err)
