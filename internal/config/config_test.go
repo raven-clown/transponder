@@ -140,6 +140,36 @@ func TestLoadRejects(t *testing.T) {
 	}
 }
 
+func TestLoadVercel(t *testing.T) {
+	p := writeFile(t, `providers:
+  - name: vercel
+    type: vercel
+    api_key: ${VERCEL_API_KEY}
+  - name: custom
+    type: vercel
+    api_key: ${VERCEL_API_KEY}
+    base_url: https://gateway.example/v1
+routes:
+  - match: "anthropic/*"
+    targets:
+      - provider: vercel
+  - match: "custom/*"
+    targets:
+      - provider: custom
+`)
+	c, err := Load(p, []string{"VERCEL_API_KEY=k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Provider{
+		{Name: "vercel", Type: "vercel", APIKey: "k"},
+		{Name: "custom", Type: "vercel", BaseURL: "https://gateway.example/v1", APIKey: "k"},
+	}
+	if !reflect.DeepEqual(c.Providers, want) {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+}
+
 func TestLoadXAI(t *testing.T) {
 	p := writeFile(t, `providers:
   - name: xai

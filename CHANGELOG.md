@@ -10,6 +10,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Cooldown: after `settings.cooldown_failures` (3) failures in a row a target is tried last for `settings.cooldown` (30s).
 - `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` on routed responses, and `fallbacks` in the usage record.
 - `GET /v1/usage` shows the caller what they have used and have left of each budget and token allowance that applies to them.
+- Vercel AI Gateway provider (`type: vercel`) defaulting to `https://ai-gateway.vercel.sh/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. No prices are included, so calls are logged as unpriced.
+- xAI (Grok) provider (`type: xai`) defaulting to `https://api.x.ai/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default.
+- xAI reasoning tokens are counted apart from completion tokens, as in its chat completion usage, and priced at the output rate.
+- Prices for grok-4.7, grok-4.6, grok-4.5 and grok-4.3, using the rate for a prompt under 200k tokens on the global endpoint. Longer prompts, and the US endpoint, cost more than these rates.
 
 ### Changed
 
@@ -19,12 +23,6 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Fixed
 
 - A tool call id made by Gemini is shortened to one OpenAI accepts when a later turn of the conversation goes to an OpenAI target.
-
-### Added
-
-- xAI (Grok) provider (`type: xai`) defaulting to `https://api.x.ai/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default.
-- xAI reasoning tokens are counted apart from completion tokens, as in its chat completion usage, and priced at the output rate.
-- Prices for grok-4.7, grok-4.6, grok-4.5 and grok-4.3, using the rate for a prompt under 200k tokens on the global endpoint. Longer prompts, and the US endpoint, cost more than these rates.
 
 ## [0.2.3] - 2026-11-09
 

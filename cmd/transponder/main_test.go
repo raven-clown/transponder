@@ -250,6 +250,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "grok-4.7", provider: "x", typ: "xai", upstream: "grok-4.7",
 		},
+		{
+			name: "vercel route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "v", Type: "vercel", APIKey: "k"}},
+				Routes:    []config.Route{{Match: "anthropic/*", Targets: []config.Target{{Provider: "v"}}}},
+			},
+			model: "anthropic/claude-opus-5", provider: "v", typ: "vercel", upstream: "anthropic/claude-opus-5",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -332,6 +340,42 @@ func TestBuildRouterXAIDefault(t *testing.T) {
 	}
 	if a.BaseURL() != "https://api.x.ai/v1" || got.Free {
 		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}
+
+func TestBuildRouterVercelDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "vercel", Type: "vercel", APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "vercel"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("anthropic/claude-opus-5")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok {
+		t.Fatalf("provider %T", got.Provider)
+	}
+	if a.BaseURL() != "https://ai-gateway.vercel.sh/v1" || got.Free {
+		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}
+
+func TestBuildRouterVercelBaseURLOverride(t *testing.T) {
+	const custom = "https://gateway.example/v1"
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "vercel", Type: "vercel", BaseURL: custom, APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "vercel"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("anthropic/claude-opus-5")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != custom {
+		t.Fatalf("provider %T", got.Provider)
 	}
 }
 
