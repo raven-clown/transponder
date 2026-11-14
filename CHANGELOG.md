@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-14
+
 ### Added
 
 - Fallback: a route's targets are tried in order, and the next one takes over when a target is unreachable, times out, answers 408, 429, a 5xx or 529, rejects the gateway's key, fails a stream before its first event, or cannot take the request. A request the provider rejects as wrong is not retried elsewhere, and nothing falls back once a byte has reached the caller.
@@ -142,7 +144,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/raven-clown/transponder/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/raven-clown/transponder/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/raven-clown/transponder/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/raven-clown/transponder/compare/v0.2.0...v0.2.1

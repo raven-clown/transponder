@@ -468,11 +468,6 @@ Done:
 | v0.2.1 | vLLM, release manifests and `--check-update`, `/healthz` and `/readyz` |
 | v0.2.2 | The Anthropic and Gemini adapters, `/v1/messages` and `count_tokens`, translation between dialects with tools, so Claude Code works with a base URL change |
 | v0.2.3 | USD budgets per user, team and key; profiles with token limits, reasoning tokens counted apart and request rate and concurrency limits; reserve then settle in memory, rebuilt from usage at start; llama.cpp provider |
+| v0.2.4 | Fallback across a route's targets with a cooldown for the ones that keep failing, `X-Transponder-*` headers, `GET /v1/usage`; xAI and Vercel AI Gateway providers |
 
-Next, one release per plan:
-
-| Version | What it adds |
-|---|---|
-| v0.2.4 | Fallback with a cooldown for targets that keep failing, and `GET /v1/usage` |
-
-After v0.2.4, in this order, versions to be set: OIDC and the three roles, the admin API and audit log, Postgres and several replicas, then the five-minute demo, which together make v1.
+Next, in this order, versions to be set: access per route, OIDC and the three roles, the admin API and audit log, Postgres and several replicas, then the five-minute demo, which together make v1.
