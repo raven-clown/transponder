@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,9 +34,12 @@ func EncodeChatRequestWith(req *schema.ChatRequest, o EncodeOptions) ([]byte, er
 		w.StreamOptions = &wireStreamOptions{IncludeUsage: true}
 	}
 	for _, m := range req.Messages {
-		wm := wireMessage{Role: m.Role, ToolCallID: m.ToolCallID}
+		wm := wireMessage{Role: m.Role, ToolCallID: upstreamID(m.ToolCallID)}
 		if len(m.ToolCalls) > 0 {
 			wm.ToolCalls = encodeToolCalls(m.ToolCalls)
+			for i := range wm.ToolCalls {
+				wm.ToolCalls[i].ID = upstreamID(wm.ToolCalls[i].ID)
+			}
 		}
 		if m.Content == "" && len(m.ToolCalls) > 0 {
 			wm.Content = json.RawMessage("null")
@@ -209,4 +214,18 @@ func DecodeEmbedResponse(body []byte) (*schema.EmbedResponse, error) {
 		resp.Usage = w.Usage.canonical()
 	}
 	return resp, nil
+}
+
+// maxToolCallID is the longest tool call id OpenAI accepts.
+const maxToolCallID = 40
+
+// upstreamID shortens a tool call id made by another provider, such as Gemini's, which carries a
+// signature, to one OpenAI accepts. The same id always gets the same short form, so a call and
+// its result still match.
+func upstreamID(id string) string {
+	if len(id) <= maxToolCallID {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "call_" + hex.EncodeToString(sum[:16])
 }

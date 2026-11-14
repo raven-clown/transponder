@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/schema"
@@ -123,5 +124,34 @@ func TestChunkDecoderRepeatedToolStart(t *testing.T) {
 	}
 	if starts != 1 {
 		t.Fatalf("%d tool starts for one call", starts)
+	}
+}
+
+func TestLongToolCallIDsAreShortened(t *testing.T) {
+	long := "gm_" + strings.Repeat("eyJpIjoiY2FsbF8x", 12)
+	req := &schema.ChatRequest{Model: "m", Messages: []schema.Message{
+		{Role: schema.RoleUser, Content: "x"},
+		{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{{ID: long, Name: "f", Arguments: "{}"}, {ID: "call_short", Name: "g", Arguments: "{}"}}},
+		{Role: schema.RoleTool, ToolCallID: long, Content: "1"},
+		{Role: schema.RoleTool, ToolCallID: "call_short", Content: "2"},
+	}}
+	b, err := EncodeChatRequest(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseChatRequest(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := got.Messages[1].ToolCalls[0].ID
+	if len(id) > 40 || !strings.HasPrefix(id, "call_") || id != got.Messages[2].ToolCallID {
+		t.Fatalf("call id %q, result id %q", id, got.Messages[2].ToolCallID)
+	}
+	if got.Messages[1].ToolCalls[1].ID != "call_short" || got.Messages[3].ToolCallID != "call_short" {
+		t.Fatalf("a short id was changed: %+v", got.Messages)
+	}
+	again, _ := EncodeChatRequest(req)
+	if string(again) != string(b) {
+		t.Fatal("the short id is not stable")
 	}
 }
