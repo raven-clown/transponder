@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/raven-clown/transponder/internal/provider"
 )
@@ -36,16 +38,42 @@ type Resolved struct {
 	Model    string
 }
 
-// Router holds the routes in priority order.
+// Plan is the targets to try for one call, in order.
+type Plan struct {
+	Route   string
+	Targets []Resolved
+}
+
+// Defaults for the cooldown of a target that keeps failing.
+const (
+	DefaultCooldownFailures = 3
+	DefaultCooldown         = 30 * time.Second
+)
+
+type health struct {
+	fails int
+	until time.Time
+}
+
+// Router holds the routes in priority order and remembers which targets keep failing.
 type Router struct {
 	routes []Route
 	globs  []*regexp.Regexp
+
+	failures int
+	cooldown time.Duration
+	now      func() time.Time
+	mu       sync.Mutex
+	health   map[targetKey]*health
 }
 
 // New returns a router over routes, first match wins. In Match, * stands for any run of
 // characters, slashes included, since model names such as hf.co/user/repo have them.
 func New(routes []Route) *Router {
-	r := &Router{routes: routes, globs: make([]*regexp.Regexp, len(routes))}
+	r := &Router{
+		routes: routes, globs: make([]*regexp.Regexp, len(routes)),
+		failures: DefaultCooldownFailures, cooldown: DefaultCooldown, now: time.Now, health: map[targetKey]*health{},
+	}
 	for i, rt := range routes {
 		re := regexp.QuoteMeta(rt.Match)
 		re = strings.ReplaceAll(re, `\*`, ".*")
@@ -55,20 +83,77 @@ func New(routes []Route) *Router {
 	return r
 }
 
-// Resolve returns the first target of the first route matching model.
-func (r *Router) Resolve(model string) (Resolved, error) {
+// SetCooldown changes how many failures in a row put a target last, and for how long.
+func (r *Router) SetCooldown(failures int, d time.Duration, now func() time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failures, r.cooldown, r.now = failures, d, now
+}
+
+// Plan returns the targets of the first route matching model. Targets in cooldown come last,
+// so they are only tried once the others have failed.
+func (r *Router) Plan(model string) (Plan, error) {
 	for i, rt := range r.routes {
 		if len(rt.Targets) == 0 || !r.globs[i].MatchString(model) {
 			continue
 		}
-		t := rt.Targets[0]
-		up := t.Model
-		if up == "" {
-			up = model
+		p := Plan{Route: rt.Match}
+		var cooling []Resolved
+		r.mu.Lock()
+		now := r.now()
+		for _, t := range rt.Targets {
+			up := t.Model
+			if up == "" {
+				up = model
+			}
+			res := Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up}
+			if h, ok := r.health[healthKey(res)]; ok && now.Before(h.until) {
+				cooling = append(cooling, res)
+				continue
+			}
+			p.Targets = append(p.Targets, res)
 		}
-		return Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up}, nil
+		r.mu.Unlock()
+		p.Targets = append(p.Targets, cooling...)
+		return p, nil
 	}
-	return Resolved{}, ErrNoRoute
+	return Plan{}, ErrNoRoute
+}
+
+// Resolve returns the first target of the plan for model.
+func (r *Router) Resolve(model string) (Resolved, error) {
+	p, err := r.Plan(model)
+	if err != nil {
+		return Resolved{}, err
+	}
+	return p.Targets[0], nil
+}
+
+// targetKey names a target by provider and upstream model, whichever route uses it.
+type targetKey struct{ provider, model string }
+
+func healthKey(t Resolved) targetKey { return targetKey{t.Provider.Name(), t.Model} }
+
+// Report tells the router how an attempt on t went. A success clears its failures. After the
+// configured number of failures in a row the target cools down; once the cooldown ends, one
+// more failure starts it again.
+func (r *Router) Report(t Resolved, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := healthKey(t)
+	if ok {
+		delete(r.health, key)
+		return
+	}
+	h := r.health[key]
+	if h == nil {
+		h = &health{}
+		r.health[key] = h
+	}
+	h.fails++
+	if h.fails >= r.failures {
+		h.until = r.now().Add(r.cooldown)
+	}
 }
 
 // Models returns the names a caller can ask for: every route match without a wildcard,
