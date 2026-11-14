@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/anthropic"
 	oaprovider "github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/router"
@@ -290,5 +291,17 @@ func TestCountTokensUsesFirstAnthropicTarget(t *testing.T) {
 	}
 	if res.status != http.StatusOK || string(res.body) != `{"input_tokens":42}` || oa.calls.Load() != 0 {
 		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+}
+
+func TestReservationCoversTheDearestTarget(t *testing.T) {
+	local := countedUpstream(t, status(500, "x"))
+	paid := countedUpstream(t, status(200, okChat))
+	free := router.Target{Provider: oaprovider.New(oaprovider.Options{Name: "local", BaseURL: local.srv.URL}), Type: "ollama", Free: true}
+	cfg := limits.Config{Budgets: []limits.Budget{{Subject: "user:*", Window: limits.Month, LimitNUSD: 100_000}}}
+	e := setupLimited(t, route("*", free, oaTarget("b", "gpt-4o-mini", paid)), cfg)
+	res := e.post(t, `{"model":"m","max_tokens":1000,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != http.StatusPaymentRequired || errorCode(t, res) != "budget_exceeded" || paid.calls.Load() != 0 || local.calls.Load() != 0 {
+		t.Fatalf("status %d, local %d, paid %d: %s", res.status, local.calls.Load(), paid.calls.Load(), res.body)
 	}
 }

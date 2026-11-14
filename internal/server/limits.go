@@ -21,11 +21,18 @@ func (g *gateway) admit(c *call, est limits.Estimate) bool {
 	if g.d.Limiter == nil {
 		return true
 	}
-	if !c.resolved.Free {
-		est.Price = func(in, out int64) int64 {
-			cost, _ := g.d.Prices.Cost(c.resolved.Type, c.resolved.Model, schema.Usage{InputTokens: in, OutputTokens: out})
-			return cost
+	// Any target of the route may end up serving the call, so the reservation is priced at the
+	// dearest one. A free first target must not let calls through that a paid fallback would bill.
+	est.Price = func(in, out int64) int64 {
+		var dearest int64
+		for _, t := range c.plan.Targets {
+			if t.Free {
+				continue
+			}
+			cost, _ := g.d.Prices.Cost(t.Type, t.Model, schema.Usage{InputTokens: in, OutputTokens: out})
+			dearest = max(dearest, cost)
 		}
+		return dearest
 	}
 	t, d := g.d.Limiter.Admit(c.r.Context(), c.caller, est)
 	if d != nil {
