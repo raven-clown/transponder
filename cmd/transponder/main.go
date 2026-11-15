@@ -72,6 +72,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	configPath := fs.String("config", "", "path to the YAML config file")
+	configTest := fs.Bool("config-test", false, "check the configuration and exit without starting")
 	checkUpdate := fs.Bool("check-update", false, "list newer releases, how urgent they are and which changes touch this config, then exit")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -88,6 +89,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "transponder: %v\n", err)
 		return 1
+	}
+	if *configTest {
+		if _, err := buildRouter(cfg, nil); err != nil {
+			_, _ = fmt.Fprintf(stderr, "transponder: %v\n", err)
+			return 1
+		}
+		_, _ = fmt.Fprintln(stdout, "transponder: config ok")
+		return 0
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go stopOnContextDone(ctx, stop)

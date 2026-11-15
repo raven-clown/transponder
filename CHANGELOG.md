@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `--config-test` flag to validate a configuration file, environment variables, provider routes and settings without starting the server, binding listening ports, or creating a database file (#103).
+
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
