@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,11 +76,11 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	var text strings.Builder
 	haveUsage := false
 	pass := func(data []byte) {
-		cu, ok, only := openai.ChunkUsage(data)
+		delta, cu, ok, only := openai.ReadChunk(data)
 		if ok && reported(cu) {
 			u, haveUsage = cu, true
 		}
-		text.WriteString(deltaText(data))
+		text.WriteString(delta)
 		if only && !includeUsage {
 			return
 		}
@@ -205,25 +204,6 @@ func (g *gateway) attempt(ctx context.Context) (actx context.Context, started fu
 	}
 	timer := time.AfterFunc(g.d.AttemptTimeout, cancel)
 	return actx, timer.Stop, cancel
-}
-
-// deltaText joins the content deltas of one stream chunk.
-func deltaText(data []byte) string {
-	var w struct {
-		Choices []struct {
-			Delta struct {
-				Content string `json:"content"`
-			} `json:"delta"`
-		} `json:"choices"`
-	}
-	if json.Unmarshal(data, &w) != nil {
-		return ""
-	}
-	var b strings.Builder
-	for _, ch := range w.Choices {
-		b.WriteString(ch.Delta.Content)
-	}
-	return b.String()
 }
 
 func randomHex() string {
