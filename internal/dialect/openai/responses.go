@@ -258,34 +258,42 @@ func ReadResponsesRefs(body []byte) ResponsesRefs {
 }
 
 // itemNeeds is the content an input item of each type must carry to stand without the store.
+// An item without a type is read as a message.
 var itemNeeds = map[string][]string{
-	"message":       {"role", "content"},
-	"reasoning":     {"encrypted_content"},
-	"function_call": {"call_id", "name", "arguments"},
+	"message":                 {"role", "content"},
+	"reasoning":               {"encrypted_content"},
+	"function_call":           {"call_id", "name", "arguments"},
+	"function_call_output":    {"call_id", "output"},
+	"custom_tool_call":        {"call_id", "name", "input"},
+	"custom_tool_call_output": {"call_id", "output"},
+	"computer_call_output":    {"call_id", "output"},
 }
 
 // storedItem reports whether an input item with an id may be read from the provider's store
 // rather than from the request. It fails closed: an item of a known type must carry the content
 // that type needs, any other item must carry something besides its id and type, and a null or
-// empty value counts as missing. Keys match without regard to case, and every type the item
-// gives is checked, since a server may read either of two keys that differ by case.
+// empty value counts as missing. A key given twice in different cases, or a type that is not a
+// string, also counts as stored, since a server may read either copy.
 func storedItem(item any) bool {
 	m, ok := item.(map[string]any)
 	if !ok {
 		return false
 	}
-	id := false
+	id, odd := false, false
 	var types []string
+	seen := map[string]bool{}
 	has := map[string]bool{}
 	for k, v := range m {
 		key := strings.ToLower(k)
+		odd = odd || seen[key]
+		seen[key] = true
 		switch {
 		case key == "id":
 			id = id || present(v)
 		case key == "type":
-			if s, ok := v.(string); ok {
-				types = append(types, s)
-			}
+			s, ok := v.(string)
+			odd = odd || !ok
+			types = append(types, strings.ToLower(s))
 		case present(v):
 			has[key] = true
 		}
@@ -293,8 +301,11 @@ func storedItem(item any) bool {
 	if !id {
 		return false
 	}
-	if len(has) == 0 {
+	if odd || len(has) == 0 {
 		return true
+	}
+	if len(types) == 0 {
+		types = []string{"message"}
 	}
 	for _, typ := range types {
 		for _, need := range itemNeeds[typ] {
