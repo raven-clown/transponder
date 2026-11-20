@@ -155,7 +155,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
-	if err := admin.SyncFile(ctx, db, cfg, time.Now, logger); err != nil {
+	if err := admin.SyncFile(ctx, db, cfg, box, time.Now, logger); err != nil {
 		return fmt.Errorf("storing the providers, routes, budgets and profiles of the config file: %w", err)
 	}
 
