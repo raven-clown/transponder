@@ -31,6 +31,13 @@ cd demo && docker compose up --build -d --wait && ./check.sh
 docker compose down -v
 ```
 
+Measure speed (see `docs/benchmarks.md`): the Go benchmarks of the hot paths, and the load suite against a built binary:
+
+```shell
+go test -run '^$' -bench . -benchmem ./internal/...
+go build -o transponder ./cmd/transponder && go run ./bench run -bin ./transponder -count 3
+```
+
 On Windows without gcc, `-race` is not available: run `go test ./...` locally and let CI run the race detector.
 
 Tests that need Postgres are skipped unless `TRANSPONDER_TEST_POSTGRES` holds the URL of a server, such as `postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable`. Each test works in a schema of its own and drops it. CI sets the variable in the coverage job.
@@ -61,6 +68,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - Runtime config in the store: providers, routes, budgets and profiles are rows of `config_items` (kind, id, JSON body, sealed secret, version, source). At start `admin.SyncFile` writes the file's items there as `source: file`, and every reload builds the router and limits from `admin.Runtime`, which reads the store and keeps the file's provider keys out of it. An admin write that would leave a config `Runtime` cannot load is rolled back with 400 `invalid_config`
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
+- `bench/`: the load suite, a fake upstream with fixed latency and body size and a fixed-rate load tool; not part of the gateway. Hot-path Go benchmarks live next to their code in `*_bench_test.go` and use only APIs v0.2.4 has too, so the same files run on the old tag. `cmd/transponder/pprof.go` serves pprof only in a build with `-tags pprof`
 - `demo/`: the Docker Compose demo with Prometheus, Grafana and Jaeger. `demo/sim` is its fake provider, key seeder and traffic, and is not part of the gateway. A change to a metric name or label must keep `demo/grafana/dashboards/transponder.json` working; `go test ./demo/...` checks every query names a metric the gateway serves, and the `demo` CI job runs the stack
 
 ## Rules
