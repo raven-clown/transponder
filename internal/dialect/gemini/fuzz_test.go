@@ -10,5 +10,9 @@ func FuzzDecodeResponse(f *testing.F) {
 		if err == nil && resp == nil {
 			t.Fatal("nil response without an error")
 		}
+		input := []string{"a", "bb"}
+		if e, err := DecodeEmbedResponse(body, "m", input); err == nil && (e == nil || e.Usage.InputTokens <= 0) {
+			t.Fatalf("embeddings %+v without usage", e)
+		}
 	})
 }
