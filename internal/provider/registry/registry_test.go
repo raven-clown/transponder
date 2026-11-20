@@ -29,6 +29,7 @@ func TestLookup(t *testing.T) {
 		{typ: "gemini"},
 		{typ: "vllm", free: true},
 		{typ: "llamacpp", free: true},
+		{typ: "lmstudio", free: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.typ, func(t *testing.T) {

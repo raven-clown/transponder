@@ -170,6 +170,36 @@ routes:
 	}
 }
 
+func TestLoadLmstudio(t *testing.T) {
+	p := writeFile(t, `providers:
+  - name: lmstudio
+    type: lmstudio
+    api_key: ${LMSTUDIO_API_KEY}
+  - name: custom
+    type: lmstudio
+    api_key: ${LMSTUDIO_API_KEY}
+    base_url: http://gateway.example/v1
+routes:
+  - match: "lmstudio-*"
+    targets:
+      - provider: lmstudio
+  - match: "custom/*"
+    targets:
+      - provider: custom
+`)
+	c, err := Load(p, []string{"LMSTUDIO_API_KEY=k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Provider{
+		{Name: "lmstudio", Type: "lmstudio", APIKey: "k"},
+		{Name: "custom", Type: "lmstudio", BaseURL: "http://gateway.example/v1", APIKey: "k"},
+	}
+	if !reflect.DeepEqual(c.Providers, want) {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+}
+
 func TestLoadMistral(t *testing.T) {
 	p := writeFile(t, `providers:
   - name: mistral

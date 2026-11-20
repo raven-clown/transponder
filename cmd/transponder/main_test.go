@@ -302,6 +302,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "m", provider: "siliconflow", typ: "siliconflow", upstream: "m",
 		},
+		{
+			name: "lmstudio route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", APIKey: "k"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+			},
+			model: "m", provider: "lmstudio", typ: "lmstudio", upstream: "m",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -313,7 +321,7 @@ func TestBuildRouter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama" || tt.typ == "vllm" || tt.typ == "llamacpp") {
+			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama" || tt.typ == "vllm" || tt.typ == "llamacpp" || tt.typ == "lmstudio") {
 				t.Fatalf("resolved %+v", got)
 			}
 		})
@@ -417,6 +425,42 @@ func TestBuildRouterVercelBaseURLOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := r.Resolve("anthropic/claude-opus-5")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != custom {
+		t.Fatalf("provider %T", got.Provider)
+	}
+}
+
+func TestBuildRouterLmstudioDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("m")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok {
+		t.Fatalf("provider %T", got.Provider)
+	}
+	if a.BaseURL() != "http://localhost:1234/v1" || !got.Free {
+		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}
+
+func TestBuildRouterLmstudioBaseURLOverride(t *testing.T) {
+	const custom = "http://gateway.example/v1"
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", BaseURL: custom, APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("m")
 	a, ok := got.Provider.(interface{ BaseURL() string })
 	if !ok || a.BaseURL() != custom {
 		t.Fatalf("provider %T", got.Provider)
