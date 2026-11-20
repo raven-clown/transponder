@@ -249,13 +249,29 @@ settings:
   cooldown: 30s          # for how long
 ```
 
-- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image going to a provider the translation does not cover.
+- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image at a URL going to Gemini, which takes inline images only.
 - A request the provider rejects as wrong (any other 4xx) is not sent elsewhere. Nor is anything retried once the first byte has reached the caller, after the caller has gone, or past `request_timeout`. The same target is never tried twice in one call.
 - After three failures in a row a target is put last for 30 seconds, so calls stop waiting on it. It is still tried when every other target has failed. This is kept per process, by provider and upstream model.
 - A call that is not streamed has no timeout of its own per target, so a target that hangs holds it until `request_timeout`. Streams move on after `attempt_timeout`.
 - `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` say which target answered and how many were tried before it. The usage record has the same.
 - With limits on, a call reserves the price of the route's dearest target and settles at what the answering target cost.
 - `POST /v1/messages/count_tokens` goes to the first Anthropic target of the route.
+
+### Images
+
+Chat requests can carry images on both endpoints: `image_url` parts on `/v1/chat/completions`, as a URL or a `data:image/...;base64,` URL, and image blocks on `/v1/messages`, as a `url` or `base64` source. Text and images reach the provider in the order they were sent, translated to OpenAI `image_url` parts, Anthropic image blocks or Gemini `inlineData`.
+
+| Target | Image at a URL | Inline image |
+|---|---|---|
+| OpenAI and OpenAI-compatible | yes | PNG, JPEG, WebP, GIF |
+| Anthropic | yes | PNG, JPEG, WebP, GIF |
+| Gemini | no | PNG, JPEG, WebP, HEIC, HEIF |
+| echo | ignored | ignored; it answers with the text |
+
+- A target that cannot take an image is skipped and the next one is tried. When none can, the caller gets a 400 that says why.
+- An inline image the gateway translates may be at most 5 MiB once decoded; a larger one is a 400 `image_too_large`. A request that goes to a provider of its own dialect is sent on unopened, so the provider's own limit applies.
+- Images go only in user messages.
+- For limits, each image counts as 1,000 input tokens until the provider reports the real usage. That is about what a 1024 by 1024 picture costs on OpenAI, Anthropic and Gemini.
 
 ### Claude Code
 
@@ -265,7 +281,7 @@ Point Claude Code at transponder with a transponder API key:
 ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY claude
 ```
 
-`/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools included, though features only Anthropic has, such as its server tools and images, are refused on those routes.
+`/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools and images included, though features only Anthropic has, such as its server tools, PDF documents and images in tool results, are refused on those routes.
 
 The admin API is on the roadmap below.
 
