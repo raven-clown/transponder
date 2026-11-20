@@ -36,8 +36,9 @@ type Counters struct {
 
 	replicas atomic.Int64
 
-	mu    sync.Mutex
-	slots map[int64]bool // slots this replica holds
+	mu       sync.Mutex
+	slots    map[int64]bool // slots this replica holds
+	released map[int64]bool // slots given back whose delete has not reached the database
 
 	stop context.CancelFunc
 	done chan struct{}
@@ -54,13 +55,14 @@ func (db *DB) Counters(ctx context.Context, logger *slog.Logger) (*Counters, err
 	}
 	hbCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	c := &Counters{
-		pool:    db.pool,
-		org:     store.DefaultOrg,
-		replica: hex.EncodeToString(raw[:]),
-		log:     logger,
-		slots:   map[int64]bool{},
-		stop:    stop,
-		done:    make(chan struct{}),
+		pool:     db.pool,
+		org:      store.DefaultOrg,
+		replica:  hex.EncodeToString(raw[:]),
+		log:      logger,
+		slots:    map[int64]bool{},
+		released: map[int64]bool{},
+		stop:     stop,
+		done:     make(chan struct{}),
 	}
 	c.replicas.Store(1)
 	if err := c.heartbeat(ctx); err != nil {
@@ -87,13 +89,18 @@ func (c *Counters) beat(ctx context.Context) {
 	}
 }
 
-// heartbeat marks this replica alive, renews the slots it holds, drops the ones it gave back
-// while the database was out of reach, and counts the replicas alive.
+// heartbeat marks this replica alive, renews the slots it holds, deletes the ones it gave back
+// while the database was out of reach, and counts the replicas alive. It deletes only slots
+// named in released: a slot taken after the copies below must stay, since its call is running.
 func (c *Counters) heartbeat(ctx context.Context) error {
 	c.mu.Lock()
 	held := make([]int64, 0, len(c.slots))
 	for id := range c.slots {
 		held = append(held, id)
+	}
+	gone := make([]int64, 0, len(c.released))
+	for id := range c.released {
+		gone = append(gone, id)
 	}
 	c.mu.Unlock()
 	batch := &pgx.Batch{}
@@ -101,13 +108,18 @@ func (c *Counters) heartbeat(ctx context.Context) error {
 		ON CONFLICT (id) DO UPDATE SET seen_at = excluded.seen_at`, c.replica)
 	batch.Queue(`UPDATE limit_slots SET expires_at = now() + $2::bigint * interval '1 millisecond'
 		WHERE replica = $1 AND id = ANY($3)`, c.replica, slotLease.Milliseconds(), held)
-	batch.Queue(`DELETE FROM limit_slots WHERE replica = $1 AND NOT (id = ANY($2))`, c.replica, held)
+	batch.Queue(`DELETE FROM limit_slots WHERE replica = $1 AND id = ANY($2)`, c.replica, gone)
 	batch.Queue(`DELETE FROM limit_replicas WHERE seen_at < now() - $1::bigint * interval '1 millisecond'`, slotLease.Milliseconds())
 	var n int64
 	batch.Queue(`SELECT count(*) FROM limit_replicas`).QueryRow(func(row pgx.Row) error { return row.Scan(&n) })
 	if err := c.pool.SendBatch(ctx, batch).Close(); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	for _, id := range gone {
+		delete(c.released, id)
+	}
+	c.mu.Unlock()
 	c.replicas.Store(max(n, 1))
 	return nil
 }
@@ -251,26 +263,34 @@ func (c *Counters) Acquire(ctx context.Context, key string, limit int64) (bool, 
 	c.slots[id] = true
 	c.mu.Unlock()
 	if err := tx.Commit(ctx); err != nil {
-		c.forget(id)
+		// The commit may still have landed, so the heartbeat deletes the slot to be sure.
+		c.giveBack(id)
 		return false, noop, c.fail(err)
 	}
 	var once sync.Once
 	return true, func() { once.Do(func() { c.release(id) }) }, nil
 }
 
-func (c *Counters) forget(id int64) {
+// giveBack stops renewing a slot and leaves it for the next heartbeat to delete.
+func (c *Counters) giveBack(id int64) {
 	c.mu.Lock()
 	delete(c.slots, id)
+	c.released[id] = true
 	c.mu.Unlock()
 }
 
-// release gives a slot back. When the database cannot be reached the slot is still forgotten
-// here, so the next heartbeat deletes it.
+// release gives a slot back. When the delete cannot reach the database the next heartbeat
+// tries again, and the slot is no longer renewed, so it expires within the lease either way.
 func (c *Counters) release(id int64) {
-	c.forget(id)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, _ = c.pool.Exec(ctx, `DELETE FROM limit_slots WHERE id = $1`, id)
+	if _, err := c.pool.Exec(ctx, `DELETE FROM limit_slots WHERE id = $1`, id); err != nil {
+		c.giveBack(id)
+		return
+	}
+	c.mu.Lock()
+	delete(c.slots, id)
+	c.mu.Unlock()
 }
 
 // SeedOnce fills the shared counters from the counters build returns, the first time any

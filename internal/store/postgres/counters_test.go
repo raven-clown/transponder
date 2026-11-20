@@ -122,7 +122,7 @@ func TestHeartbeat(t *testing.T) {
 	for held := range a.slots {
 		id = held
 	}
-	a.forget(id)
+	a.giveBack(id)
 	if err := a.heartbeat(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +131,10 @@ func TestHeartbeat(t *testing.T) {
 		t.Fatalf("slots left %d, %v", left, err)
 	}
 	release()
+
+	if len(a.released) != 0 {
+		t.Fatalf("released %v, want it emptied once the delete went through", a.released)
+	}
 
 	// A held slot is renewed.
 	if ok, _, _ := a.Acquire(ctx, "conc|k", 5); !ok {
@@ -156,6 +160,25 @@ func TestHeartbeat(t *testing.T) {
 	}
 	if err := a.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM limit_slots) + (SELECT count(*) FROM limit_replicas)`).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("rows left %d, %v", left, err)
+	}
+}
+
+// A slot taken after the heartbeat copied the held slots, and so missing from that copy, must
+// survive the heartbeat: its call is still running.
+func TestHeartbeatKeepsSlotsItDidNotSee(t *testing.T) {
+	a := counters(t, openTemp(t))
+	ctx := context.Background()
+	if ok, _, err := a.Acquire(ctx, "conc|k", 1); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	a.mu.Lock()
+	clear(a.slots) // as if Acquire committed between the copy and the batch
+	a.mu.Unlock()
+	if err := a.heartbeat(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _, _ := a.Acquire(ctx, "conc|k", 1); ok {
+		t.Fatal("the heartbeat deleted a slot in use, so a second call passed a cap of one")
 	}
 }
 
