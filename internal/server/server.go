@@ -119,6 +119,8 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		}
 		return nil
 	}
+	// Handlers and adapters read the caller from the request context.
+	r = r.WithContext(auth.WithIdentity(r.Context(), id))
 	return &call{w: w, r: r, body: body, fail: writeError, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,

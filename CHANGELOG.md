@@ -14,6 +14,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Groq provider (`type: groq`) defaulting to `https://api.groq.com/openai/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. No prices are included, so calls are logged as unpriced.
 - Cerebras provider (`type: cerebras`) defaulting to `https://api.cerebras.ai/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. No prices are included, so calls are logged as unpriced.
 - SiliconFlow provider (`type: siliconflow`) defaulting to `https://api.siliconflow.com/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. The China host is `https://api.siliconflow.cn/v1`. No prices are included, so calls are logged as unpriced.
+- Every caller has one of the roles `admin`, `viewer` or `member`, and the role of an API key now comes with the caller on each request, ready for the admin API and access per route. A key stored without a role is a `member` and calls the gateway as before.
 
 ## [0.2.4] - 2026-11-14
 

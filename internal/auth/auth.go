@@ -23,7 +23,8 @@ const (
 // ErrUnauthenticated means the request carries no valid credentials.
 var ErrUnauthenticated = errors.New("auth: unauthenticated")
 
-// Identity is the caller of a request.
+// Identity is the caller of a request. User is the user id from the token, or the key name
+// for an API key. Key is the key name, empty when the caller signed in with a token.
 type Identity struct {
 	OrgID string
 	User  string
@@ -62,7 +63,17 @@ func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	if k.Disabled || (!k.ExpiresAt.IsZero() && !k.ExpiresAt.After(a.now())) {
 		return Identity{}, ErrUnauthenticated
 	}
-	return Identity{OrgID: k.OrgID, User: k.Name, Teams: k.Teams, Key: k.Name, Role: Role(k.Role)}, nil
+	return Identity{OrgID: k.OrgID, User: k.Name, Teams: k.Teams, Key: k.Name, Role: keyRole(k.Role)}, nil
+}
+
+// keyRole is the role of a stored key. A key with no role, or one this version does not
+// know, is a member: it can call the gateway as before and nothing more.
+func keyRole(s string) Role {
+	r, err := ParseRole(s)
+	if err != nil {
+		return RoleMember
+	}
+	return r
 }
 
 func bearer(h string) string {
