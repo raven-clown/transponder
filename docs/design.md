@@ -289,7 +289,7 @@ log_level: info
 
 Any key can be overridden by environment variable, with `__` between nested keys as the contract says: `TRANSPONDER_LISTEN_ADDR` for `listen_addr`, `TRANSPONDER_STORE__POSTGRES` for `store.postgres`.
 
-A `${VAR}` in the file is replaced from the environment before parsing. A missing variable is an error that names it. A comment line, whose first non-space character is `#`, is left unchanged. A line that starts with `#` inside a `|` or `>` block is part of the value, so its variables are still replaced.
+A `${VAR}` in a value or a key is replaced from the environment. The file is parsed first, with each variable held by a marker of letters and digits, and the markers left in scalars are then filled in, so comments are never expanded and a value with `#`, quotes or newlines cannot change the structure of the file. A missing variable is an error that names it.
 
 The same file may also contain `providers`, `routes`, `budgets`, `keys`, `prices` and `settings`. At start, transponder upserts those into SQL and marks them `source: file`. Items marked that way show up in the admin API like any other but cannot be changed or deleted there (409 `managed_by_file`), so a GitOps setup and the console never fight over the same item. Items created through the API are `source: api`. Removing an item from the file and restarting deletes it. A user who never writes YAML never sees any of this.
 
