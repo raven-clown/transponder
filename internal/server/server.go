@@ -154,7 +154,7 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	c := &call{w: w, r: r, body: body, fail: writeError, id: id, router: rt, limiter: limiter, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
-		RequestID: r.Header.Get("X-Request-ID"),
+		RequestID: r.Header.Get(requestIDHeader),
 		User:      id.User,
 		Teams:     id.Teams,
 		Key:       id.Key,
