@@ -33,6 +33,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 
+### Fixed
+
+- An OIDC token without a `kid`, signed with a key the issuer added since its keys were last read, was refused for up to an hour. Such a token now has the keys read again, at most once every 10 seconds like an unknown `kid`.
+- An OIDC token issued more than `clock_skew` in the future (`iat`), or with an `iat` or `nbf` that is not a number, is now refused. A malformed `nbf` used to be ignored.
+- A caller that gave up while transponder fetched the identity provider's keys got a 500 and an error in the log; it now gets 503 `auth_unavailable`, as when the provider cannot be reached.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
