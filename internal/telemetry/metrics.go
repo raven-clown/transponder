@@ -138,12 +138,20 @@ func (m *Metrics) Limited(reason string) {
 	m.limited.Add(1, reason)
 }
 
-// EventDropped counts a usage record or span that could not be delivered to sink.
+// EventDropped counts a usage record that could not be delivered to sink.
 func (m *Metrics) EventDropped(sink string) {
 	if m == nil {
 		return
 	}
 	m.dropped.Add(1, sink)
+}
+
+// SpansDropped counts n spans lost to a full queue or a collector that did not take them.
+func (m *Metrics) SpansDropped(n int) {
+	if m == nil {
+		return
+	}
+	m.dropped.Add(float64(n), "otlp")
 }
 
 // Unpriced counts a call on a model with no price.

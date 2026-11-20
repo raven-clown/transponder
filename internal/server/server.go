@@ -49,6 +49,8 @@ type Deps struct {
 	// Metrics counts requests, tokens, cost, fallbacks and refusals, and is served on
 	// /metrics. Nil means nothing is counted and there is no /metrics.
 	Metrics *telemetry.Metrics
+	// Tracer makes a span for each call and each attempt on a provider. Nil means no tracing.
+	Tracer *telemetry.Tracer
 }
 
 // New returns the gateway handler.
@@ -91,6 +93,7 @@ type call struct {
 	resolved router.Resolved // the target being tried
 	cut      bool            // the answering target's stream broke after it had started
 	tried    bool            // a provider was asked, so the metrics name it
+	span     *telemetry.Span // the request's span; nil when tracing is off
 	fail     errorFunc
 	id       auth.Identity
 	caller   limits.Caller
@@ -148,7 +151,7 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		Endpoint:  endpoint,
 	}}
 	if o != nil {
-		o.c = c
+		o.c, c.span = c, o.span
 	}
 	return c
 }

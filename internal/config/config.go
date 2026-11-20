@@ -250,9 +250,32 @@ type Store struct {
 	Postgres string `yaml:"postgres"`
 }
 
-// OTel configures trace export.
+// OTel configures trace export. It is off while Endpoint is empty.
 type OTel struct {
+	// Endpoint is the base URL of an OTLP/HTTP collector, such as http://collector:4318.
 	Endpoint string `yaml:"endpoint"`
+	// Headers are sent with every export, for a collector that needs a key.
+	Headers map[string]string `yaml:"headers"`
+	// SampleRatio is the share of traces that start at the gateway that are recorded, from 0
+	// to 1. Zero means all. A call that arrives with a traceparent follows its sampled flag.
+	SampleRatio float64 `yaml:"sample_ratio"`
+}
+
+// validate checks the trace export settings without reaching the collector.
+func (o OTel) validate() error {
+	if o.Endpoint == "" {
+		if len(o.Headers) > 0 || o.SampleRatio != 0 {
+			return errors.New("config: otel is set but otel.endpoint is empty")
+		}
+		return nil
+	}
+	if u, err := url.Parse(o.Endpoint); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: otel.endpoint %q must be an http or https URL of an OTLP/HTTP collector, usually port 4318; OTLP over gRPC is not supported", o.Endpoint)
+	}
+	if o.SampleRatio < 0 || o.SampleRatio > 1 {
+		return fmt.Errorf("config: otel.sample_ratio %v must be between 0 and 1", o.SampleRatio)
+	}
+	return nil
 }
 
 // Load reads the file at path, which may be empty, and applies TRANSPONDER_ overrides from environ.
@@ -344,6 +367,9 @@ func (c *Bootstrap) validate() error {
 		return err
 	}
 	if err := c.Auth.OIDC.validate(); err != nil {
+		return err
+	}
+	if err := c.OTel.validate(); err != nil {
 		return err
 	}
 	if c.Store.SQLite != "" && c.Store.Postgres != "" {
@@ -459,9 +485,15 @@ func applyEnv(tree map[string]any, environ []string) {
 			node = child
 		}
 		var value any = v
-		if kind == reflect.Bool {
+		switch kind {
+		case reflect.Bool:
 			if b, err := strconv.ParseBool(v); err == nil {
 				value = b
+			}
+		case reflect.Float64:
+			// Left as a string when it is not a number, so the error names what was set.
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				value = f
 			}
 		}
 		node[path[len(path)-1]] = value

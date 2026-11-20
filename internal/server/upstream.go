@@ -63,11 +63,10 @@ func (g *gateway) run(c *call, attempt func() error) {
 	failedAt := 0
 	for i, t := range c.plan.Targets {
 		g.use(c, t, i)
-		c.tried = true
-		began := g.d.Now()
+		try := g.try(c, i)
 		err := attempt()
 		if err == nil {
-			g.attempted(c, began, !c.cut)
+			try.answered()
 			// A stream that broke after its first byte cannot fall back, but it still counts
 			// against the target, unless it broke because the caller left.
 			switch {
@@ -84,10 +83,11 @@ func (g *gateway) run(c *call, attempt func() error) {
 		}
 		if ae.input {
 			input = ae
+			try.skipped()
 			g.fellBack(c, i, "unsupported")
 			continue
 		}
-		g.attempted(c, began, false)
+		try.failed(ae.err)
 		upstream, failedTarget, failedAt = ae, t, i
 		if ctx.Err() != nil || !retryable(ae.err) {
 			break

@@ -49,7 +49,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface: `MemoryStore` in one process, `Failover` for `on_store_error`, and the shared one in `internal/store/postgres/counters.go`. `internal/limits/limitstest` is the suite every counter store passes
 - `internal/tokens`: the token estimate used when a provider reports no usage
 - `internal/runtime`: the live config and its reload. Each replica checks `config_version` every 2 seconds and swaps in a new snapshot; a call keeps the snapshot it started with. A write to the runtime config goes through `store.ConfigStore.UpdateConfig`, which raises the version in the same transaction
-- `internal/telemetry`: the JSON logger, and the Prometheus registry and gateway metrics served on `/metrics`. `internal/server/observe.go` is where requests, attempts and fallbacks are reported to it; tracing is planned
+- `internal/telemetry`: the JSON logger, the Prometheus registry and gateway metrics served on `/metrics`, and the tracer with its OTLP/HTTP exporter. `internal/server/observe.go` is where requests, attempts and fallbacks are reported to them. Nothing that goes on a span or a label may hold prompt, completion or provider error text
 - `internal/secrets` (planned): sealed secrets
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description

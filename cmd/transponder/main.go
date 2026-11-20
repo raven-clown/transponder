@@ -177,6 +177,12 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	defer stopOps()
+	tracer, flushSpans, err := startTracing(cfg.OTel, metrics, logger)
+	if err != nil {
+		return err
+	}
+	// Runs once the open requests have ended, so their spans are in the last export.
+	defer flushSpans()
 	gw := server.New(server.Deps{
 		Auth: authn,
 		Live: func() (*router.Router, *limits.Limiter) {
@@ -192,6 +198,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          ready,
 		Metrics:        metrics,
+		Tracer:         tracer,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.

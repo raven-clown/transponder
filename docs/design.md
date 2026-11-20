@@ -281,7 +281,9 @@ store:
   # postgres: postgres://...
 secrets_key: ${TRANSPONDER_SECRETS_KEY}
 otel:
-  endpoint: ""
+  endpoint: ""               # an OTLP/HTTP collector, such as http://collector:4318
+  # headers: {Authorization: Bearer ...}
+  # sample_ratio: 1
 log_level: info
 ```
 
@@ -409,7 +411,7 @@ Spend rows are kept for every user, team and key, budgeted or not, so adding a b
 - `/metrics`, in the Prometheus text format, written by a small registry in `internal/telemetry` with no dependency. The five shared names of the contract carry its labels plus transponder's own: `transponder_requests_total{endpoint,route,provider,model,code}`, `transponder_request_duration_seconds{endpoint,route}`, `transponder_inflight_requests`, `transponder_limited_total{reason}` and `transponder_events_dropped_total{sink}`. Next to them: `transponder_tokens_total{direction,provider,model}`, `transponder_cost_usd_total{provider,model}`, `transponder_upstream_duration_seconds{provider,model}`, `transponder_fallbacks_total{route,from,to,reason}`, `transponder_unpriced_requests_total`, `transponder_config_reloads_total{result}` and `transponder_build_info{version}`. Budget refusals are `transponder_limited_total{reason="budget_exceeded"}`.
 - Labels are bounded. There is no user, team, key or request id label; per-user numbers live in SQL. Routes, providers and configured models come from the config. A model name the caller chose (a wildcard route whose target sets no model) becomes a label only once a provider has answered for it, for at most 200 names, and is `other` until then. Each metric is capped at 5,000 series, with the overflow counted in one series.
 - On the gateway's port `/metrics` needs the `viewer` role, since that port faces callers and the metrics name providers, models and routes and total the spend. `ops_listen_addr` serves `/healthz`, `/readyz` and `/metrics` on a second port for a private network, where `/metrics` is open.
-- Tracing over OTLP when `otel.endpoint` is set: one span per request, one child span per upstream attempt, with provider, model, tokens and cost as attributes.
+- Tracing over OTLP when `otel.endpoint` is set: one span per request, one child span per upstream attempt, with provider, model, status, tokens and cost as attributes, named after the OpenTelemetry HTTP and GenAI conventions where they have a name. Spans hold no prompt, completion or provider error text. A `traceparent` from the caller is joined and its sampled flag followed; `otel.sample_ratio` samples traces that start here. The provider is sent the attempt's span as `traceparent`, and `tracestate` unchanged. The tracer and its exporter are in `internal/telemetry` with no dependency: spans go out as OTLP/HTTP with JSON bodies, in batches of up to 512 every 5 seconds from a queue of 2,048, and a span that does not fit or that the collector refuses is dropped and counted in `transponder_events_dropped_total{sink="otlp"}`. OTLP over gRPC is left out, since it would bring gRPC and protobuf into the build.
 - Logs: JSON on stdout through `log/slog`, one line per request with id, user, project, route, provider, model, tokens, cost, status, latency and fallbacks. Prompts and completions are never logged.
 - `GET /v1/models` lists the literal route names the caller may use and, for admins, direct `provider/model` entries, so tools such as Open WebUI can show a model picker.
 - `POST /v1/messages/count_tokens` is forwarded to the first Anthropic target of the route, and returns 404 when the route has none.

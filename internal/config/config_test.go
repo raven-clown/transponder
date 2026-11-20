@@ -549,6 +549,50 @@ func TestOpsListenAddr(t *testing.T) {
 	}
 }
 
+func TestOTel(t *testing.T) {
+	c, err := Load("", nil)
+	if err != nil || c.OTel.Endpoint != "" {
+		t.Fatalf("tracing is on by default: %+v, err %v", c.OTel, err)
+	}
+	p := writeFile(t, "otel:\n  endpoint: https://otlp.example.com/otlp\n  headers:\n    Authorization: Bearer ${OTEL_KEY}\n  sample_ratio: 0.1\n")
+	c, err = Load(p, []string{"OTEL_KEY=k1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := OTel{Endpoint: "https://otlp.example.com/otlp", Headers: map[string]string{"Authorization": "Bearer k1"}, SampleRatio: 0.1}
+	if !reflect.DeepEqual(c.OTel, want) {
+		t.Fatalf("otel = %+v, want %+v", c.OTel, want)
+	}
+	c, err = Load("", []string{"TRANSPONDER_OTEL__ENDPOINT=http://collector:4318", "TRANSPONDER_OTEL__SAMPLE_RATIO=0.25"})
+	if err != nil || c.OTel.Endpoint != "http://collector:4318" || c.OTel.SampleRatio != 0.25 {
+		t.Fatalf("from the environment: %+v, err %v", c.OTel, err)
+	}
+
+	for name, tt := range map[string]struct {
+		body string
+		env  []string
+		want string
+	}{
+		"grpc address":             {body: "otel: {endpoint: \"collector:4317\"}\n", want: "otel.endpoint"},
+		"another scheme":           {body: "otel: {endpoint: \"grpc://collector:4317\"}\n", want: "otel.endpoint"},
+		"ratio above 1":            {body: "otel: {endpoint: \"http://c:4318\", sample_ratio: 2}\n", want: "otel.sample_ratio"},
+		"negative ratio":           {body: "otel: {endpoint: \"http://c:4318\", sample_ratio: -1}\n", want: "otel.sample_ratio"},
+		"headers with no endpoint": {body: "otel: {headers: {a: b}}\n", want: "otel.endpoint is empty"},
+		"ratio with no endpoint":   {body: "otel: {sample_ratio: 0.5}\n", want: "otel.endpoint is empty"},
+		"ratio that is no number":  {env: []string{"TRANSPONDER_OTEL__ENDPOINT=http://c:4318", "TRANSPONDER_OTEL__SAMPLE_RATIO=half"}, want: "half"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := ""
+			if tt.body != "" {
+				path = writeFile(t, tt.body)
+			}
+			if _, err := Load(path, tt.env); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to name %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSharedLimits(t *testing.T) {
 	tests := []struct {
 		name, body string
