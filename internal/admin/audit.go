@@ -65,7 +65,8 @@ func (h *handler) reload(r *http.Request) {
 	if h.d.Reload == nil {
 		return
 	}
-	if _, err := h.d.Reload.Check(r.Context()); err != nil {
+	// The write has committed, so the reload runs even when the caller has gone.
+	if _, err := h.d.Reload.Check(context.WithoutCancel(r.Context())); err != nil {
 		h.d.Logger.WarnContext(r.Context(), "reloading after an admin write", "err", err)
 	}
 }
