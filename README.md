@@ -488,7 +488,7 @@ ops_listen_addr: ":9464"
 
 | Metric | Labels | What it counts |
 |---|---|---|
-| `transponder_requests_total` | `endpoint`, `route`, `provider`, `model`, `code` | Requests answered. `provider` and `model` are the target that answered, and are empty when the request ended before a provider was asked (a 401, a 404, a limit). |
+| `transponder_requests_total` | `endpoint`, `route`, `provider`, `model`, `code` | Requests answered. `endpoint` is `chat.completions`, `messages`, `messages.count_tokens`, `responses`, `embeddings`, `models`, `usage`, or `other` for a path the gateway does not serve. `provider` and `model` are the target that answered, and are empty when the request ended before a provider was asked (a 401, a 404, a limit). |
 | `transponder_request_duration_seconds` | `endpoint`, `route` | Histogram of the time from the request arriving to the last byte of the answer, streams included. |
 | `transponder_inflight_requests` | | Requests being served now. |
 | `transponder_limited_total` | `reason` | Requests refused by a limit or a budget: `rate_limited`, `concurrency_limited`, `quota_exceeded`, `budget_exceeded`, `input_too_large`. |
@@ -516,7 +516,7 @@ otel:
 ```
 
 - Each call is one span, named after the endpoint, such as `POST /v1/chat/completions`, with the status code, route, provider, model, tokens, cost and number of fallbacks.
-- Each attempt on a provider is a child span, such as `chat gpt-4o-mini`, with the provider, the model, its tokens, and for a failed attempt the reason (`server_error`, `rate_limited`, `timeout` and the others listed under `transponder_fallbacks_total`) and the provider's status code. A route that fell back shows every target it tried, in order.
+- Each attempt on a provider is a child span, such as `chat gpt-4o-mini` (for chat, `/v1/messages` and `/v1/responses`) or `embeddings text-embedding-3-small`, with the provider, the model, its tokens, and for a failed attempt the reason (`server_error`, `rate_limited`, `timeout` and the others listed under `transponder_fallbacks_total`) and the provider's status code. A route that fell back shows every target it tried, in order.
 - Spans never hold prompt or completion text, and never a provider's error message, since those can quote the prompt.
 - Only calls from a caller with a valid key or token are traced. A request that fails to sign in, a probe and a scrape leave no span, so someone without a key cannot fill your collector.
 - `traceparent` and `tracestate` from the caller are kept. A call that arrives with a `traceparent` joins that trace and follows its sampled flag, and `sample_ratio` only decides for traces that start at the gateway. The provider is sent a `traceparent` that names the attempt's span, and `tracestate` as it came. A `tracestate` over the 512 characters the standard asks for is still passed on but left off the exported spans. With tracing off both headers are passed on unchanged.

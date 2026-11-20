@@ -435,6 +435,86 @@ func TestTraceOfAStream(t *testing.T) {
 	}
 }
 
+// /v1/responses is counted and traced as chat is: a request with its provider, model,
+// tokens and cost, one span per attempt, and the attempt's span sent to the provider.
+func TestResponsesMetricsAndTrace(t *testing.T) {
+	plain, stream := fixture(t, "plain.json"), fixture(t, "stream.sse")
+	for name, tt := range map[string]struct {
+		body   string
+		answer http.HandlerFunc
+	}{
+		"plain":  {`{"model":"smart","input":"the zebra crossing prompt"}`, replay(http.StatusOK, "application/json", plain)},
+		"stream": {`{"model":"smart","input":"the zebra crossing prompt","stream":true}`, replay(http.StatusOK, "text/event-stream", stream)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := upstreamSeeingTrace(t, http.StatusInternalServerError, "oops")
+			var mu sync.Mutex
+			var traceparent string
+			b := countedUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				traceparent = r.Header.Get("Traceparent")
+				mu.Unlock()
+				tt.answer(w, r)
+			})
+			e := setupTraced(t, route("smart", oaTarget("a", "gpt-5", a.counted), oaTarget("b", "gpt-4o-mini", b)))
+			rec := e.send("/v1/responses", tt.body, map[string]string{"Traceparent": "00-" + callerTrace + "-" + callerSpan + "-01"})
+			if rec.Code != http.StatusOK || rec.Header().Get("X-Transponder-Fallbacks") != "1" {
+				t.Fatalf("status %d, headers %v: %s", rec.Code, rec.Header(), rec.Body)
+			}
+			recs, err := e.db.RecentUsage(context.Background(), store.DefaultOrg, 10)
+			if err != nil || len(recs) != 1 || recs[0].InputTokens == 0 || recs[0].OutputTokens == 0 || recs[0].CostNUSD == 0 {
+				t.Fatalf("usage records %+v, err %v", recs, err)
+			}
+			u := recs[0]
+
+			wantMetrics(t, e.scrape(t),
+				`transponder_requests_total{endpoint="responses",route="smart",provider="b",model="gpt-4o-mini",code="200"} 1`,
+				`transponder_request_duration_seconds_count{endpoint="responses",route="smart"} 1`,
+				fmt.Sprintf(`transponder_tokens_total{direction="input",provider="b",model="gpt-4o-mini"} %d`, u.InputTokens),
+				fmt.Sprintf(`transponder_tokens_total{direction="output",provider="b",model="gpt-4o-mini"} %d`, u.OutputTokens),
+				fmt.Sprintf(`transponder_cost_usd_total{provider="b",model="gpt-4o-mini"} %g`, float64(u.CostNUSD)/1e9),
+				`transponder_fallbacks_total{route="smart",from="a",to="b",reason="server_error"} 1`,
+				`transponder_upstream_duration_seconds_count{provider="a",model="gpt-5"} 1`,
+				`transponder_upstream_duration_seconds_count{provider="b",model="gpt-4o-mini"} 1`,
+			)
+
+			spans := e.finish()
+			if len(spans) != 3 {
+				t.Fatalf("%d spans, want 3: %+v", len(spans), spans)
+			}
+			call := spanNamed(t, spans, "POST /v1/responses")
+			failed := spanNamed(t, spans, "chat gpt-5")
+			answered := spanNamed(t, spans, "chat gpt-4o-mini")
+			wantAttrs(t, call, map[string]any{
+				"transponder.endpoint":       "responses",
+				"gen_ai.operation.name":      "chat",
+				"transponder.provider":       "b",
+				"transponder.fallbacks":      int64(1),
+				"gen_ai.usage.input_tokens":  u.InputTokens,
+				"gen_ai.usage.output_tokens": u.OutputTokens,
+			})
+			if !failed.Failed || answered.Failed || failed.ParentID != call.SpanID || answered.ParentID != call.SpanID {
+				t.Fatalf("attempts: failed %+v, answered %+v", failed, answered)
+			}
+			wantAttrs(t, answered, map[string]any{"gen_ai.usage.output_tokens": u.OutputTokens, "transponder.attempt": int64(1)})
+			for _, s := range spans {
+				if id16(s.TraceID) != callerTrace {
+					t.Errorf("span %q is not in the caller's trace", s.Name)
+				}
+			}
+			mu.Lock()
+			sent := traceparent
+			mu.Unlock()
+			if want := "00-" + callerTrace + "-" + id8(answered.SpanID) + "-01"; sent != want {
+				t.Errorf("the provider got traceparent %q, want %q", sent, want)
+			}
+			if strings.Contains(fmt.Sprintf("%+v", spans), "zebra") {
+				t.Error("the spans contain the prompt")
+			}
+		})
+	}
+}
+
 // A target that cannot take the request gets a span that says so, and no upstream call.
 func TestTraceOfASkippedTarget(t *testing.T) {
 	a := upstreamSeeingTrace(t, 200, "{}")

@@ -245,7 +245,7 @@ func (t try) failed(err error) {
 // operation names what an endpoint does, in the words of the OpenTelemetry GenAI conventions.
 func operation(endpoint string) string {
 	switch endpoint {
-	case "chat.completions", "messages":
+	case "chat.completions", "messages", "responses":
 		return "chat"
 	}
 	return endpoint
