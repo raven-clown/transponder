@@ -1,0 +1,71 @@
+{
+  "id": "resp_68af4030592c81938ec0a5fbab4a3e9f05438e46b5f69a3b",
+  "object": "response",
+  "created_at": 1756315696,
+  "status": "completed",
+  "background": false,
+  "error": null,
+  "incomplete_details": null,
+  "instructions": "You are a careful reviewer.",
+  "max_output_tokens": null,
+  "model": "gpt-5-2025-08-07",
+  "output": [
+    {
+      "id": "rs_68af4030baa48193b0b43b4c2a176a1a05438e46b5f69a3b",
+      "type": "reasoning",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "Comparing the two branches of the function before answering."
+        }
+      ]
+    },
+    {
+      "id": "msg_68af40337e58819392e935fb404414d005438e46b5f69a3b",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The second branch never runs: the guard above it returns for every negative input.",
+          "annotations": [],
+          "logprobs": []
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "previous_response_id": "resp_68af3f0b8f4c8193a5f2b1b0d6c2b0a905438e46b5f69a3b",
+  "prompt_cache_key": null,
+  "reasoning": {
+    "effort": "medium",
+    "summary": "auto"
+  },
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1.0,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_p": 1.0,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 1200,
+    "input_tokens_details": {
+      "cached_tokens": 1024
+    },
+    "output_tokens": 600,
+    "output_tokens_details": {
+      "reasoning_tokens": 448
+    },
+    "total_tokens": 1800
+  },
+  "user": null,
+  "metadata": {}
+}

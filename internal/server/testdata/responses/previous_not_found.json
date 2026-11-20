@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Previous response with id 'resp_68af3f0b8f4c8193a5f2b1b0d6c2b0a905438e46b5f69a3b' not found.",
+    "type": "invalid_request_error",
+    "param": "previous_response_id",
+    "code": "previous_response_not_found"
+  }
+}
