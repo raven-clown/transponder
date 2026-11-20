@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/raven-clown/transponder/api"
 	"github.com/raven-clown/transponder/internal/auth"
+	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/runtime"
+	"github.com/raven-clown/transponder/internal/secrets"
 	"github.com/raven-clown/transponder/internal/store"
 )
 
@@ -30,6 +33,7 @@ type Store interface {
 	store.UsageAdminStore
 	store.ConfigStore
 	store.AuditStore
+	store.ConfigItemStore
 	Ping(ctx context.Context) error
 }
 
@@ -50,6 +54,12 @@ type Deps struct {
 	Version   string
 	StoreKind string
 	Started   time.Time
+	// File is the loaded config file. Its provider keys are used for the providers it
+	// declares, and its other settings are kept when the runtime config is loaded.
+	File *config.Bootstrap
+	// Secrets seals provider keys. Nil means no secrets_key is set, and a provider key cannot
+	// be stored.
+	Secrets *secrets.Box
 }
 
 type handler struct {
@@ -84,7 +94,7 @@ func (h *handler) routes() []route {
 	write := func(method, path string, fn http.HandlerFunc) route {
 		return route{method, path, auth.RoleAdmin, fn}
 	}
-	return []route{
+	routes := []route{
 		read("/openapi.yaml", h.openapi),
 		read("/status", h.status),
 		read("/keys", h.listKeys),
@@ -97,6 +107,10 @@ func (h *handler) routes() []route {
 		read("/requests", h.requests),
 		read("/audit", h.audit),
 	}
+	for _, s := range []*itemSpec{h.providerSpec(), h.routeSpec(), h.budgetSpec(), h.profileSpec()} {
+		routes = append(routes, h.itemRoutes(s)...)
+	}
+	return routes
 }
 
 func (h *handler) openapi(w http.ResponseWriter, _ *http.Request) {
@@ -177,7 +191,28 @@ func writeVersioned(w http.ResponseWriter, status int, version int64, v any) {
 
 // decode reads a JSON body into dst. Unknown fields are refused, named in the error.
 func decode(w http.ResponseWriter, r *http.Request, dst any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	raw, err := readBody(w, r)
+	if err != nil {
+		return err
+	}
+	return decodeBytes(raw, dst)
+}
+
+func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		return nil, &apiError{status: http.StatusRequestEntityTooLarge, code: "body_too_large", message: "the body is larger than 1 MiB"}
+	case err != nil:
+		return nil, invalid("", "could not read the body: %v", err)
+	}
+	return raw, nil
+}
+
+// decodeBytes reads one JSON object into dst, refusing unknown fields.
+func decodeBytes(raw []byte, dst any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(dst)
 	if err == nil {
@@ -186,13 +221,8 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) error {
 		}
 		return nil
 	}
-	var (
-		typeErr  *json.UnmarshalTypeError
-		tooLarge *http.MaxBytesError
-	)
+	var typeErr *json.UnmarshalTypeError
 	switch {
-	case errors.As(err, &tooLarge):
-		return &apiError{status: http.StatusRequestEntityTooLarge, code: "body_too_large", message: "the body is larger than 1 MiB"}
 	case errors.As(err, &typeErr):
 		return invalid(typeErr.Field, "%s must be a JSON %s", typeErr.Field, jsonType(typeErr.Type.Kind().String()))
 	case strings.HasPrefix(err.Error(), "json: unknown field "):

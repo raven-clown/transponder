@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"syscall"
@@ -27,6 +28,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/registry"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/runtime"
+	"github.com/raven-clown/transponder/internal/secrets"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/postgres"
@@ -149,14 +151,21 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		}
 	}
 
-	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
-	limiter, closeLimiter, err := buildLimiter(ctx, cfg, db, logger, time.Now)
+	box, err := openSecrets(cfg)
 	if err != nil {
 		return err
 	}
-	defer closeLimiter()
-	reloader, err := runtime.New(ctx, db, func(context.Context, int64) (live, error) {
-		return loadLive(cfg, client, limiter)
+	if err := admin.SyncFile(ctx, db, cfg, time.Now, logger); err != nil {
+		return fmt.Errorf("storing the providers, routes, budgets and profiles of the config file: %w", err)
+	}
+
+	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	limiters := &limiterSource{build: func(lc limits.Config) (*limits.Limiter, func(), error) {
+		return buildLimiterFor(ctx, cfg, lc, db, logger, time.Now)
+	}}
+	defer limiters.close()
+	reloader, err := runtime.New(ctx, db, func(ctx context.Context, _ int64) (live, error) {
+		return loadStored(ctx, cfg, db, box, client, limiters)
 	}, logger, time.Now)
 	if err != nil {
 		return err
@@ -210,6 +219,8 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 			Version:   version,
 			StoreKind: storeKind(cfg.Store),
 			Started:   started,
+			File:      cfg,
+			Secrets:   box,
 		}),
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
@@ -285,20 +296,78 @@ type live struct {
 //
 // The providers, routes and limits come from the file for now. The admin API will keep them in
 // the store, and read them here, so every replica picks up its writes.
-func loadLive(cfg *config.Bootstrap, client *http.Client, base *limits.Limiter) (live, error) {
+func loadLive(cfg *config.Bootstrap, client *http.Client, limiters *limiterSource) (live, error) {
 	rt, err := buildRouter(cfg, client)
 	if err != nil {
 		return live{}, err
 	}
+	lc, err := cfg.LimitsConfig()
+	if err != nil {
+		return live{}, err
+	}
 	l := live{router: rt}
-	if base != nil {
-		lc, err := cfg.LimitsConfig()
-		if err != nil {
-			return live{}, err
-		}
-		l.limiter = base.WithConfig(lc)
+	if l.limiter, err = limiters.limiter(lc); err != nil {
+		return live{}, err
 	}
 	return l, nil
+}
+
+// loadStored loads the runtime config from the store, where the file's items and the admin
+// API's writes are, and builds it.
+func loadStored(ctx context.Context, cfg *config.Bootstrap, db admin.RuntimeStore, box *secrets.Box, client *http.Client, limiters *limiterSource) (live, error) {
+	rc, err := admin.Runtime(ctx, db, box, cfg)
+	if err != nil {
+		return live{}, err
+	}
+	return loadLive(rc, client, limiters)
+}
+
+// limiterSource keeps the limiter's counters. They are made the first time a config limits
+// anything, so a replica that started with no limits can take budgets added through the
+// admin API, and a reload keeps them, so it never resets what callers have used.
+type limiterSource struct {
+	build func(lc limits.Config) (*limits.Limiter, func(), error)
+	base  *limits.Limiter
+	stop  func()
+}
+
+// limiter returns a limiter for lc on the kept counters, or nil when nothing is limited and
+// there are no counters yet. Loads are serialised by the reloader, so it takes no lock.
+func (s *limiterSource) limiter(lc limits.Config) (*limits.Limiter, error) {
+	if s.base == nil {
+		if lc.Empty() || s.build == nil {
+			return nil, nil
+		}
+		base, stop, err := s.build(lc)
+		if err != nil {
+			return nil, err
+		}
+		s.base, s.stop = base, stop
+	}
+	return s.base.WithConfig(lc), nil
+}
+
+func (s *limiterSource) close() {
+	if s.stop != nil {
+		s.stop()
+	}
+}
+
+// openSecrets returns what seals provider keys: secrets_key when it is set, and with SQLite a
+// key kept in transponder.key next to the database otherwise. With Postgres and no
+// secrets_key it returns nil, and provider keys cannot be stored through the API.
+func openSecrets(cfg *config.Bootstrap) (*secrets.Box, error) {
+	if cfg.SecretsKey != "" {
+		key, err := secrets.ParseKey(cfg.SecretsKey)
+		if err != nil {
+			return nil, err
+		}
+		return secrets.New(key)
+	}
+	if cfg.Store.Postgres != "" {
+		return nil, nil
+	}
+	return secrets.LoadOrCreate(filepath.Join(filepath.Dir(cfg.Store.SQLite), "transponder.key"))
 }
 
 // buildAuth returns what checks callers: API keys from keys, and tokens from the OIDC issuer
@@ -384,6 +453,11 @@ func buildLimiter(ctx context.Context, cfg *config.Bootstrap, db database, logge
 	if err != nil || lc.Empty() {
 		return nil, func() {}, err
 	}
+	return buildLimiterFor(ctx, cfg, lc, db, logger, now)
+}
+
+// buildLimiterFor is buildLimiter for the limits lc, wherever they came from.
+func buildLimiterFor(ctx context.Context, cfg *config.Bootstrap, lc limits.Config, db database, logger *slog.Logger, now func() time.Time) (*limits.Limiter, func(), error) {
 	seeded := func() (*limits.MemoryStore, error) {
 		mem := limits.NewMemoryStore()
 		l := limits.New(lc, mem, now)

@@ -364,9 +364,6 @@ func (c *Bootstrap) validate() error {
 	default:
 		return fmt.Errorf("config: limits.on_store_error %q must be local or deny", c.Limits.OnStoreError)
 	}
-	if _, err := c.LimitsConfig(); err != nil {
-		return err
-	}
 	if err := c.Auth.OIDC.validate(); err != nil {
 		return err
 	}
@@ -393,6 +390,21 @@ func (c *Bootstrap) validate() error {
 	if c.Settings.RequestTimeout < 0 {
 		return fmt.Errorf("config: settings.request_timeout %s must be positive", c.Settings.RequestTimeout)
 	}
+	if err := c.ValidateRuntime(); err != nil {
+		return err
+	}
+	if len(c.Providers) > 0 && len(c.Routes) == 0 {
+		return errors.New("config: providers are declared but no routes send models to them")
+	}
+	return nil
+}
+
+// ValidateRuntime checks the part of the config a reload swaps: providers, routes, profiles,
+// bindings and budgets, wherever they came from.
+func (c *Bootstrap) ValidateRuntime() error {
+	if _, err := c.LimitsConfig(); err != nil {
+		return err
+	}
 	names := map[string]bool{}
 	for i, p := range c.Providers {
 		switch {
@@ -409,9 +421,6 @@ func (c *Bootstrap) validate() error {
 			return fmt.Errorf("config: provider %q of type %s needs base_url", p.Name, p.Type)
 		}
 		names[p.Name] = true
-	}
-	if len(c.Providers) > 0 && len(c.Routes) == 0 {
-		return errors.New("config: providers are declared but no routes send models to them")
 	}
 	for i, r := range c.Routes {
 		if r.Match == "" {
