@@ -36,6 +36,8 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 - Speaks the OpenAI API (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Serves `/healthz` (the process is up) and `/readyz` (the store answers) without an API key, for liveness and readiness probes.
+- Serves Prometheus metrics on `/metrics`: requests, latency, tokens and cost by provider and model, fallbacks and limit refusals.
+- Exports a trace for every call over OTLP when `otel.endpoint` is set, with a span for each provider it tried, and never the prompt or the answer.
 - Sends each call to Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow, LM Studio or Ollama, and to any OpenAI-compatible server such as vLLM or [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
 - Falls back to the next provider when one is down, rate limited or out of credit, and skips a provider that keeps failing for a while.
 - Knows the caller from an OIDC token (Okta, Entra, Keycloak, Zitadel, Google, Auth0 and others) or an API key, and records tokens and cost in USD for every call.
@@ -115,6 +117,19 @@ transponder --config-test --config transponder.yaml
 On success it prints `transponder: config ok` and exits 0. On failure it prints the error to stderr and exits 1. Without `--config` it verifies the built-in defaults.
 
 ## Try it
+
+To see it work before you set anything up, run the demo. It starts transponder in front of a fake provider, sends calls through it, and opens a Grafana dashboard with requests, latency, tokens, cost, fallbacks and limits, plus the traces in Jaeger. It needs Docker and no provider key:
+
+```shell
+git clone https://github.com/raven-clown/transponder.git
+cd transponder/demo
+docker compose up --build -d --wait
+# then open http://localhost:3000
+```
+
+[demo/README.md](demo/README.md) says what runs and what each panel shows.
+
+To run the binary yourself:
 
 ```shell
 transponder
@@ -476,6 +491,63 @@ limits:
   store: sql             # the default with store.postgres; memory keeps counters in each process
   on_store_error: local  # or deny
 ```
+
+### Metrics
+
+`GET /metrics` serves Prometheus metrics. On the gateway's port it needs a key or token with the `viewer` or `admin` role, because that port is the one callers reach, and the metrics name your providers, models and routes and total the spend. Prometheus sends the key as a bearer token:
+
+```yaml
+scrape_configs:
+  - job_name: transponder
+    authorization:
+      credentials_file: /etc/prometheus/transponder.key
+    static_configs:
+      - targets: ["transponder:8080"]
+```
+
+To scrape without a key, set `ops_listen_addr` (or `TRANSPONDER_OPS_LISTEN_ADDR`). `/healthz`, `/readyz` and `/metrics` are then also served on that second port, where `/metrics` is open, so keep the port inside your network:
+
+```yaml
+listen_addr: ":8080"
+ops_listen_addr: ":9464"
+```
+
+| Metric | Labels | What it counts |
+|---|---|---|
+| `transponder_requests_total` | `endpoint`, `route`, `provider`, `model`, `code` | Requests answered. `endpoint` is `chat.completions`, `messages`, `messages.count_tokens`, `responses`, `embeddings`, `models`, `usage`, or `other` for a path the gateway does not serve. `provider` and `model` are the target that answered, and are empty when the request ended before a provider was asked (a 401, a 404, a limit). |
+| `transponder_request_duration_seconds` | `endpoint`, `route` | Histogram of the time from the request arriving to the last byte of the answer, streams included. |
+| `transponder_inflight_requests` | | Requests being served now. |
+| `transponder_limited_total` | `reason` | Requests refused by a limit or a budget: `rate_limited`, `concurrency_limited`, `quota_exceeded`, `budget_exceeded`, `input_too_large`. |
+| `transponder_events_dropped_total` | `sink` | Usage records that could not be written (`sql`) and spans that could not be exported (`otlp`). |
+| `transponder_tokens_total` | `direction`, `provider`, `model` | Tokens used. `direction` is `input`, `output`, `cache_read`, `cache_write` or `reasoning`. |
+| `transponder_cost_usd_total` | `provider`, `model` | Cost in US dollars. |
+| `transponder_upstream_duration_seconds` | `provider`, `model` | Histogram of the time one attempt on a provider took. |
+| `transponder_fallbacks_total` | `route`, `from`, `to`, `reason` | Moves to the next target of a route. `reason` is `server_error`, `rate_limited`, `timeout`, `unreachable`, `auth`, `unsupported` or `error`. |
+| `transponder_unpriced_requests_total` | | Calls on a model that has no price. |
+| `transponder_config_reloads_total` | `result` | Reloads of the runtime config: `ok` for a new version swapped in, `failed` for one that could not be read or loaded, counted on every check while it stays that way. |
+| `transponder_build_info` | `version` | Always 1. |
+
+No label carries a user, a team, a key or a request id, so the number of series follows your config and not your traffic. Spend per user is in the usage records and `GET /v1/usage`. A model name is a label when the config sets it. Behind a wildcard route whose target sets no model, the caller picks the name, so it becomes a label only once a provider has answered for it, for at most 200 names, and is counted as `other` otherwise. `/healthz`, `/readyz` and `/metrics` are not counted as requests.
+
+### Tracing
+
+Set `otel.endpoint` to the base URL of an OTLP/HTTP collector and transponder exports a trace for every call. It is off by default.
+
+```yaml
+otel:
+  endpoint: http://collector:4318   # spans are posted to /v1/traces
+  headers:                          # optional, for a collector that needs a key
+    Authorization: Bearer ${OTEL_KEY}
+  sample_ratio: 0.1                 # optional, the share of traces that start here; default all
+```
+
+- Each call is one span, named after the endpoint, such as `POST /v1/chat/completions`, with the status code, route, provider, model, tokens, cost and number of fallbacks.
+- Each attempt on a provider is a child span, such as `chat gpt-4o-mini` (for chat, `/v1/messages` and `/v1/responses`) or `embeddings text-embedding-3-small`, with the provider, the model, its tokens, and for a failed attempt the reason (`server_error`, `rate_limited`, `timeout` and the others listed under `transponder_fallbacks_total`) and the provider's status code. A route that fell back shows every target it tried, in order.
+- Spans never hold prompt or completion text, and never a provider's error message, since those can quote the prompt.
+- Only calls from a caller with a valid key or token are traced. A request that fails to sign in, a probe and a scrape leave no span, so someone without a key cannot fill your collector.
+- `traceparent` and `tracestate` from the caller are kept. A call that arrives with a `traceparent` joins that trace and follows its sampled flag, and `sample_ratio` only decides for traces that start at the gateway. The provider is sent a `traceparent` that names the attempt's span, and `tracestate` as it came. A `tracestate` over the 512 characters the standard asks for is still passed on but left off the exported spans. With tracing off both headers are passed on unchanged.
+- Spans are sent in batches every 5 seconds, over OTLP/HTTP with JSON bodies, which the OpenTelemetry Collector, Jaeger, Tempo and Grafana Alloy all accept on port 4318. OTLP over gRPC (port 4317) is not supported. A collector that is down or slow never holds up a call: spans that cannot be sent are dropped and counted in `transponder_events_dropped_total{sink="otlp"}`.
+- The endpoint and the ratio can also come from the environment, as `TRANSPONDER_OTEL__ENDPOINT` and `TRANSPONDER_OTEL__SAMPLE_RATIO`. Headers are set in the file, where `${VAR}` keeps a key out of it.
 
 ## Roadmap
 

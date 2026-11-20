@@ -3,7 +3,11 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/raven-clown/transponder/internal/telemetry"
 )
 
 func TestAdminMounted(t *testing.T) {
@@ -17,6 +21,13 @@ func TestAdminMounted(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/admin/v1/keys", nil))
 	if rec.Code != http.StatusTeapot || gotPath != "/admin/v1/keys" || gotID == "" || gotID != rec.Header().Get("X-Request-ID") {
 		t.Fatalf("status %d, path %q, request id %q", rec.Code, gotPath, gotID)
+	}
+
+	m := telemetry.NewMetrics("test")
+	New(Deps{Admin: admin, Metrics: m, Now: time.Now}).ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/admin/v1/keys", nil))
+	if want := `transponder_requests_total{endpoint="admin",route="",provider="",model="",code="418"} 1`; !strings.Contains(scrapeMetrics(m), want) {
+		t.Fatalf("missing %q in:\n%s", want, scrapeMetrics(m))
 	}
 
 	rec = httptest.NewRecorder()
