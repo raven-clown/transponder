@@ -162,7 +162,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return fmt.Errorf("storing the providers, routes, budgets and profiles of the config file: %w", err)
 	}
 
-	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	client := providerClient()
 	limiters := &limiterSource{build: func(lc limits.Config) (*limits.Limiter, func(), error) {
 		return buildLimiterFor(ctx, cfg, lc, db, logger, time.Now)
 	}}
