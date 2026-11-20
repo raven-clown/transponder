@@ -125,6 +125,98 @@ func TestFailoverDeny(t *testing.T) {
 	}
 }
 
+// A reservation is settled in the store that took it, so a call that spans the shared store
+// going down or coming back neither takes spend off the shared count nor off another call's
+// local reservation.
+func TestFailoverSettlesWhereReserved(t *testing.T) {
+	budget := Config{Budgets: []Budget{{Subject: "user:*", Window: Month, LimitNUSD: 10e9}}}
+	rate := Rate{N: 1_000_000, Per: time.Minute}
+	cfg := budget
+	cfg.DefaultProfile = "p"
+	cfg.Profiles = []Profile{profile("p", func(p *Profile) { p.TokenRate = &rate })}
+	setup := func() (*Limiter, *brokenStore, *Failover) {
+		shared := &brokenStore{MemoryStore: NewMemoryStore()}
+		f := &Failover{Shared: shared, Local: NewMemoryStore()}
+		return New(cfg, f, func() time.Time { return t0 }), shared, f
+	}
+	spend := func(t *testing.T, l *Limiter, est, used int64) *Ticket {
+		t.Helper()
+		tk, d := l.Admit(ctx, alice, Estimate{InputTokens: 10, CostNUSD: est})
+		if d != nil {
+			t.Fatalf("denied %+v", d)
+		}
+		if used >= 0 {
+			tk.Settle(10, used)
+			tk.Release()
+		}
+		return tk
+	}
+
+	t.Run("reserved during an outage, settled after it", func(t *testing.T) {
+		l, shared, _ := setup()
+		spend(t, l, 5e9, 5e9)
+		shared.down = true
+		tk := spend(t, l, 2e9, -1)
+		shared.down = false
+		tk.Settle(10, 0.1e9)
+		tk.Release()
+		if u, _ := shared.Used(ctx, "usd|user:alice", Month, t0); u < 5e9 {
+			t.Fatalf("shared spend %d after the call, want at least the 5e9 spent before it", u)
+		}
+	})
+	t.Run("reserved before an outage, settled during it", func(t *testing.T) {
+		l, shared, f := setup()
+		shared.down = true
+		other := spend(t, l, 1e9, -1)
+		shared.down = false
+		tk := spend(t, l, 3e9, -1)
+		shared.down = true
+		tk.Settle(10, 0)
+		tk.Release()
+		if u, _ := f.Local.Used(ctx, "usd|user:alice", Month, t0); u < 1e9 {
+			t.Fatalf("local spend %d, want the other call's 1e9 still reserved", u)
+		}
+		other.Release()
+	})
+}
+
+// A caller that gives up while the shared store is asked is not an outage.
+func TestFailoverCancelledCaller(t *testing.T) {
+	var changes []error
+	f := &Failover{Shared: ctxStore{NewMemoryStore()}, Local: NewMemoryStore(), OnChange: func(err error) { changes = append(changes, err) }}
+	gone, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := f.Add(gone, "k", 1, 10, Day, t0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Add for a caller that left: %v", err)
+	}
+	if _, _, err := f.Acquire(gone, "c", 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Acquire for a caller that left: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("changes %v, want none", changes)
+	}
+	if u, _ := f.Local.Used(ctx, "k", Day, t0); u != 0 {
+		t.Fatalf("counted %d locally for a caller that left", u)
+	}
+}
+
+// ctxStore fails a call whose context has ended, as pgx does.
+type ctxStore struct{ *MemoryStore }
+
+func (s ctxStore) Add(ctx context.Context, key string, n, limit int64, w Window, now time.Time) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	return s.MemoryStore.Add(ctx, key, n, limit, w, now)
+}
+
+func (s ctxStore) Acquire(ctx context.Context, key string, limit int64) (bool, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return false, func() {}, err
+	}
+	return s.MemoryStore.Acquire(ctx, key, limit)
+}
+
 func TestAdmitWhenTheStoreFails(t *testing.T) {
 	r := Rate{N: 10, Per: time.Minute}
 	tests := []struct {
