@@ -67,12 +67,12 @@ func TestChatReplaysUsage(t *testing.T) {
 	}))
 	defer srv.Close()
 	resp, err := New("xai", srv.URL+"/v1", "secret", srv.Client()).Chat(context.Background(),
-		&schema.ChatRequest{Model: "grok-4.7", Messages: []schema.Message{{Role: "user", Content: "126/3=?"}}})
+		&schema.ChatRequest{Model: "grok-4.7", Messages: []schema.Message{{Role: "user", Content: schema.Text("126/3=?")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	u := resp.Usage
-	if resp.Message.Content != "42" || u.InputTokens != 22 || u.CacheReadTokens != 4 || u.OutputTokens != 168 || u.ReasoningTokens != 304 {
-		t.Fatalf("resp content %q usage %+v", resp.Message.Content, u)
+	if resp.Message.Text() != "42" || u.InputTokens != 22 || u.CacheReadTokens != 4 || u.OutputTokens != 168 || u.ReasoningTokens != 304 {
+		t.Fatalf("resp content %q usage %+v", resp.Message.Text(), u)
 	}
 }

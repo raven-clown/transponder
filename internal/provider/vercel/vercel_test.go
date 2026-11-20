@@ -92,12 +92,12 @@ func TestChatReplaysUsage(t *testing.T) {
 			}))
 			defer srv.Close()
 			resp, err := New("vercel", srv.URL+"/v1", "secret", srv.Client()).Chat(context.Background(),
-				&schema.ChatRequest{Model: tt.model, Messages: []schema.Message{{Role: "user", Content: "hi"}}})
+				&schema.ChatRequest{Model: tt.model, Messages: []schema.Message{{Role: "user", Content: schema.Text("hi")}}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if resp.Message.Content != tt.content || resp.Usage != tt.usage {
-				t.Fatalf("resp content %q usage %+v", resp.Message.Content, resp.Usage)
+			if resp.Message.Text() != tt.content || resp.Usage != tt.usage {
+				t.Fatalf("resp content %q usage %+v", resp.Message.Text(), resp.Usage)
 			}
 		})
 	}

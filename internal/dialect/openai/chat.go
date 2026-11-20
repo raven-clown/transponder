@@ -103,7 +103,7 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 		req.MaxTokens = w.MaxCompletionTokens
 	}
 	for _, m := range w.Messages {
-		content, err := messageText(m.Content)
+		content, err := messageContent(m.Content, m.Role)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 	return req, nil
 }
 
-// messageText reads content given as a string, a list of text parts, or null.
+// messageText reads the content of a response, given as a string, a list of text parts, or null.
 func messageText(raw json.RawMessage) (string, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
@@ -298,8 +298,7 @@ func EncodeChatResponse(resp *schema.ChatResponse, created time.Time) ([]byte, e
 	if len(resp.Message.ToolCalls) > 0 {
 		msg.ToolCalls = encodeToolCalls(resp.Message.ToolCalls)
 	}
-	if resp.Message.Content != "" || len(resp.Message.ToolCalls) == 0 {
-		content := resp.Message.Content
+	if content := resp.Message.Text(); content != "" || len(resp.Message.ToolCalls) == 0 {
 		msg.Content = &content
 	}
 	return json.Marshal(wireResponse{

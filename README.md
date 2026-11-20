@@ -13,7 +13,7 @@
 
 </div>
 
-An LLM gateway that knows who is spending what. One Go binary in front of Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow and Ollama, with fallback across providers, cost per user from your own identity provider, and budgets that hold across replicas. Every feature is free.
+An LLM gateway that knows who is spending what. One Go binary in front of Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow, LM Studio and Ollama, with fallback across providers, cost per user from your own identity provider, and budgets that hold across replicas. Every feature is free.
 
 > **Status: early, [v0.2.4](https://github.com/raven-clown/transponder/releases/tag/v0.2.4).** Releases up to v0.2.4 are out: the binary starts with no config, prints an admin key, and serves chat completions (plain and streamed), embeddings and a model list from OpenAI, Ollama, OpenRouter, LiteLLM, Cloudflare AI Gateway or any OpenAI-compatible server, with token counts and cost on every response. Claude Code works through `/v1/messages`, and Anthropic and Gemini are providers. Budgets, token limits and request limits are in, and a route falls back to its next provider when one fails. Sign-in with OIDC and the admin API come next. The design is settled in [docs/design.md](docs/design.md) and the work is tracked in [issues](https://github.com/raven-clown/transponder/issues). Star or watch the repository to follow along, and see [How to help](#how-to-help) if you want to build it with us.
 > xAI (Grok) support is unreleased.
@@ -23,6 +23,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 > Groq support is unreleased.
 > Cerebras support is unreleased.
 > SiliconFlow support is unreleased.
+> LM Studio support is unreleased.
 
 ## How it works
 
@@ -35,7 +36,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 - Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Serves `/healthz` (the process is up) and `/readyz` (the store answers) without an API key, for liveness and readiness probes.
-- Sends each call to Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow or Ollama, and to any OpenAI-compatible server such as vLLM, [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) or LM Studio.
+- Sends each call to Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow, LM Studio or Ollama, and to any OpenAI-compatible server such as vLLM or [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
 - Falls back to the next provider when one is down, rate limited or out of credit, and skips a provider that keeps failing for a while.
 - Knows the caller from an OIDC token (Okta, Entra, Keycloak, Zitadel, Google, Auth0 and others) or an API key, and records tokens and cost in USD for every call.
 - Puts a daily or monthly budget on a user, a team or a key, and stops the calls once it is spent.
@@ -167,6 +168,8 @@ providers:
   - name: cerebras
     type: cerebras        # https://api.cerebras.ai/v1 unless base_url is set
     api_key: ${CEREBRAS_API_KEY}
+  - name: lmstudio
+    type: lmstudio        # http://localhost:1234/v1 unless base_url is set. api_key is optional
   - name: cf
     type: cloudflare      # set base_url to your AI Gateway compatibility endpoint
     base_url: https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat
@@ -209,6 +212,9 @@ routes:
     targets:
       - provider: siliconflow
         model: deepseek-ai/DeepSeek-R1
+  - match: "lmstudio-*"
+    targets:
+      - provider: lmstudio
   - match: "fast"
     targets:
       - provider: openai
@@ -249,13 +255,29 @@ settings:
   cooldown: 30s          # for how long
 ```
 
-- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image going to a provider the translation does not cover.
+- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image at a URL going to Gemini, which takes inline images only.
 - A request the provider rejects as wrong (any other 4xx) is not sent elsewhere. Nor is anything retried once the first byte has reached the caller, after the caller has gone, or past `request_timeout`. The same target is never tried twice in one call.
 - After three failures in a row a target is put last for 30 seconds, so calls stop waiting on it. It is still tried when every other target has failed. This is kept per process, by provider and upstream model.
 - A call that is not streamed has no timeout of its own per target, so a target that hangs holds it until `request_timeout`. Streams move on after `attempt_timeout`.
 - `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` say which target answered and how many were tried before it. The usage record has the same.
 - With limits on, a call reserves the price of the route's dearest target and settles at what the answering target cost.
 - `POST /v1/messages/count_tokens` goes to the first Anthropic target of the route.
+
+### Images
+
+Chat requests can carry images on both endpoints: `image_url` parts on `/v1/chat/completions`, as a URL or a `data:image/...;base64,` URL, and image blocks on `/v1/messages`, as a `url` or `base64` source. Text and images reach the provider in the order they were sent, translated to OpenAI `image_url` parts, Anthropic image blocks or Gemini `inlineData`.
+
+| Target | Image at a URL | Inline image |
+|---|---|---|
+| OpenAI and OpenAI-compatible | yes | PNG, JPEG, WebP, GIF |
+| Anthropic | yes | PNG, JPEG, WebP, GIF |
+| Gemini | no | PNG, JPEG, WebP, HEIC, HEIF |
+| echo | ignored | ignored; it answers with the text |
+
+- A target that cannot take an image is skipped and the next one is tried. When none can, the caller gets a 400 that says why.
+- An inline image the gateway translates may be at most 5 MiB once decoded; a larger one is a 400 `image_too_large`. A request that goes to a provider of its own dialect is sent on unopened, so the provider's own limit applies.
+- Images go only in user messages.
+- For limits, each image counts as 1,000 input tokens until the provider reports the real usage. That is about what a 1024 by 1024 picture costs on OpenAI, Anthropic and Gemini.
 
 ### Claude Code
 
@@ -265,15 +287,67 @@ Point Claude Code at transponder with a transponder API key:
 ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY claude
 ```
 
-`/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools included, though features only Anthropic has, such as its server tools and images, are refused on those routes.
+`/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools and images included, though features only Anthropic has, such as its server tools, PDF documents and images in tool results, are refused on those routes.
 
 The admin API is on the roadmap below.
+
+### Sign-in and roles
+
+API keys always work. To also let people call transponder with a token from your OpenID Connect provider (Okta, Entra ID, Keycloak, Zitadel, Google, Auth0 and others), name the issuer and the audience:
+
+```yaml
+auth:
+  oidc:
+    issuer: "https://idp.example.com/realms/acme"   # the iss claim; keys are found through its discovery document
+    audience: "transponder"                         # tokens issued for another service are refused
+    # jwks_url: "https://idp.example.com/keys"      # only for an issuer without a discovery document
+    user_claim: sub                                 # default sub; email or preferred_username also work
+    teams_claim: groups                             # default groups
+    roles_claim: realm_access.roles                 # a dotted name reads a nested claim
+    role_mapping:                                   # claim value -> admin, viewer or member
+      platform-admins: admin
+      auditors: viewer
+    clock_skew: 1m                                  # allowance on exp and nbf, default 1m
+```
+
+```shell
+curl localhost:8080/v1/chat/completions -H "Authorization: Bearer $ID_TOKEN"   -d '{"model": "fast", "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+- A bearer token or `x-api-key` value that is a JWT is checked against the issuer: signature, `iss`, `aud`, `exp` and `nbf`. Anything else is looked up as an API key. Only asymmetric signatures (RS, PS, ES and EdDSA) are accepted.
+- The caller's user id comes from `user_claim` and their teams from `teams_claim`, so budgets and profiles for `user:` and `team:` subjects apply to people who sign in. A caller with a token has no `key:` subject.
+- Every caller has a role. A token gets the highest role its `roles_claim` values map to, and `member` when none does. An API key carries the role it was created with.
+- The signing keys are fetched when the first token arrives and kept for an hour. A token naming a key transponder has not seen makes it read the keys again, at most once every 10 seconds, so made-up key ids cannot flood the identity provider. When the provider cannot be reached, keys already fetched keep working; with none yet, calls with a token get 503 `auth_unavailable` while API keys keep working, and `/readyz` reports `oidc`.
+- When `role_mapping` gives someone `admin`, the first start does not print an admin key, since that person can sign in instead.
+- Each key can be set from the environment too, such as `TRANSPONDER_AUTH__OIDC__ISSUER`. `role_mapping` is a map, so it is set in the file.
+
+### Access per route
+
+A route can say who may call it. Leave `allow` out and every caller with a valid key or token may:
+
+```yaml
+routes:
+  - match: "claude-*"
+    allow: ["team:platform", "user:alice@example.com", "key:ci", "role:admin"]
+    targets:
+      - provider: claude
+  - match: "*"
+    targets:
+      - provider: local
+```
+
+- `user:<id>` matches the user id from a token, and also an API key of that name, since a key counts as `user:<key name>`. Use `key:<name>` to let in only the key.
+- `team:<name>` matches any of the caller's teams: the teams of a key, or the `teams_claim` of a token.
+- `role:<role>` lets in that role and the ones above it, so `role:viewer` also lets in admins.
+- Any one matching entry is enough. A caller outside the list gets 403 `route_forbidden`, and the message names the route. Nothing is recorded or charged. Anthropic-dialect callers get `permission_error` with the same code.
+- `GET /v1/models` lists only the routes the caller may use.
+- `--config-test` checks every entry.
 
 ### Limits
 
 Budgets cap what a user, a team or a key spends in USD, per UTC day or month. Profiles, in the same format as the other mothership projects, cap tokens and requests:
 
-Until sign-in with OIDC lands, the caller is the API key: each key counts as `user:<key name>` as well as `key:<key name>`, so name keys after the people or services that hold them.
+A caller with an API key counts as `user:<key name>` as well as `key:<key name>`, so name keys after the people or services that hold them. A caller who signs in with a token counts as `user:` and `team:` from its claims.
 
 ```yaml
 budgets:

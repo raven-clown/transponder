@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/runtime"
@@ -372,6 +373,14 @@ func TestBuildRouter(t *testing.T) {
 			},
 			model: "m", provider: "siliconflow", typ: "siliconflow", upstream: "m",
 		},
+		{
+			name: "lmstudio route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", APIKey: "k"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+			},
+			model: "m", provider: "lmstudio", typ: "lmstudio", upstream: "m",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -383,7 +392,7 @@ func TestBuildRouter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama" || tt.typ == "vllm" || tt.typ == "llamacpp") {
+			if got.Provider.Name() != tt.provider || got.Type != tt.typ || got.Model != tt.upstream || got.Free != (tt.typ == "echo" || tt.typ == "ollama" || tt.typ == "vllm" || tt.typ == "llamacpp" || tt.typ == "lmstudio") {
 				t.Fatalf("resolved %+v", got)
 			}
 		})
@@ -487,6 +496,42 @@ func TestBuildRouterVercelBaseURLOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := r.Resolve("anthropic/claude-opus-5")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok || a.BaseURL() != custom {
+		t.Fatalf("provider %T", got.Provider)
+	}
+}
+
+func TestBuildRouterLmstudioDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("m")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok {
+		t.Fatalf("provider %T", got.Provider)
+	}
+	if a.BaseURL() != "http://localhost:1234/v1" || !got.Free {
+		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}
+
+func TestBuildRouterLmstudioBaseURLOverride(t *testing.T) {
+	const custom = "http://gateway.example/v1"
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", BaseURL: custom, APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "lmstudio"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("m")
 	a, ok := got.Provider.(interface{ BaseURL() string })
 	if !ok || a.BaseURL() != custom {
 		t.Fatalf("provider %T", got.Provider)
@@ -1048,24 +1093,6 @@ func TestServeTwoReplicasShareABudget(t *testing.T) {
 	}
 }
 
-// lockedBuffer collects what serve logs while the test reads it.
-type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.b.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.b.String()
-}
-
 // serveLogged runs serve on a fresh port and returns its log and a function that stops it.
 func serveLogged(t *testing.T, cfg *config.Bootstrap) (*lockedBuffer, func()) {
 	t.Helper()
@@ -1169,6 +1196,42 @@ func TestLoadLive(t *testing.T) {
 	badLimits := &config.Bootstrap{DefaultProfile: "gone"}
 	if _, err := loadLive(badLimits, http.DefaultClient, base); err == nil {
 		t.Fatal("a config with an unknown default profile loaded")
+	}
+	badAllow := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "echo"}}, Routes: []config.Route{{Match: "*", Allow: []string{"group:x"}, Targets: []config.Target{{Provider: "p"}}}}}
+	if _, err := loadLive(badAllow, http.DefaultClient, nil); err == nil {
+		t.Fatal("a route with an unknown allow entry loaded")
+	}
+}
+
+// A reload builds the routes again from the config, so each route keeps its allow list.
+func TestLoadLiveKeepsRouteAccess(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "p", Type: "echo"}},
+		Routes: []config.Route{
+			{Match: "private-*", Allow: []string{"team:ml", "role:admin"}, Targets: []config.Target{{Provider: "p"}}},
+			{Match: "*", Targets: []config.Target{{Provider: "p"}}},
+		},
+	}
+	for i := range 2 {
+		l, err := loadLive(cfg, http.DefaultClient, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		private, err := l.router.Plan("private-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := private.Access.Entries(); len(got) != 2 {
+			t.Fatalf("load %d: allow %v, want team:ml and role:admin", i, got)
+		}
+		if private.Access.Permits(auth.Identity{User: "bob", Role: auth.RoleMember}) ||
+			!private.Access.Permits(auth.Identity{User: "ann", Teams: []string{"ml"}, Role: auth.RoleMember}) {
+			t.Fatalf("load %d: the allow list does not hold", i)
+		}
+		open, err := l.router.Plan("other")
+		if err != nil || !open.Access.Open() {
+			t.Fatalf("load %d: an open route got an allow list: %v %v", i, open.Access.Entries(), err)
+		}
 	}
 }
 

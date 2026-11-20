@@ -107,7 +107,7 @@ func TestParseUsage(t *testing.T) {
 
 func TestParseChatRequest(t *testing.T) {
 	req, err := ParseChatRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`))
-	if err != nil || req.Model != "m" || req.Messages[0].Content != "hi" {
+	if err != nil || req.Model != "m" || req.Messages[0].Text() != "hi" {
 		t.Fatalf("ParseChatRequest = %+v, %v", req, err)
 	}
 }

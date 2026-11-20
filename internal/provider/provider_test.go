@@ -3,9 +3,12 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/raven-clown/transponder/internal/schema"
 )
 
 func TestRetryableStatus(t *testing.T) {
@@ -42,5 +45,20 @@ func TestHeaderContext(t *testing.T) {
 	got, ok := HeaderFrom(WithHeader(context.Background(), h))
 	if !ok || got.Get("X-Request-ID") != "r1" {
 		t.Fatalf("headers %v", got)
+	}
+}
+
+func TestCannotCarry(t *testing.T) {
+	plain := errors.New("boom")
+	if got := CannotCarry(plain); got != plain { //nolint:errorlint // the same value must come back, not a wrap of it
+		t.Fatalf("a plain error came back as %v", got)
+	}
+	if CannotCarry(nil) != nil {
+		t.Fatal("nil came back as an error")
+	}
+	err := CannotCarry(fmt.Errorf("encoding: %w", &schema.ContentError{Reason: "no images at a URL"}))
+	var ce *schema.ContentError
+	if !errors.Is(err, ErrUnsupported) || !errors.As(err, &ce) || ce.Reason != "no images at a URL" {
+		t.Fatalf("err = %v", err)
 	}
 }

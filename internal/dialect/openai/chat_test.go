@@ -16,7 +16,7 @@ func TestDecodeChatRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Model != "gpt-x" || len(req.Messages) != 2 || !reflect.DeepEqual(req.Messages[1], schema.Message{Role: "user", Content: "hi"}) {
+	if req.Model != "gpt-x" || len(req.Messages) != 2 || !reflect.DeepEqual(req.Messages[1], schema.Message{Role: "user", Content: schema.Text("hi")}) {
 		t.Fatalf("req = %+v", req)
 	}
 	if req.MaxTokens == nil || *req.MaxTokens != 5 || req.Temperature == nil || *req.Temperature != 0.5 || !req.Stream {
@@ -31,7 +31,7 @@ func TestDecodeChatRequestErrors(t *testing.T) {
 		{name: "bad json", body: `{"model":`, code: "invalid_json"},
 		{name: "missing model", body: `{"messages":[{"role":"user","content":"x"}]}`, param: "model", code: "missing_field"},
 		{name: "empty messages", body: `{"model":"m","messages":[]}`, param: "messages", code: "missing_field"},
-		{name: "content parts", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"x"}}]}]}`, param: "messages", code: "unsupported"},
+		{name: "audio part", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"input_audio","input_audio":{"data":"QUJD","format":"wav"}}]}]}`, param: "messages", code: "unsupported"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestEncodeChatResponse(t *testing.T) {
 	b, err := EncodeChatResponse(&schema.ChatResponse{
 		ID:           "id-1",
 		Model:        "m",
-		Message:      schema.Message{Role: "assistant", Content: "echo: hi"},
+		Message:      schema.Message{Role: "assistant", Content: schema.Text("echo: hi")},
 		FinishReason: "stop",
 		Usage:        schema.Usage{InputTokens: 3, OutputTokens: 4},
 	}, time.Unix(1700000000, 0))

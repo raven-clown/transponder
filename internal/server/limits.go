@@ -207,18 +207,22 @@ const minThinkingBudget = 1024
 
 // estimateInput counts every key and string in a request body, and every number in an array,
 // which is how token-array inputs arrive. Tool schemas, tool arguments and descriptions all reach
-// the model, so they all count. Base64 payloads and signatures do not.
+// the model, so they all count. Base64 payloads and signatures do not; an image counts as
+// tokens.Image instead, whatever its size.
 func estimateInput(body []byte) int64 {
 	var v any
 	if json.Unmarshal(body, &v) != nil {
 		return tokens.Estimate(string(body))
 	}
 	var b bytes.Buffer
-	var numbers int64
+	var numbers, images int64
 	var walk func(key string, v any)
 	walk = func(key string, v any) {
 		switch x := v.(type) {
 		case map[string]any:
+			if isImage(x) {
+				images++
+			}
 			for k, val := range x {
 				// Only a base64 source's data is binary; a text document keeps its text there.
 				if k == "data" && x["type"] == "base64" {
@@ -245,5 +249,16 @@ func estimateInput(body []byte) int64 {
 		}
 	}
 	walk("", v)
-	return tokens.Estimate(b.String()) + numbers
+	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
+}
+
+// isImage reports whether a JSON object is an image part, in OpenAI's or Anthropic's form.
+func isImage(part map[string]any) bool {
+	switch part["type"] {
+	case "image_url":
+		return part["image_url"] != nil
+	case "image":
+		return part["source"] != nil
+	}
+	return false
 }

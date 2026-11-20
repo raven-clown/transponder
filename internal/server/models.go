@@ -12,13 +12,13 @@ type wireModel struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-// models lists the route names a caller can use, without asking any provider.
+// models lists the route names the caller may use, without asking any provider.
 func (g *gateway) models(w http.ResponseWriter, r *http.Request) {
 	c := g.begin(w, r, "models")
 	if c == nil {
 		return
 	}
-	names := c.router.Models()
+	names := c.router.ModelsFor(c.id)
 	data := make([]wireModel, len(names))
 	for i, n := range names {
 		data[i] = wireModel{ID: n, Object: "model", OwnedBy: "transponder"}

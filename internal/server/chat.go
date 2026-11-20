@@ -10,6 +10,7 @@ import (
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/schema"
+	"github.com/raven-clown/transponder/internal/tokens"
 )
 
 var zeroUsage schema.Usage
@@ -70,7 +71,7 @@ func (g *gateway) chatNative(c *call, n provider.Native) error {
 	}
 	u, ok := openai.ParseUsage(out)
 	if !ok {
-		u = schema.Usage{InputTokens: estimateTokens(promptText(c.body)), OutputTokens: estimateTokens(replyText(out))}
+		u = schema.Usage{InputTokens: promptTokens(c.body), OutputTokens: estimateTokens(replyText(out))}
 		c.rec.Estimated = true
 	}
 	cost := g.price(c.r.Context(), c, u)
@@ -138,17 +139,19 @@ func replyText(body []byte) string {
 	return b.String()
 }
 
-// promptText joins the text of the request messages, for estimating input tokens.
-func promptText(body []byte) string {
+// promptTokens estimates the input of a chat request from the text of its messages, plus
+// tokens.Image for each image, for a provider that reports no usage.
+func promptTokens(body []byte) int64 {
 	var w struct {
 		Messages []struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
 	if json.Unmarshal(body, &w) != nil {
-		return string(body)
+		return estimateTokens(string(body))
 	}
 	var b strings.Builder
+	var images int64
 	for _, m := range w.Messages {
 		var s string
 		if json.Unmarshal(m.Content, &s) == nil {
@@ -156,13 +159,17 @@ func promptText(body []byte) string {
 			continue
 		}
 		var parts []struct {
+			Type string `json:"type"`
 			Text string `json:"text"`
 		}
 		if json.Unmarshal(m.Content, &parts) == nil {
 			for _, p := range parts {
 				b.WriteString(p.Text)
+				if p.Type == "image_url" {
+					images++
+				}
 			}
 		}
 	}
-	return b.String()
+	return estimateTokens(b.String()) + images*tokens.Image
 }

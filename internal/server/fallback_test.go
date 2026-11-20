@@ -193,13 +193,13 @@ func TestEmbeddingsSkipTargetWithoutEmbeddings(t *testing.T) {
 }
 
 func TestIncompatibleTargets(t *testing.T) {
-	image := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}]}`
+	pdf := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"QUJD"}}]}]}`
 	down := countedUpstream(t, status(500, "x"))
 	oa := countedUpstream(t, status(200, okChat))
 
-	// The Anthropic target is down and OpenAI cannot take the image: the outage is the answer.
+	// The Anthropic target is down and OpenAI cannot take the PDF: the outage is the answer.
 	e := setupRoutes(t, route("*", anTarget("", down), oaTarget("b", "", oa)))
-	res := e.messages(t, nil, image)
+	res := e.messages(t, nil, pdf)
 	if res.status != http.StatusBadGateway || oa.calls.Load() != 0 {
 		t.Fatalf("status %d, openai called %d times: %s", res.status, oa.calls.Load(), res.body)
 	}
@@ -207,7 +207,7 @@ func TestIncompatibleTargets(t *testing.T) {
 	// OpenAI cannot take it, the Anthropic target after it can.
 	up := countedUpstream(t, status(200, `{"type":"message","content":[{"type":"text","text":"a cat"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
 	e = setupRoutes(t, route("*", oaTarget("b", "", oa), anTarget("", up)))
-	res = e.messages(t, nil, image)
+	res = e.messages(t, nil, pdf)
 	if res.status != http.StatusOK || !strings.Contains(string(res.body), "a cat") || oa.calls.Load() != 0 {
 		t.Fatalf("status %d: %s", res.status, res.body)
 	}

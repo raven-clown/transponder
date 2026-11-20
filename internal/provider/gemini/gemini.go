@@ -83,7 +83,7 @@ func (a *Adapter) read(ctx context.Context, path string, body []byte) ([]byte, e
 func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.ChatResponse, error) {
 	body, err := wire.EncodeRequest(req)
 	if err != nil {
-		return nil, err
+		return nil, provider.CannotCarry(err)
 	}
 	p, err := path(req.Model, "generateContent")
 	if err != nil {
@@ -107,7 +107,7 @@ func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.Ch
 func (a *Adapter) ChatStream(ctx context.Context, req *schema.ChatRequest) (schema.Stream, error) {
 	body, err := wire.EncodeRequest(req)
 	if err != nil {
-		return nil, err
+		return nil, provider.CannotCarry(err)
 	}
 	p, err := path(req.Model, "streamGenerateContent?alt=sse")
 	if err != nil {

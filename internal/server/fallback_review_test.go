@@ -51,11 +51,11 @@ func TestNativeOpenAIGetsShortToolCallIDs(t *testing.T) {
 }
 
 func TestOutageNamesTheTargetThatFailed(t *testing.T) {
-	image := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}]}`
+	pdf := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"QUJD"}}]}]}`
 	down := countedUpstream(t, status(500, "x"))
 	oa := countedUpstream(t, status(200, okChat))
 	e := setupRoutes(t, route("*", anTarget("", down), oaTarget("b", "", oa)))
-	res := e.messages(t, nil, image)
+	res := e.messages(t, nil, pdf)
 	if res.status != http.StatusBadGateway || res.header.Get("X-Transponder-Provider") != "claude" || res.header.Get("X-Transponder-Fallbacks") != "0" {
 		t.Fatalf("status %d, headers %v", res.status, res.header)
 	}

@@ -26,11 +26,11 @@ func TestEncodeRequest(t *testing.T) {
 	req := &schema.ChatRequest{
 		Model: "gemini-2.5-flash",
 		Messages: []schema.Message{
-			{Role: schema.RoleSystem, Content: "be brief"},
-			{Role: schema.RoleUser, Content: "weather?"},
+			{Role: schema.RoleSystem, Content: schema.Text("be brief")},
+			{Role: schema.RoleUser, Content: schema.Text("weather?")},
 			{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{{ID: id, Name: "weather", Arguments: `{"city":"Paris"}`}, {ID: "call_x", Name: "time", Arguments: ""}}},
-			{Role: schema.RoleTool, ToolCallID: id, Content: `{"sky":"clear"}`},
-			{Role: schema.RoleTool, ToolCallID: "call_x", Content: "noon"},
+			{Role: schema.RoleTool, ToolCallID: id, Content: schema.Text(`{"sky":"clear"}`)},
+			{Role: schema.RoleTool, ToolCallID: "call_x", Content: schema.Text("noon")},
 		},
 		Tools:       []schema.Tool{{Name: "weather", Description: "w", Parameters: json.RawMessage(`{"type":"object"}`)}},
 		ToolChoice:  &schema.ToolChoice{Mode: schema.ToolChoiceTool, Name: "weather"},
@@ -64,7 +64,7 @@ func TestEncodeRequest(t *testing.T) {
 		t.Fatalf("got\n%s", b)
 	}
 	for mode, wire := range map[string]string{schema.ToolChoiceAuto: "AUTO", schema.ToolChoiceNone: "NONE", schema.ToolChoiceRequired: "ANY"} {
-		b, _ := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: "x"}}, ToolChoice: &schema.ToolChoice{Mode: mode}})
+		b, _ := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: schema.Text("x")}}, ToolChoice: &schema.ToolChoice{Mode: mode}})
 		if !strings.Contains(string(b), `"mode":"`+wire+`"`) {
 			t.Fatalf("%s: %s", mode, b)
 		}
@@ -99,7 +99,7 @@ func TestDecodeResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &schema.ChatResponse{ID: "r1", Model: "gemini-2.5-flash", FinishReason: schema.FinishToolCalls,
-		Message: schema.Message{Role: schema.RoleAssistant, Content: "Let me check.", ToolCalls: []schema.ToolCall{{ID: ToolCallID("gem-1", "sig=="), Name: "weather", Arguments: `{"city":"Paris"}`}}},
+		Message: schema.Message{Role: schema.RoleAssistant, Content: schema.Text("Let me check."), ToolCalls: []schema.ToolCall{{ID: ToolCallID("gem-1", "sig=="), Name: "weather", Arguments: `{"city":"Paris"}`}}},
 		Usage:   schema.Usage{InputTokens: 60, CacheReadTokens: 40, OutputTokens: 10, ReasoningTokens: 5}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
@@ -181,7 +181,7 @@ func TestModelPath(t *testing.T) {
 
 func TestEncodeRequestSkipsEmptyTurns(t *testing.T) {
 	b, err := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{
-		{Role: schema.RoleUser, Content: "x"},
+		{Role: schema.RoleUser, Content: schema.Text("x")},
 		{Role: schema.RoleAssistant},
 		{Role: schema.RoleUser},
 	}})

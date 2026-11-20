@@ -77,12 +77,12 @@ func TestChat(t *testing.T) {
 	defer srv.Close()
 	temp := 0.7
 	resp, err := New("claude", srv.URL, "k", nil).Chat(context.Background(), &schema.ChatRequest{
-		Model: "claude-x", Temperature: &temp, Messages: []schema.Message{{Role: "system", Content: "terse"}, {Role: "user", Content: "x"}},
+		Model: "claude-x", Temperature: &temp, Messages: []schema.Message{{Role: "system", Content: schema.Text("terse")}, {Role: "user", Content: schema.Text("x")}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Message.Content != "hi" || resp.FinishReason != "stop" || resp.Usage != (schema.Usage{InputTokens: 4, OutputTokens: 1, CacheReadTokens: 2}) {
+	if resp.Message.Text() != "hi" || resp.FinishReason != "stop" || resp.Usage != (schema.Usage{InputTokens: 4, OutputTokens: 1, CacheReadTokens: 2}) {
 		t.Fatalf("resp %+v", resp)
 	}
 	if _, ok := got["temperature"]; ok || string(got["max_tokens"]) != "8192" || string(got["system"]) != `"terse"` {
@@ -148,5 +148,26 @@ func TestChatStreamCutAndError(t *testing.T) {
 func TestEmbedUnsupported(t *testing.T) {
 	if _, err := New("claude", "", "k", nil).Embed(context.Background(), &schema.EmbedRequest{}); !errors.Is(err, provider.ErrUnsupported) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSkipsImagesItCannotCarry(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer srv.Close()
+	a := New("claude", srv.URL, "k", nil)
+	ctx := context.Background()
+	req := &schema.ChatRequest{Model: "claude-x", Messages: []schema.Message{{Role: "user", Content: []schema.Part{
+		{Type: schema.PartImage, Image: &schema.Image{MediaType: "image/heic", Data: "aGk="}},
+	}}}}
+	var ce *schema.ContentError
+	if _, err := a.Chat(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("Chat err = %v", err)
+	}
+	if _, err := a.ChatStream(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("ChatStream err = %v", err)
+	}
+	if called {
+		t.Fatal("a request Anthropic cannot carry reached the upstream")
 	}
 }
