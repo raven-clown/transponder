@@ -173,7 +173,8 @@ func parseSection(diff string, inSection func(string) bool) []Change {
 		text := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(text, "- "):
-			out = append(out, Change{Kind: kindOf(heading), Text: strings.TrimSpace(text[2:])})
+			entry, breaking := strings.CutPrefix(strings.TrimSpace(text[2:]), "**Breaking:**")
+			out = append(out, Change{Kind: kindOf(heading), Text: strings.TrimSpace(entry), Breaking: breaking})
 			last = len(out) - 1
 		case text != "" && last >= 0:
 			out[last].Text += " " + text

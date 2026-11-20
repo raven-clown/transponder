@@ -88,6 +88,17 @@ func TestParseChangelogDiff(t *testing.T) {
 	}
 }
 
+func TestParseChangelogDiffBreakingEntry(t *testing.T) {
+	got := ParseChangelogDiff(" ## [Unreleased]\n+### Changed\n+- **Breaking:** `${VAR}` fills one value.\n+- Faster.\n")
+	want := []Change{
+		{Kind: KindChanged, Text: "`${VAR}` fills one value.", Breaking: true},
+		{Kind: KindChanged, Text: "Faster."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestParseChangelogDiffUnknownHeading(t *testing.T) {
 	got := ParseChangelogDiff(" ## [Unreleased]\n+### Improved\n+- Faster.\n+- Smaller.\n")
 	if len(got) != 2 || got[0].Kind != KindChanged || got[1].Text != "Smaller." {
