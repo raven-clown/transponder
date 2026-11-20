@@ -162,6 +162,34 @@ func TestCooldown(t *testing.T) {
 	r.Report(other.Targets[0], false)
 }
 
+// A reload builds a new router; it keeps the targets' failures, including ones calls still
+// running on the old router report afterwards.
+func TestKeepHealth(t *testing.T) {
+	a, b := echo.New("a"), echo.New("b")
+	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	routes := []Route{{Match: "*", Targets: []Target{{Provider: a}, {Provider: b}}}}
+	old := New(routes)
+	old.SetCooldown(3, 30*time.Second, func() time.Time { return now })
+	primary, _ := old.Resolve("m")
+	for range 3 {
+		old.Report(primary, false)
+	}
+	next := New(routes)
+	next.SetCooldown(3, 30*time.Second, func() time.Time { return now })
+	next.KeepHealth(old)
+	if p, _ := next.Plan("m"); planNames(p) != "b/m a/m" {
+		t.Fatalf("the cooldown was lost on reload: %s", planNames(p))
+	}
+	old.Report(primary, true)
+	if p, _ := next.Plan("m"); planNames(p) != "a/m b/m" {
+		t.Fatalf("a success reported on the old router did not reach the new one: %s", planNames(p))
+	}
+	next.KeepHealth(nil)
+	if p, _ := next.Plan("m"); planNames(p) != "a/m b/m" {
+		t.Fatalf("plan %s", planNames(p))
+	}
+}
+
 // Only a wildcard route with a target that sets no model sends the caller's own name upstream.
 func TestModelFromCaller(t *testing.T) {
 	a := echo.New("a")
@@ -209,10 +237,10 @@ func TestHealthIsBounded(t *testing.T) {
 	for i := range 5000 {
 		r.Report(Resolved{Provider: a, Model: "made-up-" + strconv.Itoa(i)}, false)
 	}
-	if n := len(r.health); n > maxHealth+1 {
+	if n := len(r.health.m); n > maxHealth+1 {
 		t.Fatalf("%d health entries kept", n)
 	}
-	if h, ok := r.health[healthKey(cooled)]; !ok || !now.Before(h.until) {
+	if h, ok := r.health.m[healthKey(cooled)]; !ok || !now.Before(h.until) {
 		t.Fatal("a target in cooldown was swept")
 	}
 }

@@ -308,10 +308,12 @@ func loadLive(cfg *config.Bootstrap, client *http.Client, limiters *limiterSourc
 	if err != nil {
 		return live{}, err
 	}
+	rt.KeepHealth(limiters.router)
 	l := live{router: rt}
 	if l.limiter, err = limiters.limiter(lc); err != nil {
 		return live{}, err
 	}
+	limiters.router = rt
 	return l, nil
 }
 
@@ -332,6 +334,9 @@ type limiterSource struct {
 	build func(lc limits.Config) (*limits.Limiter, func(), error)
 	base  *limits.Limiter
 	stop  func()
+	// router is the last router loaded, whose record of failing targets the next one keeps,
+	// so a reload does not end the cooldowns.
+	router *router.Router
 }
 
 // limiter returns a limiter for lc on the kept counters, or nil when nothing is limited and

@@ -99,6 +99,8 @@ type Result struct {
 	OK          bool
 	Used, Limit int64
 	Reset       time.Time
+	// Fallback is set when a Failover counted it locally because the shared store failed.
+	Fallback bool
 }
 
 // Bucket is the outcome of a Take on a rate.
@@ -107,6 +109,8 @@ type Bucket struct {
 	RetryAfter time.Duration
 	Remaining  int64
 	Reset      time.Duration
+	// Fallback is set when a Failover counted it locally because the shared store failed.
+	Fallback bool
 }
 
 // ErrStore wraps failures of a shared store, so callers can apply on_store_error.

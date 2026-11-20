@@ -109,6 +109,12 @@ func testAddAtTheLimit(t *testing.T, s limits.Store) {
 	if r, _ := s.Add(ctx, "k", 0, 10, limits.Day, now); r.OK {
 		t.Fatalf("a zero amount passed a spent limit: %+v", r)
 	}
+	// A limit of zero, such as a budget of 0 USD, refuses everything.
+	for _, n := range []int64{1, 0} {
+		if r, err := s.Add(ctx, "zero", n, 0, limits.Month, now); err != nil || r.OK {
+			t.Fatalf("add %d under a limit of 0: %+v, %v", n, r, err)
+		}
+	}
 }
 
 func testAdjustMovesToANewerWindow(t *testing.T, s limits.Store) {

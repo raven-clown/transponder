@@ -111,6 +111,8 @@ type reservation struct {
 	window Window
 	amount int64
 	usd    bool
+	// fallback is set when a Failover counted it locally; it is settled there.
+	fallback bool
 }
 
 type rateTaken struct {
@@ -120,6 +122,14 @@ type rateTaken struct {
 	amount int64
 	bucket Bucket
 	settle bool
+}
+
+// settlerFor returns where a reservation counted in the fallback store or not is settled.
+func (t *Ticket) settlerFor(fallback bool) settler {
+	if f, ok := t.l.store.(*Failover); ok {
+		return f.settlerFor(fallback)
+	}
+	return t.l.store
 }
 
 // Ticket is an admitted call. Settle it with the real usage, and always Release it.
@@ -206,7 +216,7 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 			return nil, &Denied{Status: http.StatusPaymentRequired, Code: "quota_exceeded", Subject: ch.subject, Reset: r.Reset,
 				Message: fmt.Sprintf("the %s token allowance of %d for %s is spent, resets %s", ch.window, ch.limit, ch.subject, r.Reset.Format(time.RFC3339))}
 		}
-		t.allowances = append(t.allowances, reservation{ch.key, ch.window, amount, ch.usd})
+		t.allowances = append(t.allowances, reservation{ch.key, ch.window, amount, ch.usd, r.Fallback})
 	}
 	if hasProfile && p.TokenRate != nil {
 		if d := t.take(ctx, "tokens", "tokr|"+subj, min(tokens, p.TokenRate.N), *p.TokenRate, true, subj); d != nil {
@@ -293,11 +303,11 @@ func (t *Ticket) Settle(tokens, costNUSD int64) {
 		if a.usd {
 			used = costNUSD
 		}
-		_ = t.l.store.Adjust(ctx, a.key, used-a.amount, a.window, t.at)
+		_ = t.settlerFor(a.fallback).Adjust(ctx, a.key, used-a.amount, a.window, t.at)
 	}
 	for _, r := range t.rates {
 		if r.settle {
-			_ = t.l.store.Settle(ctx, r.key, tokens-r.amount, r.rate, t.l.now())
+			_ = t.settlerFor(r.bucket.Fallback).Settle(ctx, r.key, tokens-r.amount, r.rate, t.l.now())
 		}
 	}
 }
@@ -367,8 +377,9 @@ type check struct {
 func (l *Limiter) checks(c Caller, p Profile, hasProfile bool) []check {
 	subj := c.subject()
 	var out []check
+	// A profile limit of 0 is not set; a budget of 0 is set, and allows no spending.
 	add := func(key string, w Window, limit int64, usd bool, subject string) {
-		if limit <= 0 {
+		if limit < 0 {
 			return
 		}
 		for i, ch := range out {
@@ -381,11 +392,17 @@ func (l *Limiter) checks(c Caller, p Profile, hasProfile bool) []check {
 		}
 		out = append(out, check{key, w, limit, usd, subject})
 	}
+	set := func(limit int64) int64 {
+		if limit == 0 {
+			return -1
+		}
+		return limit
+	}
 	if hasProfile {
-		add("tok|"+subj, Day, p.TokensPerDay, false, subj)
-		add("tok|"+subj, Month, p.TokensPerMonth, false, subj)
-		add("usd|"+subj, Day, p.USDPerDay, true, subj)
-		add("usd|"+subj, Month, p.USDPerMonth, true, subj)
+		add("tok|"+subj, Day, set(p.TokensPerDay), false, subj)
+		add("tok|"+subj, Month, set(p.TokensPerMonth), false, subj)
+		add("usd|"+subj, Day, set(p.USDPerDay), true, subj)
+		add("usd|"+subj, Month, set(p.USDPerMonth), true, subj)
 	}
 	for _, b := range l.budgetsFor(c) {
 		subject := b.Subject

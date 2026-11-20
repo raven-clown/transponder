@@ -44,6 +44,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Deleting the last route through the admin API made every model answer from the free `echo` provider. With providers and no routes, calls now get 404 `model_not_found`.
 - An admin write whose caller disconnected right after the commit showed `reload_failed` in `/admin/v1/status` and logged an error until the next check.
 
+### Fixed
+
+- With `limits.on_store_error: local`, a call admitted while Postgres was down and finished after it came back gave its reservation back to the shared counters, so each such call took its estimate off the shared budget and budgets could be overspent across replicas. Each reservation is now settled where it was counted.
+- A budget of `0` USD was treated as no budget, and as an exact `user:<id>` rule it also replaced `user:*` for that period, so a user set to 0 could spend without a cap. It now refuses every paid call.
+- A target in cooldown got traffic again after every config reload, which every admin API write causes. Reloads now keep the record of failing targets.
+- A caller that disconnected while the shared limit counters were asked was taken as a Postgres outage, logging that the counters were unreachable and counting locally.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added

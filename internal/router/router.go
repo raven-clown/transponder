@@ -65,16 +65,22 @@ type health struct {
 	until time.Time
 }
 
+// healthTable is the failure record of targets, which routers built by a reload share.
+type healthTable struct {
+	mu sync.Mutex
+	m  map[targetKey]*health
+}
+
 // Router holds the routes in priority order and remembers which targets keep failing.
 type Router struct {
 	routes []Route
 	globs  []*regexp.Regexp
 
+	mu       sync.Mutex
 	failures int
 	cooldown time.Duration
 	now      func() time.Time
-	mu       sync.Mutex
-	health   map[targetKey]*health
+	health   *healthTable
 }
 
 // New returns a router over routes, first match wins. In Match, * stands for any run of
@@ -82,7 +88,8 @@ type Router struct {
 func New(routes []Route) *Router {
 	r := &Router{
 		routes: routes, globs: make([]*regexp.Regexp, len(routes)),
-		failures: DefaultCooldownFailures, cooldown: DefaultCooldown, now: time.Now, health: map[targetKey]*health{},
+		failures: DefaultCooldownFailures, cooldown: DefaultCooldown, now: time.Now,
+		health: &healthTable{m: map[targetKey]*health{}},
 	}
 	for i, rt := range routes {
 		re := regexp.QuoteMeta(rt.Match)
@@ -100,6 +107,22 @@ func (r *Router) SetCooldown(failures int, d time.Duration, now func() time.Time
 	r.failures, r.cooldown, r.now = failures, d, now
 }
 
+// KeepHealth makes r share prev's record of failing targets, so a reload keeps the cooldowns,
+// and failures that calls still running on prev report reach r. Call it before r serves.
+func (r *Router) KeepHealth(prev *Router) {
+	if prev == nil {
+		r.health = &healthTable{m: map[targetKey]*health{}}
+		return
+	}
+	r.health = prev.health
+}
+
+func (r *Router) settings() (failures int, cooldown time.Duration, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failures, r.cooldown, r.now()
+}
+
 // Plan returns the targets of the first route matching model. Targets in cooldown come last,
 // so they are only tried once the others have failed.
 func (r *Router) Plan(model string) (Plan, error) {
@@ -110,21 +133,21 @@ func (r *Router) Plan(model string) (Plan, error) {
 		p := Plan{Route: rt.Match, Access: rt.Access}
 		wildcard := strings.ContainsAny(rt.Match, "*?")
 		var cooling []Resolved
-		r.mu.Lock()
-		now := r.now()
+		_, _, now := r.settings()
+		r.health.mu.Lock()
 		for _, t := range rt.Targets {
 			up := t.Model
 			if up == "" {
 				up = model
 			}
 			res := Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up, ModelFromCaller: t.Model == "" && wildcard}
-			if h, ok := r.health[healthKey(res)]; ok && now.Before(h.until) {
+			if h, ok := r.health.m[healthKey(res)]; ok && now.Before(h.until) {
 				cooling = append(cooling, res)
 				continue
 			}
 			p.Targets = append(p.Targets, res)
 		}
-		r.mu.Unlock()
+		r.health.mu.Unlock()
 		p.Targets = append(p.Targets, cooling...)
 		return p, nil
 	}
@@ -149,31 +172,32 @@ func healthKey(t Resolved) targetKey { return targetKey{t.Provider.Name(), t.Mod
 // configured number of failures in a row the target cools down; once the cooldown ends, one
 // more failure starts it again.
 func (r *Router) Report(t Resolved, ok bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	failures, cooldown, now := r.settings()
+	tab := r.health
+	tab.mu.Lock()
+	defer tab.mu.Unlock()
 	key := healthKey(t)
 	if ok {
-		delete(r.health, key)
+		delete(tab.m, key)
 		return
 	}
-	h := r.health[key]
+	h := tab.m[key]
 	if h == nil {
 		// A target that keeps the caller's model has one entry per model name, so the table is
 		// swept before it can grow without end. Targets in cooldown are kept.
-		if len(r.health) >= maxHealth {
-			now := r.now()
-			for k, e := range r.health {
+		if len(tab.m) >= maxHealth {
+			for k, e := range tab.m {
 				if !now.Before(e.until) {
-					delete(r.health, k)
+					delete(tab.m, k)
 				}
 			}
 		}
 		h = &health{}
-		r.health[key] = h
+		tab.m[key] = h
 	}
 	h.fails++
-	if h.fails >= r.failures {
-		h.until = r.now().Add(r.cooldown)
+	if h.fails >= failures {
+		h.until = now.Add(cooldown)
 	}
 }
 
