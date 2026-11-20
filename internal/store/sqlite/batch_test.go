@@ -10,10 +10,20 @@ import (
 	"github.com/raven-clown/transponder/internal/store"
 )
 
-func waitingUsage(db *DB) int {
+func usageQueue(db *DB) (leading bool, waiting int) {
 	db.usage.mu.Lock()
 	defer db.usage.mu.Unlock()
-	return len(db.usage.pending)
+	return db.usage.leading, len(db.usage.pending)
+}
+
+func waitForUsageQueue(db *DB, leading bool, waiting int) {
+	for {
+		l, w := usageQueue(db)
+		if l == leading && w == waiting {
+			return
+		}
+		runtime.Gosched()
+	}
 }
 
 // TestUsageWritesShareATransaction holds SQLite's one writer while 64 calls record usage, then
@@ -33,7 +43,7 @@ func TestUsageWritesShareATransaction(t *testing.T) {
 	}()
 	<-holding
 	var wg sync.WaitGroup
-	for i := range calls {
+	record := func(i int) {
 		wg.Go(func() {
 			r := store.UsageRecord{OrgID: store.DefaultOrg, Time: time.Now(), RequestID: "r", Endpoint: "chat", InputTokens: int64(i), Status: 200}
 			if err := db.RecordUsage(ctx, r); err != nil {
@@ -41,10 +51,14 @@ func TestUsageWritesShareATransaction(t *testing.T) {
 			}
 		})
 	}
-	// One call leads and waits for the writer; the others queue behind it.
-	for waitingUsage(db) < calls-1 {
-		runtime.Gosched()
+	// The first call leads: it takes its own record and waits for the writer.
+	record(0)
+	waitForUsageQueue(db, true, 0)
+	// The others queue behind it.
+	for i := 1; i < calls; i++ {
+		record(i)
 	}
+	waitForUsageQueue(db, true, calls-1)
 	close(release)
 	wg.Wait()
 	if n := db.usageBatches.Load(); n > 2 {

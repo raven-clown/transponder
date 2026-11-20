@@ -88,6 +88,17 @@ func TestParseChangelogDiff(t *testing.T) {
 	}
 }
 
+func TestParseChangelogDiffBreakingEntry(t *testing.T) {
+	got := ParseChangelogDiff(" ## [Unreleased]\n+### Changed\n+- **Breaking:** `${VAR}` fills one value.\n+- Faster.\n")
+	want := []Change{
+		{Kind: KindChanged, Text: "`${VAR}` fills one value.", Breaking: true},
+		{Kind: KindChanged, Text: "Faster."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestParseChangelogDiffUnknownHeading(t *testing.T) {
 	got := ParseChangelogDiff(" ## [Unreleased]\n+### Improved\n+- Faster.\n+- Smaller.\n")
 	if len(got) != 2 || got[0].Kind != KindChanged || got[1].Text != "Smaller." {
@@ -166,7 +177,7 @@ func newFakeSource() *fakeSource {
 			"b": " # Changelog\n",
 			"c": " ## [Unreleased]\n+### Changed\n+- `settings.timeout` is now two settings.\n",
 			"d": " ## [Unreleased]\n+### Fixed\n+- Keys are compared in constant time.\n",
-			"e": " ## [Unreleased]\n \n+## [0.2.1] - 2026-11-07\n+\n+### Added\n+\n+- LiteLLM provider.\n+- Written at release time.\n ## [0.2.0] - 2026-11-06\n+- Not this release.\n",
+			"e": " ## [Unreleased]\n \n+## [0.2.1] - 2026-11-07\n+\n ### Added\n \n - LiteLLM provider.\n+- Written at release time.\n \n ### Changed\n \n - `settings.timeout` is now two settings.\n \n ### Fixed\n \n - Keys are compared in constant time.\n - Direct fix.\n \n ## [0.2.0] - 2026-11-06\n+- Not this release.\n",
 			"f": " ## [Unreleased]\n+### Fixed\n+- Direct fix.\n",
 		},
 		prs: map[int]PR{
@@ -201,6 +212,29 @@ func TestBuild(t *testing.T) {
 	}
 	if !reflect.DeepEqual(m.NewContributors, []Contributor{{Login: "nikhil-mewar", PR: 78}}) {
 		t.Fatalf("new contributors %+v", m.NewContributors)
+	}
+}
+
+func TestBuildLeavesOutRewrittenEntries(t *testing.T) {
+	src := &fakeSource{
+		commits: []Commit{
+			{SHA: "a", Subject: "fix: build with go 1.26"},
+			{SHA: "b", Subject: "build: build with go 1.27"},
+			{SHA: "c", Subject: "chore(release): v0.3.0"},
+		},
+		diffs: map[string]string{
+			"a": " ## [Unreleased]\n+### Fixed\n+- Built with Go 1.26.\n",
+			"b": " ## [Unreleased]\n ### Fixed\n-- Built with Go 1.26.\n+- Built with Go 1.27.\n",
+			"c": " ## [Unreleased]\n \n+## [0.3.0] - 2026-11-21\n+\n ### Fixed\n - Built with Go 1.27.\n",
+		},
+	}
+	m, err := Build(context.Background(), src, BuildOptions{Repo: "raven-clown/transponder", Version: "v0.3.0", Previous: "v0.2.4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Kind: KindFixed, Text: "Built with Go 1.27."}}
+	if !reflect.DeepEqual(m.Changes, want) {
+		t.Fatalf("changes\n got %+v\nwant %+v", m.Changes, want)
 	}
 }
 

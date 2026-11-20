@@ -40,7 +40,7 @@ Why v0.3.0 is faster: profiles of both versions under load showed they spent mos
 | Go | 1.26.11 for both versions (`GOTOOLCHAIN=go1.26.11`), windows/amd64 |
 | Store | SQLite, the default, in a temp directory on an NVMe disk |
 
-Both binaries and all test binaries are built by the same Go, so the comparison is between the code and not the compilers. v0.2.4's release binaries were built with Go 1.26.0; v0.3.0 pins `toolchain go1.26.11` in `go.mod`.
+Both binaries and all test binaries are built by the same Go, so the comparison is between the code and not the compilers. v0.2.4's release binaries were built with Go 1.26.0. v0.3.0's are built with Go 1.27.4 (`toolchain go1.27.4` in `go.mod`), which came after these runs, so the numbers here compare the code with Go 1.26.11 on both sides.
 
 The load tool, the fake provider and the gateway share the machine, so the numbers are a floor for what one box does, not a ceiling for a server with the gateway on its own. Windows timers and scheduling make the p99 at a fixed rate noisy: compare p50 and p95 first, and the direct floor row says how much of a p99 is the machine.
 

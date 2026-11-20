@@ -64,14 +64,15 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 	}
 	authors := map[string][]int{}
 	var order []string
-	var late []Change
+	var late, released []Change
 	for _, c := range commits {
 		diff, err := src.ChangelogDiff(ctx, c.SHA)
 		if err != nil {
 			return m, err
 		}
 		if strings.HasPrefix(c.Subject, "chore(release)") {
-			late = append(late, parseSection(diff, releaseSection(o.Version))...)
+			late = append(late, parseSection(diff, releaseSection(o.Version), false)...)
+			released = append(released, parseSection(diff, releaseSection(o.Version), true)...)
 			continue
 		}
 		changes := ParseChangelogDiff(diff)
@@ -106,6 +107,12 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 			authors[pr.Author] = append(authors[pr.Author], number)
 		}
 	}
+	// Lines rewritten or removed before the release are not in its section.
+	if len(released) > 0 {
+		m.Changes = slices.DeleteFunc(m.Changes, func(c Change) bool {
+			return !slices.ContainsFunc(released, func(l Change) bool { return l.Text == c.Text })
+		})
+	}
 	// A release pull request may add lines nobody wrote earlier. Moved lines
 	// are already listed, so only new text is kept, without a pull request.
 	for _, ch := range late {
@@ -135,7 +142,7 @@ func Build(ctx context.Context, src Source, o BuildOptions) (Manifest, error) {
 func ParseChangelogDiff(diff string) []Change {
 	return parseSection(diff, func(section string) bool {
 		return strings.Contains(strings.ToLower(section), "unreleased")
-	})
+	}, false)
 }
 
 // releaseSection matches the "## [0.1.2] - date" heading of a version.
@@ -144,7 +151,7 @@ func releaseSection(version string) func(string) bool {
 	return func(section string) bool { return strings.Contains(section, want) }
 }
 
-func parseSection(diff string, inSection func(string) bool) []Change {
+func parseSection(diff string, inSection func(string) bool, unchanged bool) []Change {
 	var out []Change
 	section, heading := "", ""
 	last := -1
@@ -164,7 +171,7 @@ func parseSection(diff string, inSection func(string) bool) []Change {
 			heading, last = strings.ToLower(strings.TrimSpace(line[4:])), -1
 			continue
 		}
-		if !inSection(section) || mark != '+' {
+		if !inSection(section) || (mark != '+' && !unchanged) {
 			if mark != '+' {
 				last = -1
 			}
@@ -173,7 +180,8 @@ func parseSection(diff string, inSection func(string) bool) []Change {
 		text := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(text, "- "):
-			out = append(out, Change{Kind: kindOf(heading), Text: strings.TrimSpace(text[2:])})
+			entry, breaking := strings.CutPrefix(strings.TrimSpace(text[2:]), "**Breaking:**")
+			out = append(out, Change{Kind: kindOf(heading), Text: strings.TrimSpace(entry), Breaking: breaking})
 			last = len(out) - 1
 		case text != "" && last >= 0:
 			out[last].Text += " " + text
