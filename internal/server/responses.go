@@ -156,27 +156,26 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 		return responsesFailed(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	rd := sse.NewReader(resp.Body)
-	ev, err := rd.Next()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
-	if err == nil && openai.IsResponseStreamError(ev) {
-		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
-	}
+	next, err := open(clocked(sse.NewReader(resp.Body).Next, started), openai.OpeningResponseEvent, func(ev sse.Event) error {
+		if openai.IsResponseStreamError(ev) {
+			return fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
+		}
+		return nil
+	})
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
 	var st openai.ResponseStream
 	for {
+		var ev sse.Event
+		if ev, err = next(); err != nil {
+			break
+		}
 		st.Add(ev.Data)
 		out.write(sse.Frame(ev.Name, ev.Data))
 		if st.Failed() {
-			break
-		}
-		if ev, err = rd.Next(); err != nil {
 			break
 		}
 	}

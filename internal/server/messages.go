@@ -137,16 +137,14 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	rd := sse.NewReader(resp.Body)
-	ev, err := rd.Next()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
-	if err == nil && ev.Name == "error" {
-		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
-	}
+	next, err := open(clocked(sse.NewReader(resp.Body).Next, started), anthropic.OpeningEvent, func(ev sse.Event) error {
+		if ev.Name == "error" {
+			return fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
+		}
+		return nil
+	})
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -154,6 +152,10 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 	var upstreamErr *anthropic.StreamError
 	var text strings.Builder
 	for {
+		var ev sse.Event
+		if ev, err = next(); err != nil {
+			break
+		}
 		evs, derr := dec.Events(ev)
 		for _, e := range evs {
 			text.WriteString(e.Text)
@@ -161,9 +163,6 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		}
 		out.write(sse.Frame(ev.Name, ev.Data))
 		if errors.As(derr, &upstreamErr) {
-			break
-		}
-		if ev, err = rd.Next(); err != nil {
 			break
 		}
 	}
@@ -206,12 +205,9 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 		return failed(err, false)
 	}
 	defer func() { _ = st.Close() }()
-	ev, err := st.Recv()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
+	next, err := open(clocked(st.Recv, started), startEvent, noFailure)
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -220,6 +216,10 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 	var text strings.Builder
 	haveUsage := false
 	for {
+		var ev schema.Event
+		if ev, err = next(); err != nil {
+			break
+		}
 		if ev.Usage != nil && reported(*ev.Usage) {
 			u, haveUsage = *ev.Usage, true
 		}
@@ -228,9 +228,6 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 		text.WriteString(ev.ToolArgs)
 		for _, f := range enc.Frames(ev) {
 			out.write(f)
-		}
-		if ev, err = st.Recv(); err != nil {
-			break
 		}
 	}
 	if errors.Is(err, io.EOF) {

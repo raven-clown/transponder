@@ -315,7 +315,7 @@ func TestTranslatedUpstream4xxKeepsStatus(t *testing.T) {
 
 func TestMessagesUpstreamErrorEventOnce(t *testing.T) {
 	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n"+
+		_, _ = io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n"+anTextDelta("hi")+
 			"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n")
 	})
 	e := setupRoutes(t, []router.Route{anthropicRoute("*", "", up)})

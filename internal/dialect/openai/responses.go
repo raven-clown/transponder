@@ -189,6 +189,22 @@ func (s *ResponseStream) ErrorFrame(code, message string) []byte {
 	return sse.Frame(responseError, b)
 }
 
+// OpeningResponseEvent reports whether a Responses API stream event comes before any output:
+// response.queued, response.created or response.in_progress.
+func OpeningResponseEvent(ev sse.Event) bool {
+	var w struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(ev.Data, &w) != nil {
+		return false
+	}
+	switch w.Type {
+	case "response.queued", "response.created", "response.in_progress":
+		return true
+	}
+	return false
+}
+
 // IsResponseStreamError reports whether a stream event is the provider's error event.
 func IsResponseStreamError(ev sse.Event) bool {
 	if ev.Name == responseError {

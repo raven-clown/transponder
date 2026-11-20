@@ -62,16 +62,14 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	rd := openai.NewSSEReader(resp.Body)
-	first, err := rd.Next()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
-	if err == nil && openai.IsStreamError(first) {
-		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(first))
-	}
+	next, err := open(clocked(openai.NewSSEReader(resp.Body).Next, started), openai.OpeningChunk, func(data []byte) error {
+		if openai.IsStreamError(data) {
+			return fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(data))
+		}
+		return nil
+	})
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -89,9 +87,8 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		}
 		out.data(data)
 	}
-	pass(first)
 	for {
-		data, err := rd.Next()
+		data, err := next()
 		if errors.Is(err, io.EOF) {
 			out.write([]byte(openai.DoneFrame))
 			break
@@ -129,12 +126,9 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 		return failed(err, false)
 	}
 	defer func() { _ = st.Close() }()
-	first, err := st.Recv()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
+	next, err := open(clocked(st.Recv, started), startEvent, noFailure)
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	id := "chatcmpl-" + randomHex()
@@ -142,8 +136,18 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 	var u schema.Usage
 	var text strings.Builder
 	haveUsage := false
-	ev := first
 	for {
+		ev, err := next()
+		if errors.Is(err, io.EOF) {
+			out.write([]byte(openai.DoneFrame))
+			break
+		}
+		if err != nil {
+			if g.streamBroke(ctx, c, err) {
+				out.write(openai.EncodeStreamError("upstream_error", streamCut))
+			}
+			break
+		}
 		if ev.Usage != nil && reported(*ev.Usage) {
 			u, haveUsage = *ev.Usage, true
 		}
@@ -155,17 +159,6 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 			if err == nil && frame != nil {
 				out.write(frame)
 			}
-		}
-		ev, err = st.Recv()
-		if errors.Is(err, io.EOF) {
-			out.write([]byte(openai.DoneFrame))
-			break
-		}
-		if err != nil {
-			if g.streamBroke(ctx, c, err) {
-				out.write(openai.EncodeStreamError("upstream_error", streamCut))
-			}
-			break
 		}
 	}
 	if !haveUsage {
@@ -180,6 +173,26 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 }
 
 var errAttemptTimeout = errors.New("the provider did not start the stream within the attempt timeout")
+
+// clocked stops the attempt clock at the first event read, and fails that read when the event
+// came too late.
+func clocked[T any](read func() (T, error), started func() bool) func() (T, error) {
+	first := true
+	return func() (T, error) {
+		ev, err := read()
+		if first {
+			first = false
+			if err == nil && !started() {
+				err = errAttemptTimeout
+			}
+		}
+		return ev, err
+	}
+}
+
+// startEvent reports whether a translated stream event is the start of the message, which
+// carries no output.
+func startEvent(ev schema.Event) bool { return ev.Type == schema.EventStart }
 
 // attempt returns a context that is cancelled when the first event takes longer than the
 // attempt timeout. started stops the clock and reports whether the event came in time.

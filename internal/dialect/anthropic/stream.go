@@ -203,6 +203,28 @@ func ErrorFrame(errType, message string) []byte {
 	return frame("error", wireError{Type: "error", Error: wireErrorDetail{Type: errType, Message: message}})
 }
 
+// OpeningEvent reports whether a stream event comes before any output: message_start, a ping,
+// or the start of a text block with no text yet.
+func OpeningEvent(ev sse.Event) bool {
+	var w struct {
+		Type         string `json:"type"`
+		ContentBlock *struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content_block"`
+	}
+	if json.Unmarshal(ev.Data, &w) != nil {
+		return false
+	}
+	switch w.Type {
+	case "message_start", "ping":
+		return true
+	case "content_block_start":
+		return w.ContentBlock != nil && w.ContentBlock.Type == "text" && w.ContentBlock.Text == ""
+	}
+	return false
+}
+
 // StreamError is an error event sent by Anthropic in the middle of a stream.
 type StreamError struct {
 	Type, Message string
