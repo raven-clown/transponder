@@ -2,11 +2,13 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -23,8 +25,10 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/provider/registry"
 	"github.com/raven-clown/transponder/internal/router"
+	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/store/postgres"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 	"github.com/raven-clown/transponder/internal/telemetry"
 )
@@ -118,15 +122,12 @@ func stopOnContextDone(ctx context.Context, stop context.CancelFunc) {
 }
 
 func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, stderr io.Writer) error {
-	if cfg.Store.Postgres != "" {
-		return errors.New("postgres store is not supported yet")
-	}
 	logger, err := telemetry.NewLogger(stdout, cfg.LogLevel)
 	if err != nil {
 		return err
 	}
 
-	db, err := sqlite.Open(ctx, cfg.Store.SQLite)
+	db, err := openStore(ctx, cfg.Store)
 	if err != nil {
 		return err
 	}
@@ -146,23 +147,42 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		}
 	}
 
-	rt, err := buildRouter(cfg, &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()})
+	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	limiter, closeLimiter, err := buildLimiter(ctx, cfg, db, logger, time.Now)
 	if err != nil {
 		return err
 	}
-	limiter, err := buildLimiter(ctx, cfg, db, time.Now)
+	defer closeLimiter()
+	reloader, err := runtime.New(ctx, db, func(context.Context, int64) (live, error) {
+		return loadLive(cfg, client, limiter)
+	}, logger, time.Now)
 	if err != nil {
 		return err
 	}
 	metrics := telemetry.NewMetrics(version)
+	reloader.OnReload = metrics.ConfigReloaded
+	reloadCtx, stopReloads := context.WithCancel(ctx)
+	reloadsDone := make(chan struct{})
+	go func() {
+		defer close(reloadsDone)
+		reloader.Run(reloadCtx, runtime.DefaultInterval)
+	}()
+	// The loop reads the store, so it stops before the deferred Close.
+	defer func() {
+		stopReloads()
+		<-reloadsDone
+	}()
 	stopOps, err := serveOps(ctx, cfg.OpsListenAddr, server.Ops(ready, metrics), logger)
 	if err != nil {
 		return err
 	}
 	defer stopOps()
 	gw := server.New(server.Deps{
-		Auth:   authn,
-		Router: rt,
+		Auth: authn,
+		Live: func() (*router.Router, *limits.Limiter) {
+			c := reloader.Current().Value
+			return c.router, c.limiter
+		},
 		Prices: pricing.Default(),
 		Usage:  db,
 		Logger: logger,
@@ -171,7 +191,6 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          ready,
-		Limiter:        limiter,
 		Metrics:        metrics,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
@@ -212,6 +231,51 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	return nil
+}
+
+// database is what serve needs from a store, whichever database holds it.
+type database interface {
+	store.KeyStore
+	store.UsageStore
+	store.ConfigStore
+	Ping(ctx context.Context) error
+	Close() error
+}
+
+// openStore opens the database the config names: Postgres when store.postgres is set, which
+// several replicas can share, and otherwise the SQLite file.
+func openStore(ctx context.Context, cfg config.Store) (database, error) {
+	if cfg.Postgres != "" {
+		return postgres.Open(ctx, cfg.Postgres)
+	}
+	return sqlite.Open(ctx, cfg.SQLite)
+}
+
+// live is the runtime config a reload swaps: what a call reads when it starts.
+type live struct {
+	router  *router.Router
+	limiter *limits.Limiter
+}
+
+// loadLive loads and validates the whole runtime config. The limiter keeps base's counters, so a
+// reload changes the rules and never resets what callers have used.
+//
+// The providers, routes and limits come from the file for now. The admin API will keep them in
+// the store, and read them here, so every replica picks up its writes.
+func loadLive(cfg *config.Bootstrap, client *http.Client, base *limits.Limiter) (live, error) {
+	rt, err := buildRouter(cfg, client)
+	if err != nil {
+		return live{}, err
+	}
+	l := live{router: rt}
+	if base != nil {
+		lc, err := cfg.LimitsConfig()
+		if err != nil {
+			return live{}, err
+		}
+		l.limiter = base.WithConfig(lc)
+	}
+	return l, nil
 }
 
 // buildAuth returns what checks callers: API keys from keys, and tokens from the OIDC issuer
@@ -286,21 +350,58 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 	return r, nil
 }
 
-// buildLimiter returns the limiter for the profiles and budgets in cfg, with this month's usage
-// added back so a restart does not reset anyone's spend. It returns nil when nothing is limited.
-func buildLimiter(ctx context.Context, cfg *config.Bootstrap, usage store.UsageStore, now func() time.Time) (*limits.Limiter, error) {
+// buildLimiter returns the limiter for the profiles and budgets in cfg, and a function that
+// stops it. It returns nil when nothing is limited.
+//
+// With shared limits the counters live in Postgres, and this month's usage fills them the first
+// time any replica starts there. Otherwise they live in this process and are filled from the
+// usage table at every start, so a restart does not reset anyone's spend.
+func buildLimiter(ctx context.Context, cfg *config.Bootstrap, db database, logger *slog.Logger, now func() time.Time) (*limits.Limiter, func(), error) {
 	lc, err := cfg.LimitsConfig()
 	if err != nil || lc.Empty() {
-		return nil, err
+		return nil, func() {}, err
 	}
-	l := limits.New(lc, limits.NewMemoryStore(), now)
-	err = usage.UsageSince(ctx, store.DefaultOrg, limits.Month.Start(now()), func(r store.UsageRecord) error {
-		tokens := r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens + r.OutputTokens + r.ReasoningTokens
-		l.Seed(ctx, limits.Caller{User: r.User, Teams: r.Teams, Key: r.Key}, r.Time, tokens, r.CostNUSD)
-		return nil
-	})
+	seeded := func() (*limits.MemoryStore, error) {
+		mem := limits.NewMemoryStore()
+		l := limits.New(lc, mem, now)
+		err := db.UsageSince(ctx, store.DefaultOrg, limits.Month.Start(now()), func(r store.UsageRecord) error {
+			tokens := r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens + r.OutputTokens + r.ReasoningTokens
+			l.Seed(ctx, limits.Caller{User: r.User, Teams: r.Teams, Key: r.Key}, r.Time, tokens, r.CostNUSD)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reading this month's usage for the limits: %w", err)
+		}
+		return mem, nil
+	}
+	pg, isPostgres := db.(*postgres.DB)
+	if !cfg.SharedLimits() || !isPostgres {
+		mem, err := seeded()
+		if err != nil {
+			return nil, nil, err
+		}
+		return limits.New(lc, mem, now), func() {}, nil
+	}
+	counters, err := pg.Counters(ctx, logger)
 	if err != nil {
-		return nil, fmt.Errorf("reading this month's usage for the limits: %w", err)
+		return nil, nil, err
 	}
-	return l, nil
+	if _, err := counters.SeedOnce(ctx, seeded); err != nil {
+		_ = counters.Close()
+		return nil, nil, fmt.Errorf("filling the shared limit counters: %w", err)
+	}
+	shared := &limits.Failover{
+		Shared:   counters,
+		Local:    limits.NewMemoryStore(),
+		Deny:     cfg.Limits.OnStoreError == "deny",
+		Replicas: counters.Replicas,
+		OnChange: func(err error) {
+			if err != nil {
+				logger.Warn("the shared limit counters are unreachable", "err", err, "on_store_error", cmp.Or(cfg.Limits.OnStoreError, "local"))
+				return
+			}
+			logger.Info("the shared limit counters answer again")
+		},
+	}
+	return limits.New(lc, shared, now), func() { _ = counters.Close() }, nil
 }

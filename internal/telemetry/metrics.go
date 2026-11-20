@@ -29,6 +29,7 @@ type Metrics struct {
 	upstream  *Vec
 	fallbacks *Vec
 	unpriced  *Vec
+	reloads   *Vec
 
 	mu           sync.RWMutex
 	callerModels map[string]struct{}
@@ -63,6 +64,9 @@ func NewMetrics(version string) *Metrics {
 			"route", "from", "to", "reason"),
 		unpriced: r.Counter("transponder_unpriced_requests_total",
 			"Calls on a model that has no price, recorded at a cost of zero."),
+		reloads: r.Counter("transponder_config_reloads_total",
+			"Reloads of the runtime config, by result: ok for a new version swapped in, failed for one that could not be read or loaded.",
+			"result"),
 		callerModels: map[string]struct{}{},
 	}
 	r.Gauge("transponder_build_info", "The running version, as a label on a constant 1.", "version").Set(1, version)
@@ -148,6 +152,18 @@ func (m *Metrics) Unpriced() {
 		return
 	}
 	m.unpriced.Add(1)
+}
+
+// ConfigReloaded counts a reload of the runtime config that was tried.
+func (m *Metrics) ConfigReloaded(ok bool) {
+	if m == nil {
+		return
+	}
+	result := "failed"
+	if ok {
+		result = "ok"
+	}
+	m.reloads.Add(1, result)
 }
 
 // Attempt records how long one attempt on a provider took. ok says whether it answered.

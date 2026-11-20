@@ -381,7 +381,33 @@ profile_bindings:
 - `llm.max_output_tokens` lowers `max_tokens` or `max_completion_tokens`, never raises them. `llm.max_reasoning_tokens` lowers Anthropic's thinking budget, which is also kept under `max_tokens` and dropped when that leaves less than Anthropic's minimum of 1024. OpenAI and Gemini chat requests get no separate reasoning cap; for OpenAI, `max_completion_tokens` bounds reasoning and output together. A prompt over `llm.max_input_tokens` gets 400 `input_too_large`.
 - A spent budget is 402 `budget_exceeded`, a spent token allowance 402 `quota_exceeded`, a rate 429 `rate_limited` with `Retry-After`, too many calls at once 429 `concurrency_limited`. OpenAI-dialect callers get these as `error.code`; Anthropic-dialect callers get Anthropic's `error.type` (`billing_error`, `rate_limit_error`, `invalid_request_error`) with the same code in `error.code`. Responses carry `RateLimit-Policy` and `RateLimit` headers for the rates that apply.
 - `GET /v1/usage` shows the caller each budget and token allowance that applies to them: the limit, what is used (calls in flight count at what they reserved), what is left and when it resets.
-- Counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's recorded spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation, and by kept reservations lost in a restart. With several replicas each keeps its own counters until the shared store lands.
+- With SQLite, counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's recorded spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation, and by kept reservations lost in a restart.
+- With Postgres, counters live in the database and every replica shares them, so a budget, an allowance, a rate or a concurrency cap holds across all of them. See below.
+
+### Postgres and several replicas
+
+SQLite serves one replica. To run more, point every replica at one Postgres database:
+
+```yaml
+store:
+  postgres: postgres://transponder:${PGPASSWORD}@db.internal:5432/transponder?sslmode=require
+```
+
+`TRANSPONDER_STORE__POSTGRES` sets the same key. The value is a `postgres://` URL or a `key=value` connection string, and takes pool settings such as `pool_max_conns=20`. Set only one of `store.sqlite` and `store.postgres`.
+
+- The schema is created and migrated at start. Replicas that start together take a lock, so each migration runs once.
+- API keys and usage records are shared: a key made on one replica works on all of them, and the first replica to start prints the one-time admin key.
+- Migrations only add tables and columns, and removals come in a later release, so replicas on the old and the new version can run side by side during a rolling update.
+- Budgets, token allowances, rates and concurrency caps are counted in Postgres, shared by every replica. Each reservation is one atomic statement, so two replicas cannot both take the last of a budget. The first replica to start fills the counters from this month's usage once. This adds a few short queries to each limited call; `limits.store: memory` keeps the counters in each process instead, for a single replica.
+- A change to the runtime config reaches every replica within 2 seconds, without a restart: each replica checks a version number in the database every 2 seconds and, when it moved, loads the whole config again and swaps it in. If the new config does not load, the old one keeps serving and the error is logged. Calls already running finish on the config they started with.
+- A concurrency slot belongs to the replica that took it. If that replica dies, its slots free themselves within 30 seconds.
+- If Postgres cannot be reached, `limits.on_store_error: local` (the default) counts in each replica with its share of every limit, the limit divided by the number of replicas seen in the last 30 seconds. `deny` answers 503 `overloaded` with `Retry-After: 1` instead.
+
+```yaml
+limits:
+  store: sql             # the default with store.postgres; memory keeps counters in each process
+  on_store_error: local  # or deny
+```
 
 ### Metrics
 
@@ -415,6 +441,7 @@ ops_listen_addr: ":9464"
 | `transponder_upstream_duration_seconds` | `provider`, `model` | Histogram of the time one attempt on a provider took. |
 | `transponder_fallbacks_total` | `route`, `from`, `to`, `reason` | Moves to the next target of a route. `reason` is `server_error`, `rate_limited`, `timeout`, `unreachable`, `auth`, `unsupported` or `error`. |
 | `transponder_unpriced_requests_total` | | Calls on a model that has no price. |
+| `transponder_config_reloads_total` | `result` | Reloads of the runtime config: `ok` for a new version swapped in, `failed` for one that could not be read or loaded, counted on every check while it stays that way. |
 | `transponder_build_info` | `version` | Always 1. |
 
 No label carries a user, a team, a key or a request id, so the number of series follows your config and not your traffic. Spend per user is in the usage records and `GET /v1/usage`. A model name is a label when the config sets it. Behind a wildcard route whose target sets no model, the caller picks the name, so it becomes a label only once a provider has answered for it, for at most 200 names, and is counted as `other` otherwise. `/healthz`, `/readyz` and `/metrics` are not counted as requests.

@@ -71,6 +71,9 @@ func TestMetricsRequestDone(t *testing.T) {
 	m.Unpriced()
 	m.Attempt("oa", "gpt-4o-mini", false, true, 2*time.Second)
 	m.Fallback("fast", "oa", "claude", "server_error")
+	m.ConfigReloaded(true)
+	m.ConfigReloaded(true)
+	m.ConfigReloaded(false)
 
 	wantLines(t, scrape(t, m),
 		`transponder_inflight_requests 1`,
@@ -95,6 +98,8 @@ func TestMetricsRequestDone(t *testing.T) {
 		`transponder_upstream_duration_seconds_bucket{provider="oa",model="gpt-4o-mini",le="2.5"} 1`,
 		`transponder_upstream_duration_seconds_count{provider="oa",model="gpt-4o-mini"} 1`,
 		`transponder_fallbacks_total{route="fast",from="oa",to="claude",reason="server_error"} 1`,
+		`transponder_config_reloads_total{result="ok"} 2`,
+		`transponder_config_reloads_total{result="failed"} 1`,
 	)
 }
 
@@ -143,6 +148,7 @@ func TestNilMetrics(t *testing.T) {
 	m.Unpriced()
 	m.Attempt("p", "m", false, true, time.Second)
 	m.Fallback("r", "a", "b", "error")
+	m.ConfigReloaded(true)
 	rec := httptest.NewRecorder()
 	m.Handler().ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/metrics", nil))
 	if rec.Code != http.StatusNotFound {

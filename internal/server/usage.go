@@ -27,8 +27,8 @@ func (g *gateway) usage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rules := []wireRule{}
-	if g.d.Limiter != nil {
-		for _, s := range g.d.Limiter.Status(r.Context(), c.caller) {
+	if c.limiter != nil {
+		for _, s := range c.limiter.Status(r.Context(), c.caller) {
 			rule := wireRule{Type: s.Kind, Subject: s.Subject, Period: s.Window.String(), ResetsAt: s.Reset.Format(time.RFC3339)}
 			left := max(s.Limit-s.Used, 0)
 			if s.Kind == "budget" {
