@@ -45,7 +45,8 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
 - `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface; only the memory store exists so far
 - `internal/tokens`: the token estimate used when a provider reports no usage
-- `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): live config, sealed secrets, logs and metrics
+- `internal/telemetry`: the JSON logger, and the Prometheus registry and gateway metrics served on `/metrics`. `internal/server/observe.go` is where requests, attempts and fallbacks are reported to it; tracing is planned
+- `internal/runtime`, `internal/secrets` (planned): live config and sealed secrets
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
 

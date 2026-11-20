@@ -36,6 +36,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 - Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Serves `/healthz` (the process is up) and `/readyz` (the store answers) without an API key, for liveness and readiness probes.
+- Serves Prometheus metrics on `/metrics`: requests, latency, tokens and cost by provider and model, fallbacks and limit refusals.
 - Sends each call to Anthropic, OpenAI, Gemini, xAI (Grok), Vercel AI Gateway, Mistral AI, NVIDIA NIM, Groq, Cerebras, SiliconFlow, LM Studio or Ollama, and to any OpenAI-compatible server such as vLLM or [llama.cpp server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
 - Falls back to the next provider when one is down, rate limited or out of credit, and skips a provider that keeps failing for a while.
 - Knows the caller from an OIDC token (Okta, Entra, Keycloak, Zitadel, Google, Auth0 and others) or an API key, and records tokens and cost in USD for every call.
@@ -381,6 +382,42 @@ profile_bindings:
 - A spent budget is 402 `budget_exceeded`, a spent token allowance 402 `quota_exceeded`, a rate 429 `rate_limited` with `Retry-After`, too many calls at once 429 `concurrency_limited`. OpenAI-dialect callers get these as `error.code`; Anthropic-dialect callers get Anthropic's `error.type` (`billing_error`, `rate_limit_error`, `invalid_request_error`) with the same code in `error.code`. Responses carry `RateLimit-Policy` and `RateLimit` headers for the rates that apply.
 - `GET /v1/usage` shows the caller each budget and token allowance that applies to them: the limit, what is used (calls in flight count at what they reserved), what is left and when it resets.
 - Counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's recorded spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation, and by kept reservations lost in a restart. With several replicas each keeps its own counters until the shared store lands.
+
+### Metrics
+
+`GET /metrics` serves Prometheus metrics. On the gateway's port it needs a key or token with the `viewer` or `admin` role, because that port is the one callers reach, and the metrics name your providers, models and routes and total the spend. Prometheus sends the key as a bearer token:
+
+```yaml
+scrape_configs:
+  - job_name: transponder
+    authorization:
+      credentials_file: /etc/prometheus/transponder.key
+    static_configs:
+      - targets: ["transponder:8080"]
+```
+
+To scrape without a key, set `ops_listen_addr` (or `TRANSPONDER_OPS_LISTEN_ADDR`). `/healthz`, `/readyz` and `/metrics` are then also served on that second port, where `/metrics` is open, so keep the port inside your network:
+
+```yaml
+listen_addr: ":8080"
+ops_listen_addr: ":9464"
+```
+
+| Metric | Labels | What it counts |
+|---|---|---|
+| `transponder_requests_total` | `endpoint`, `route`, `provider`, `model`, `code` | Requests answered. `provider` and `model` are the target that answered, and are empty when the request ended before a provider was asked (a 401, a 404, a limit). |
+| `transponder_request_duration_seconds` | `endpoint`, `route` | Histogram of the time from the request arriving to the last byte of the answer, streams included. |
+| `transponder_inflight_requests` | | Requests being served now. |
+| `transponder_limited_total` | `reason` | Requests refused by a limit or a budget: `rate_limited`, `concurrency_limited`, `quota_exceeded`, `budget_exceeded`, `input_too_large`. |
+| `transponder_events_dropped_total` | `sink` | Usage records that could not be written (`sql`). |
+| `transponder_tokens_total` | `direction`, `provider`, `model` | Tokens used. `direction` is `input`, `output`, `cache_read`, `cache_write` or `reasoning`. |
+| `transponder_cost_usd_total` | `provider`, `model` | Cost in US dollars. |
+| `transponder_upstream_duration_seconds` | `provider`, `model` | Histogram of the time one attempt on a provider took. |
+| `transponder_fallbacks_total` | `route`, `from`, `to`, `reason` | Moves to the next target of a route. `reason` is `server_error`, `rate_limited`, `timeout`, `unreachable`, `auth`, `unsupported` or `error`. |
+| `transponder_unpriced_requests_total` | | Calls on a model that has no price. |
+| `transponder_build_info` | `version` | Always 1. |
+
+No label carries a user, a team, a key or a request id, so the number of series follows your config and not your traffic. Spend per user is in the usage records and `GET /v1/usage`. A model name is a label when the config sets it. Behind a wildcard route whose target sets no model, the caller picks the name, so it becomes a label only once a provider has answered for it, for at most 200 names, and is counted as `other` otherwise. `/healthz`, `/readyz` and `/metrics` are not counted as requests.
 
 ## Roadmap
 

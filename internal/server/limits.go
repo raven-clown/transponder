@@ -36,6 +36,7 @@ func (g *gateway) admit(c *call, est limits.Estimate) bool {
 	}
 	t, d := g.d.Limiter.Admit(c.r.Context(), c.caller, est)
 	if d != nil {
+		g.d.Metrics.Limited(d.Code)
 		if d.RetryAfter > 0 {
 			c.w.Header().Set("Retry-After", strconv.FormatInt(int64(math.Ceil(d.RetryAfter.Seconds())), 10))
 		}

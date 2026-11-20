@@ -20,6 +20,7 @@ import (
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/schema"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/telemetry"
 )
 
 const maxBodyBytes = 20 << 20
@@ -42,12 +43,18 @@ type Deps struct {
 	Limiter *limits.Limiter
 	// Ready are the dependencies /readyz pings, by name.
 	Ready map[string]Pinger
+	// Metrics counts requests, tokens, cost, fallbacks and refusals, and is served on
+	// /metrics. Nil means nothing is counted and there is no /metrics.
+	Metrics *telemetry.Metrics
 }
 
 // New returns the gateway handler.
 func New(d Deps) http.Handler {
 	g := &gateway{d: d}
 	mux := http.NewServeMux()
+	if d.Metrics != nil {
+		mux.Handle("GET /metrics", g.metrics())
+	}
 	mux.HandleFunc("POST /v1/chat/completions", g.chat)
 	mux.HandleFunc("POST /v1/embeddings", g.embeddings)
 	mux.HandleFunc("GET /v1/models", g.models)
@@ -56,13 +63,14 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/messages/count_tokens", g.countTokens)
 	mux.Handle("/healthz", Healthz())
 	mux.Handle("/readyz", Readyz(d.Ready))
+	h := g.observe(mux)
 	if d.RequestTimeout <= 0 {
-		return RequestID(mux)
+		return RequestID(h)
 	}
 	return RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), d.RequestTimeout)
 		defer cancel()
-		mux.ServeHTTP(w, r.WithContext(ctx))
+		h.ServeHTTP(w, r.WithContext(ctx))
 	}))
 }
 
@@ -79,6 +87,7 @@ type call struct {
 	plan     router.Plan
 	resolved router.Resolved // the target being tried
 	cut      bool            // the answering target's stream broke after it had started
+	tried    bool            // a provider was asked, so the metrics name it
 	fail     errorFunc
 	id       auth.Identity
 	caller   limits.Caller
@@ -97,28 +106,20 @@ func (g *gateway) begin(w http.ResponseWriter, r *http.Request, endpoint string)
 // caller's dialect, and returns nil when the call cannot go on.
 func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint string, writeError errorFunc) *call {
 	start := g.d.Now()
+	o := observedFrom(r.Context())
+	if o != nil {
+		o.endpoint = endpoint
+	}
 	id, err := g.d.Auth.Authenticate(r)
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrUnauthenticated):
-			// The reason names claims and key ids, never the token.
-			g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
-			writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key or token is required")
-		case errors.Is(err, auth.ErrUnavailable):
-			g.d.Logger.WarnContext(r.Context(), "checking a token", "err", err)
-			w.Header().Set("Retry-After", "10")
-			writeError(w, http.StatusServiceUnavailable, "api_error", "auth_unavailable", "", "the identity provider could not be reached to check the token")
-		default:
-			g.d.Logger.ErrorContext(r.Context(), "authenticating", "err", err)
-			writeError(w, http.StatusInternalServerError, "api_error", "", "", "could not check the credentials")
-		}
+		g.authFailed(w, r, err, writeError)
 		return nil
 	}
 	if r.ContentLength > maxBodyBytes {
 		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "body_too_large", "", "the request body is larger than 20 MiB")
 		return nil
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(rawWriter(w), r.Body, maxBodyBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -130,7 +131,7 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	}
 	// Handlers and adapters read the caller from the request context.
 	r = r.WithContext(auth.WithIdentity(r.Context(), id))
-	return &call{w: w, r: r, body: body, fail: writeError, id: id, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
+	c := &call{w: w, r: r, body: body, fail: writeError, id: id, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -140,6 +141,10 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		Project:   r.Header.Get("X-Project"),
 		Endpoint:  endpoint,
 	}}
+	if o != nil {
+		o.c = c
+	}
+	return c
 }
 
 // resolve finds the targets for model, or writes 404 or 403 and records nothing.
@@ -186,6 +191,7 @@ func (g *gateway) price(ctx context.Context, c *call, u schema.Usage) int64 {
 	cost, priced := g.d.Prices.Cost(c.resolved.Type, c.resolved.Model, u)
 	if !priced {
 		g.d.Logger.InfoContext(ctx, "unpriced", "provider", c.rec.Provider, "model", c.rec.Model)
+		g.d.Metrics.Unpriced()
 	}
 	c.rec.CostNUSD = cost
 	return cost
@@ -195,6 +201,7 @@ func (g *gateway) record(ctx context.Context, rec store.UsageRecord) {
 	rec.Latency = g.d.Now().Sub(rec.Time)
 	if err := g.d.Usage.RecordUsage(context.WithoutCancel(ctx), rec); err != nil {
 		g.d.Logger.ErrorContext(ctx, "recording usage", "request_id", rec.RequestID, "err", err)
+		g.d.Metrics.EventDropped("sql")
 	}
 }
 

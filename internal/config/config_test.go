@@ -533,6 +533,20 @@ func TestLoadLimitsRejects(t *testing.T) {
 	}
 }
 
+func TestOpsListenAddr(t *testing.T) {
+	c, err := Load("", nil)
+	if err != nil || c.OpsListenAddr != "" {
+		t.Fatalf("default ops_listen_addr = %q, err %v; want none", c.OpsListenAddr, err)
+	}
+	p := writeFile(t, "ops_listen_addr: \"127.0.0.1:9464\"\n")
+	if c, err = Load(p, nil); err != nil || c.OpsListenAddr != "127.0.0.1:9464" {
+		t.Fatalf("from the file: %q, err %v", c.OpsListenAddr, err)
+	}
+	if c, err = Load(p, []string{"TRANSPONDER_OPS_LISTEN_ADDR=:9000"}); err != nil || c.OpsListenAddr != ":9000" {
+		t.Fatalf("from the environment: %q, err %v", c.OpsListenAddr, err)
+	}
+}
+
 func TestLoadProfilesFileRejectsUnknownKeys(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "profiles.yaml")
 	if err := os.WriteFile(shared, []byte("profiles: []\nprofile_binding:\n  - {subject: \"key:ci\", profile: team}\n"), 0o600); err != nil {

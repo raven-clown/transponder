@@ -39,6 +39,9 @@ type Resolved struct {
 	Type     string
 	Free     bool
 	Model    string
+	// ModelFromCaller is true when Model is whatever name the caller sent: the target sets no
+	// model and the route matches by wildcard. Metrics use it to keep such names off labels.
+	ModelFromCaller bool
 }
 
 // Plan is the targets to try for one call, in order, and who may make the call.
@@ -105,6 +108,7 @@ func (r *Router) Plan(model string) (Plan, error) {
 			continue
 		}
 		p := Plan{Route: rt.Match, Access: rt.Access}
+		wildcard := strings.ContainsAny(rt.Match, "*?")
 		var cooling []Resolved
 		r.mu.Lock()
 		now := r.now()
@@ -113,7 +117,7 @@ func (r *Router) Plan(model string) (Plan, error) {
 			if up == "" {
 				up = model
 			}
-			res := Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up}
+			res := Resolved{Route: rt.Match, Provider: t.Provider, Type: t.Type, Free: t.Free, Model: up, ModelFromCaller: t.Model == "" && wildcard}
 			if h, ok := r.health[healthKey(res)]; ok && now.Before(h.until) {
 				cooling = append(cooling, res)
 				continue
