@@ -46,6 +46,7 @@ func Run(t *testing.T, open Opener) {
 		{"UpdateConfigRollsBack", testUpdateConfigRollsBack},
 		{"UpdateConfigNested", testUpdateConfigNested},
 		{"UpdateConfigConcurrent", testUpdateConfigConcurrent},
+		{"UpdateConfigSerialised", testUpdateConfigSerialised},
 		{"ListAndFindKeys", testListAndFindKeys},
 		{"UpdateKey", testUpdateKey},
 		{"DeleteKey", testDeleteKey},
@@ -380,6 +381,59 @@ func testUpdateConfigNested(t *testing.T, open Opener) {
 	}
 	if _, err := db.KeyByHash(ctx, Key("inner", "member").Hash); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// testUpdateConfigSerialised checks that a config write sees every write committed before it
+// runs, so a check made inside fn, such as "no route uses this provider", still holds when it
+// commits.
+func testUpdateConfigSerialised(t *testing.T, open Opener) {
+	db := open(t)
+	ctx := context.Background()
+	entered, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		_, err := db.UpdateConfig(ctx, func(ctx context.Context) error {
+			if err := db.CreateConfigItem(ctx, Item("providers", "p", 0)); err != nil {
+				return err
+			}
+			close(entered)
+			<-release
+			return nil
+		})
+		first <- err
+	}()
+	<-entered
+	type result struct {
+		saw bool
+		err error
+	}
+	second := make(chan result, 1)
+	go func() {
+		var saw bool
+		_, err := db.UpdateConfig(ctx, func(ctx context.Context) error {
+			_, err := db.ConfigItem(ctx, store.DefaultOrg, "providers", "p")
+			saw = err == nil
+			if errors.Is(err, store.ErrNotFound) {
+				err = nil
+			}
+			return err
+		})
+		second <- result{saw, err}
+	}()
+	// The second write has to wait for the first; give it time to run ahead if it does not.
+	select {
+	case r := <-second:
+		close(release)
+		t.Fatalf("a second write ran while the first was open (saw its item: %v, err %v)", r.saw, r.err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if r := <-second; r.err != nil || !r.saw {
+		t.Fatalf("second write saw the first's item: %v, err %v", r.saw, r.err)
 	}
 }
 
