@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/store"
 )
 
-var _ store.UsageStore = (*DB)(nil)
+var _ store.UsageAdminStore = (*DB)(nil)
 
 // RecordUsage stores one usage record.
 func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
@@ -62,6 +64,89 @@ func (db *DB) RecentUsage(ctx context.Context, orgID string, limit int) ([]store
 	}
 	return out, rows.Err()
 }
+
+// ListUsage implements store.UsageAdminStore.
+func (db *DB) ListUsage(ctx context.Context, q store.UsageQuery) ([]store.UsageRecord, error) {
+	f := newFilter("org_id", q.OrgID)
+	f.eq("user_id", q.User)
+	f.eq("key", q.Key)
+	f.eq("project", q.Project)
+	f.timeRange(q.From, q.To)
+	f.before(q.BeforeID)
+	rows, err := db.q(ctx).Query(ctx, `SELECT id, org_id, time, request_id, user_id, teams, key, project,
+		route, provider, model, endpoint, input_tokens, output_tokens, cache_read_tokens,
+		cache_write_tokens, reasoning_tokens, cost_nusd, estimated, status, latency_ms, fallbacks
+		FROM usage WHERE `+f.where()+` ORDER BY id DESC LIMIT `+f.arg(q.Limit), f.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.UsageRecord
+	for rows.Next() {
+		var (
+			r      store.UsageRecord
+			at, ms int64
+			teams  []byte
+		)
+		if err := rows.Scan(&r.ID, &r.OrgID, &at, &r.RequestID, &r.User, &teams, &r.Key, &r.Project,
+			&r.Route, &r.Provider, &r.Model, &r.Endpoint, &r.InputTokens, &r.OutputTokens,
+			&r.CacheReadTokens, &r.CacheWriteTokens, &r.ReasoningTokens, &r.CostNUSD, &r.Estimated, &r.Status, &ms,
+			&r.Fallbacks); err != nil {
+			return nil, err
+		}
+		r.Time = time.UnixMilli(at)
+		r.Latency = time.Duration(ms) * time.Millisecond
+		if err := json.Unmarshal(teams, &r.Teams); err != nil {
+			return nil, err
+		}
+		if len(r.Teams) == 0 {
+			r.Teams = nil
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// filter builds a WHERE clause with numbered placeholders.
+type filter struct {
+	conds []string
+	args  []any
+}
+
+func newFilter(orgColumn, orgID string) *filter {
+	f := &filter{}
+	f.conds = append(f.conds, orgColumn+" = "+f.arg(orgID))
+	return f
+}
+
+func (f *filter) arg(v any) string {
+	f.args = append(f.args, v)
+	return "$" + strconv.Itoa(len(f.args))
+}
+
+// eq adds column = v unless v is empty.
+func (f *filter) eq(column, v string) {
+	if v != "" {
+		f.conds = append(f.conds, column+" = "+f.arg(v))
+	}
+}
+
+func (f *filter) timeRange(from, to time.Time) {
+	if !from.IsZero() {
+		f.conds = append(f.conds, "time >= "+f.arg(from.UnixMilli()))
+	}
+	if !to.IsZero() {
+		f.conds = append(f.conds, "time < "+f.arg(to.UnixMilli()))
+	}
+}
+
+func (f *filter) before(id int64) {
+	if id > 0 {
+		f.conds = append(f.conds, "id < "+f.arg(id))
+	}
+}
+
+func (f *filter) where() string { return strings.Join(f.conds, " AND ") }
 
 // UsageSince calls fn for each of orgID's records from since on, oldest first, with the fields
 // the limiter needs to rebuild its counters.

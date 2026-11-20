@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -206,10 +207,12 @@ func TestReloadKeepsOIDCAndRouteAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.UpdateConfig(context.Background(), func(context.Context) error { return nil }); err != nil {
+	// The start stored the file's providers and routes, which raised the version once.
+	v, err := db.UpdateConfig(context.Background(), func(context.Context) error { return nil })
+	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, runtime.DefaultInterval+time.Second, `"from_version":1,"version":2`, &logs)
+	waitFor(t, runtime.DefaultInterval+time.Second, fmt.Sprintf(`"from_version":%d,"version":%d`, v-1, v), &logs)
 	check("after the reload")
 }
 

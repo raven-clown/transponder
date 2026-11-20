@@ -1180,17 +1180,17 @@ func TestReloadReachesEveryReplica(t *testing.T) {
 }
 
 func TestLoadLive(t *testing.T) {
-	base := limits.New(limits.Config{}, limits.NewMemoryStore(), time.Now)
+	base := &limiterSource{base: limits.New(limits.Config{}, limits.NewMemoryStore(), time.Now)}
 	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
 	l, err := loadLive(cfg, http.DefaultClient, base)
 	if err != nil || l.router == nil || l.limiter == nil || len(l.limiter.Status(context.Background(), limits.Caller{User: "a"})) != 1 {
 		t.Fatalf("live %+v, %v", l, err)
 	}
-	if l, err := loadLive(&config.Bootstrap{}, http.DefaultClient, nil); err != nil || l.limiter != nil {
+	if l, err := loadLive(&config.Bootstrap{}, http.DefaultClient, &limiterSource{}); err != nil || l.limiter != nil {
 		t.Fatalf("live without limits %+v, %v", l, err)
 	}
 	bad := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "nope"}}, Routes: []config.Route{{Match: "*", Targets: []config.Target{{Provider: "p"}}}}}
-	if _, err := loadLive(bad, http.DefaultClient, nil); err == nil {
+	if _, err := loadLive(bad, http.DefaultClient, &limiterSource{}); err == nil {
 		t.Fatal("a config with an unknown provider type loaded")
 	}
 	badLimits := &config.Bootstrap{DefaultProfile: "gone"}
@@ -1198,7 +1198,7 @@ func TestLoadLive(t *testing.T) {
 		t.Fatal("a config with an unknown default profile loaded")
 	}
 	badAllow := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "echo"}}, Routes: []config.Route{{Match: "*", Allow: []string{"group:x"}, Targets: []config.Target{{Provider: "p"}}}}}
-	if _, err := loadLive(badAllow, http.DefaultClient, nil); err == nil {
+	if _, err := loadLive(badAllow, http.DefaultClient, &limiterSource{}); err == nil {
 		t.Fatal("a route with an unknown allow entry loaded")
 	}
 }
@@ -1213,7 +1213,7 @@ func TestLoadLiveKeepsRouteAccess(t *testing.T) {
 		},
 	}
 	for i := range 2 {
-		l, err := loadLive(cfg, http.DefaultClient, nil)
+		l, err := loadLive(cfg, http.DefaultClient, &limiterSource{})
 		if err != nil {
 			t.Fatal(err)
 		}

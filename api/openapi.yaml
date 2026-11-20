@@ -1,0 +1,1137 @@
+openapi: 3.1.0
+info:
+  title: transponder admin API
+  version: v1
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    The JSON admin API of transponder, under /admin/v1/. It follows the admin API rules of the
+    mothership contract.
+
+    - Callers authenticate as on the gateway: `Authorization: Bearer <API key or OIDC token>` or
+      `x-api-key`. Role `viewer` may call every GET; every other method needs `admin`.
+    - Lists take `cursor` and `limit` (default 50, at most 500) and return
+      `{"items": [...], "next_cursor": "..."}`. `next_cursor` is absent on the last page.
+    - Errors are `{"error": {"code": "...", "message": "...", "field": "..."}}`. A validation
+      error names the field.
+    - Every resource has an integer `version`. PATCH, DELETE and other writes on one resource
+      take it in `If-Match`; a mismatch is 409 `version_conflict`. Without `If-Match` the write
+      applies to whatever version is stored.
+    - Items declared in the YAML file are read-only here and marked `managed_by_file`; a write
+      to one is 409 `managed_by_file`.
+    - Every write adds an audit record and raises the config version in the same transaction,
+      and the replica that took the write reloads before it answers.
+servers:
+  - url: /admin/v1
+security:
+  - bearer: []
+  - apiKey: []
+
+paths:
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      summary: This file.
+      responses:
+        "200":
+          description: The OpenAPI description of the admin API.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /status:
+    get:
+      operationId: getStatus
+      summary: Version, uptime, store health and the last config reload.
+      responses:
+        "200":
+          description: The status of this replica.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /keys:
+    get:
+      operationId: listKeys
+      summary: API keys, sorted by name. Secrets are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Key" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createKey
+      summary: Create an API key. The response carries the secret, which is shown only this once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeyCreate" }
+      responses:
+        "201":
+          description: The new key and its secret.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyWithSecret" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /keys/{name}:
+    parameters:
+      - $ref: "#/components/parameters/KeyName"
+    get:
+      operationId: getKey
+      summary: One API key.
+      responses:
+        "200":
+          description: The key.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Key" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateKey
+      summary: Change a key's role, teams, expiry or disabled flag. Fields left out keep their value.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeyPatch" }
+      responses:
+        "200":
+          description: The key as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Key" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteKey
+      summary: Delete a key. Calls made with it fail from then on.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /keys/{name}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/KeyName"
+    post:
+      operationId: rotateKey
+      summary: Replace a key's secret. The old secret stops working at once.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "200":
+          description: The key and its new secret, shown only this once.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyWithSecret" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /providers:
+    get:
+      operationId: listProviders
+      summary: Providers, sorted by name. API keys are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Provider" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createProvider
+      summary: Add a provider. Its API key is sealed with secrets_key before it is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProviderCreate" }
+      responses:
+        "201":
+          description: The provider as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provider" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /providers/{name}:
+    parameters:
+      - $ref: "#/components/parameters/Name"
+    get:
+      operationId: getProvider
+      summary: One provider.
+      responses:
+        "200":
+          description: The provider.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provider" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProvider
+      summary: Change a provider's type, base URL or API key. Fields left out keep their value.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProviderPatch" }
+      responses:
+        "200":
+          description: The provider as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provider" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteProvider
+      summary: Delete a provider. A provider a route still uses is 409 `in_use`, naming the routes.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /routes:
+    get:
+      operationId: listRoutes
+      summary: Routes in the order they are tried, by position.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of routes.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Route" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createRoute
+      summary: Add a route. Without a position it goes after every other route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RouteCreate" }
+      responses:
+        "201":
+          description: The route as stored, with its generated id.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Route" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /routes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getRoute
+      summary: One route.
+      responses:
+        "200":
+          description: The route.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Route" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateRoute
+      summary: Change a route. Fields left out keep their value.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoutePatch" }
+      responses:
+        "200":
+          description: The route as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Route" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteRoute
+      summary: Delete a route.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /budgets:
+    get:
+      operationId: listBudgets
+      summary: Budgets.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of budgets.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Budget" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createBudget
+      summary: Add a budget.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BudgetCreate" }
+      responses:
+        "201":
+          description: The budget as stored, with its generated id.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Budget" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /budgets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getBudget
+      summary: One budget.
+      responses:
+        "200":
+          description: The budget.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Budget" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateBudget
+      summary: Change a budget. Fields left out keep their value.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BudgetPatch" }
+      responses:
+        "200":
+          description: The budget as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Budget" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteBudget
+      summary: Delete a budget.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /profiles:
+    get:
+      operationId: listProfiles
+      summary: Limit profiles, sorted by name.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Profile" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createProfile
+      summary: Add a limit profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileCreate" }
+      responses:
+        "201":
+          description: The profile as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /profiles/{name}:
+    parameters:
+      - $ref: "#/components/parameters/Name"
+    get:
+      operationId: getProfile
+      summary: One limit profile.
+      responses:
+        "200":
+          description: The profile.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProfile
+      summary: Change a limit profile. Fields left out keep their value.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfilePatch" }
+      responses:
+        "200":
+          description: The profile as stored.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteProfile
+      summary: Delete a limit profile.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204":
+          description: Deleted.
+        "400": { $ref: "#/components/responses/InvalidWrite" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /usage:
+    get:
+      operationId: getUsage
+      summary: Usage and cost totals, grouped.
+      description: |
+        Totals over the usage records between `from` and `to`, one item per group, sorted by
+        group. With `group_by=team` a call counts once for each of its caller's teams, and calls
+        without a team are left out.
+      parameters:
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [user, team, key, project, model, provider, route, day]
+            default: user
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - { name: user, in: query, schema: { type: string } }
+        - { name: team, in: query, schema: { type: string } }
+        - { name: key, in: query, schema: { type: string } }
+        - { name: project, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, group_by, from, to]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UsageTotal" }
+                  next_cursor: { type: string }
+                  group_by: { type: string }
+                  from: { type: string, format: date-time }
+                  to: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /requests:
+    get:
+      operationId: listRequests
+      summary: Single usage records, newest first.
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - { name: user, in: query, schema: { type: string } }
+        - { name: key, in: query, schema: { type: string } }
+        - { name: project, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of usage records.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Request" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /audit:
+    get:
+      operationId: listAudit
+      summary: Audit records of writes through this API, newest first.
+      parameters:
+        - name: actor
+          in: query
+          description: "Who made the write: `key:<name>` or `user:<id>`."
+          schema: { type: string }
+        - name: resource
+          in: query
+          description: "A resource kind such as `keys`, or one resource such as `keys/logbook`."
+          schema: { type: string }
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of audit records.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditRecord" }
+                  next_cursor: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: An API key (`tp_...`) or an OIDC token from the configured issuer.
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` of the previous page. Opaque.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+    From:
+      name: from
+      in: query
+      description: Start, inclusive. RFC 3339 or a date (YYYY-MM-DD, UTC midnight).
+      schema: { type: string }
+    To:
+      name: to
+      in: query
+      description: End, exclusive. RFC 3339 or a date (YYYY-MM-DD, UTC midnight).
+      schema: { type: string }
+    IfMatch:
+      name: If-Match
+      in: header
+      description: The version the change is based on, such as `"3"`.
+      schema: { type: string }
+    KeyName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+    Name:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  headers:
+    ETag:
+      description: The resource version, quoted, for If-Match.
+      schema: { type: string }
+
+  responses:
+    Invalid:
+      description: The request is not valid. `field` names the parameter or body field.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InvalidWrite:
+      description: |
+        `invalid` names the field that is not valid. `invalid_config` means the change is valid
+        on its own but the whole runtime config would not load with it, such as a second default
+        profile; nothing was written and the old config keeps serving. `secrets_key_missing`
+        means a provider key was sent but no secrets_key is set.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthenticated:
+      description: No valid API key or token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller's role does not allow this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: |
+        `version_conflict` when If-Match names another version, `managed_by_file` when the
+        item comes from the YAML file, `already_exists` when the name is taken, `in_use` when
+        a provider is still used by a route.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: string }
+
+    Status:
+      type: object
+      additionalProperties: false
+      required: [version, started_at, uptime_seconds, store, config]
+      properties:
+        version: { type: string, description: The transponder build. }
+        started_at: { type: string, format: date-time }
+        uptime_seconds: { type: integer }
+        store:
+          type: object
+          additionalProperties: false
+          required: [kind, healthy]
+          properties:
+            kind: { type: string, enum: [sqlite, postgres] }
+            healthy: { type: boolean }
+            error: { type: string }
+        config:
+          type: object
+          additionalProperties: false
+          required: [version, loaded_at, reload_failed]
+          properties:
+            version: { type: integer, description: The config version this replica serves. }
+            loaded_at: { type: string, format: date-time }
+            reload_failed:
+              type: boolean
+              description: A newer version is stored but did not load; the served one keeps serving.
+            failed_version: { type: integer }
+            error: { type: string }
+            failed_at: { type: string, format: date-time }
+
+    Role:
+      type: string
+      enum: [admin, viewer, member]
+
+    Key:
+      type: object
+      additionalProperties: false
+      required: [name, role, teams, disabled, expires_at, last4, version, source, managed_by_file, created_at, updated_at]
+      properties:
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        teams:
+          type: array
+          items: { type: string }
+        disabled: { type: boolean }
+        expires_at: { type: [string, "null"], format: date-time }
+        last4: { type: string, description: The last four characters of the secret. }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    KeyWithSecret:
+      type: object
+      additionalProperties: false
+      required: [name, role, teams, disabled, expires_at, last4, version, source, managed_by_file, created_at, updated_at, secret]
+      properties:
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        teams:
+          type: array
+          items: { type: string }
+        disabled: { type: boolean }
+        expires_at: { type: [string, "null"], format: date-time }
+        last4: { type: string }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        secret: { type: string, description: The key itself. It is not stored and cannot be shown again. }
+
+    KeyCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: 1 to 64 letters, digits, dots, dashes and underscores.
+        role:
+          $ref: "#/components/schemas/Role"
+        teams:
+          type: array
+          items: { type: string }
+        disabled: { type: boolean }
+        expires_at: { type: [string, "null"], format: date-time }
+
+    KeyPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        teams:
+          type: array
+          items: { type: string }
+        disabled: { type: boolean }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: null removes the expiry.
+
+    Provider:
+      type: object
+      additionalProperties: false
+      required: [name, type, base_url, api_key, version, source, managed_by_file, created_at, updated_at]
+      properties:
+        name: { type: string }
+        type: { type: string, description: "A provider type, such as openai, anthropic, gemini or ollama." }
+        base_url: { type: string, description: Empty means the type's default. }
+        api_key:
+          type: object
+          additionalProperties: false
+          required: [set]
+          description: The key itself is never returned.
+          properties:
+            set: { type: boolean }
+            last4: { type: string }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProviderCreate:
+      type: object
+      additionalProperties: false
+      required: [name, type]
+      properties:
+        name: { type: string, description: 1 to 64 letters, digits, dots, dashes and underscores. }
+        type: { type: string }
+        base_url: { type: string }
+        api_key: { type: string, description: Sealed with secrets_key before it is stored. }
+
+    ProviderPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        type: { type: string }
+        base_url: { type: string }
+        api_key: { type: [string, "null"], description: A new key, or null to remove it. }
+
+    Target:
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider: { type: string }
+        model: { type: string, description: The model sent upstream. Empty keeps the requested one. }
+
+    Route:
+      type: object
+      additionalProperties: false
+      required: [id, position, match, allow, targets, version, source, managed_by_file, created_at, updated_at]
+      properties:
+        id: { type: string }
+        position: { type: integer, description: Routes are tried by position, lowest first, and the first match wins. }
+        match: { type: string, description: A model name, or a pattern where * stands for any run of characters. }
+        allow:
+          type: array
+          description: "Who may call it: `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>`. Empty lets everyone in."
+          items: { type: string }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/Target" }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    RouteCreate:
+      type: object
+      additionalProperties: false
+      required: [match, targets]
+      properties:
+        match: { type: string }
+        allow:
+          type: array
+          items: { type: string }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/Target" }
+        position: { type: integer, minimum: 0 }
+
+    RoutePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        match: { type: string }
+        allow:
+          type: array
+          items: { type: string }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/Target" }
+        position: { type: integer, minimum: 0 }
+
+    Budget:
+      type: object
+      additionalProperties: false
+      required: [id, subject, period, limit_usd, version, source, managed_by_file, created_at, updated_at]
+      properties:
+        id: { type: string }
+        subject: { type: string, description: "`user:*`, `user:<id>`, `team:<name>` or `key:<name>`." }
+        period: { type: string, enum: [daily, monthly] }
+        limit_usd: { type: number }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    BudgetCreate:
+      type: object
+      additionalProperties: false
+      required: [subject, period, limit_usd]
+      properties:
+        subject: { type: string }
+        period: { type: string, enum: [daily, monthly] }
+        limit_usd: { type: number, minimum: 0 }
+
+    BudgetPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        subject: { type: string }
+        period: { type: string, enum: [daily, monthly] }
+        limit_usd: { type: number, minimum: 0 }
+
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [name, priority, limits, subjects, default, version, source, managed_by_file, created_at, updated_at]
+      properties:
+        name: { type: string }
+        priority: { type: integer }
+        limits:
+          type: object
+          description: Limit keys in the shared mothership profile format, such as `llm.tokens` or `requests`.
+        subjects:
+          type: array
+          description: "The `key:`, `user:` and `team:` subjects bound to this profile."
+          items: { type: string }
+        default: { type: boolean, description: The profile of callers no binding names. At most one. }
+        version: { type: integer }
+        source: { type: string, enum: [api, file] }
+        managed_by_file: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProfileCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string }
+        priority: { type: integer }
+        limits: { type: object }
+        subjects:
+          type: array
+          items: { type: string }
+        default: { type: boolean }
+
+    ProfilePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        priority: { type: integer }
+        limits: { type: [object, "null"] }
+        subjects:
+          type: array
+          items: { type: string }
+        default: { type: boolean }
+
+    UsageTotal:
+      type: object
+      additionalProperties: false
+      required: [group, requests, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_nusd, cost_usd]
+      properties:
+        group: { type: string }
+        requests: { type: integer }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        cache_read_tokens: { type: integer }
+        cache_write_tokens: { type: integer }
+        reasoning_tokens: { type: integer }
+        cost_nusd: { type: integer, description: Cost in nano-USD, exact. }
+        cost_usd: { type: number }
+
+    Request:
+      type: object
+      additionalProperties: false
+      required: [id, time, request_id, user, teams, key, project, route, provider, model, endpoint,
+        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+        cost_nusd, cost_usd, estimated, status, latency_ms, fallbacks]
+      properties:
+        id: { type: integer }
+        time: { type: string, format: date-time }
+        request_id: { type: string }
+        user: { type: string }
+        teams:
+          type: array
+          items: { type: string }
+        key: { type: string }
+        project: { type: string }
+        route: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        endpoint: { type: string }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        cache_read_tokens: { type: integer }
+        cache_write_tokens: { type: integer }
+        reasoning_tokens: { type: integer }
+        cost_nusd: { type: integer }
+        cost_usd: { type: number }
+        estimated: { type: boolean }
+        status: { type: integer }
+        latency_ms: { type: integer }
+        fallbacks: { type: integer }
+
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required: [id, time, actor, action, kind, resource, diff, request_id]
+      properties:
+        id: { type: integer }
+        time: { type: string, format: date-time }
+        actor: { type: string, description: "`key:<name>` or `user:<id>`, or `file` for a change the config file made at start." }
+        action: { type: string, enum: [create, update, delete, rotate] }
+        kind: { type: string, description: The resource kind, such as keys. }
+        resource: { type: string, description: The resource name or id. }
+        diff:
+          type: object
+          description: The resource before and after the write, with secrets left out.
+          additionalProperties: false
+          properties:
+            before: { type: [object, "null"] }
+            after: { type: [object, "null"] }
+        request_id: { type: string }

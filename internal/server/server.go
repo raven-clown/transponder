@@ -51,6 +51,8 @@ type Deps struct {
 	Metrics *telemetry.Metrics
 	// Tracer makes a span for each call and each attempt on a provider. Nil means no tracing.
 	Tracer *telemetry.Tracer
+	// Admin, when set, serves every path under /admin/v1/.
+	Admin http.Handler
 }
 
 // New returns the gateway handler.
@@ -69,6 +71,14 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/messages/count_tokens", g.countTokens)
 	mux.Handle("/healthz", Healthz())
 	mux.Handle("/readyz", Readyz(d.Ready))
+	if d.Admin != nil {
+		mux.Handle("/admin/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if o := observedFrom(r.Context()); o != nil {
+				o.endpoint = "admin"
+			}
+			d.Admin.ServeHTTP(w, r)
+		}))
+	}
 	h := g.observe(mux)
 	if d.RequestTimeout <= 0 {
 		return RequestID(h)

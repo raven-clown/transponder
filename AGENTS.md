@@ -43,7 +43,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/config`: bootstrap YAML, env overrides, and the providers and routes declared in the file
 - `internal/auth`: OIDC JWT verification with a cached JWKS, API keys, identity and roles; `internal/auth/authtest` is a local OIDC provider for tests
 - `internal/server`: HTTP mux, middleware, gateway handlers
-- `internal/admin` (planned): `/admin/v1` handlers, pagination, audit writes
+- `internal/admin`: `/admin/v1` handlers, pagination, `If-Match` versions and audit writes. Every write goes through `commit`, which runs it with its audit record in one `UpdateConfig` and then reloads. `spec_test.go` checks that the served routes and `api/openapi.yaml` match both ways and validates every response the tests get against the file, so a new endpoint goes in the file first
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic`, `internal/dialect/gemini`: each wire format to and from the canonical types, in both directions, with usage parsing
 - `internal/sse`: server-sent event reading and writing shared by the dialects
@@ -57,9 +57,10 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/tokens`: the token estimate used when a provider reports no usage
 - `internal/runtime`: the live config and its reload. Each replica checks `config_version` every 2 seconds and swaps in a new snapshot; a call keeps the snapshot it started with. A write to the runtime config goes through `store.ConfigStore.UpdateConfig`, which raises the version in the same transaction
 - `internal/telemetry`: the JSON logger, the Prometheus registry and gateway metrics served on `/metrics`, and the tracer with its OTLP/HTTP exporter. `internal/server/observe.go` is where requests, attempts and fallbacks are reported to them. Nothing that goes on a span or a label may hold prompt, completion or provider error text
-- `internal/secrets` (planned): sealed secrets
+- `internal/secrets`: provider keys sealed with AES-256-GCM under `secrets_key`, bound to the item they belong to. With SQLite and no `secrets_key`, `transponder.key` next to the database holds a generated one
+- Runtime config in the store: providers, routes, budgets and profiles are rows of `config_items` (kind, id, JSON body, sealed secret, version, source). At start `admin.SyncFile` writes the file's items there as `source: file`, and every reload builds the router and limits from `admin.Runtime`, which reads the store and keeps the file's provider keys out of it. An admin write that would leave a config `Runtime` cannot load is rolled back with 400 `invalid_config`
 - `internal/testutil` (planned): shared fakes
-- `api/openapi.yaml` (planned): the admin API description
+- `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
 - `demo/`: the Docker Compose demo with Prometheus, Grafana and Jaeger. `demo/sim` is its fake provider, key seeder and traffic, and is not part of the gateway. A change to a metric name or label must keep `demo/grafana/dashboards/transponder.json` working; `go test ./demo/...` checks every query names a metric the gateway serves, and the `demo` CI job runs the stack
 
 ## Rules
