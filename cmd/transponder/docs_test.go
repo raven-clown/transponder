@@ -12,11 +12,16 @@ import (
 )
 
 // docsWithConfig are the pages whose YAML examples are transponder config files.
-var docsWithConfig = []string{"../../docs/configuration.md"}
+var docsWithConfig = []string{"../../README.md", "../../docs/configuration.md"}
 
-// otherProgram marks an example written for another program, such as a Prometheus scrape config,
-// by a first line like "# prometheus.yml".
-var otherProgram = regexp.MustCompile(`^# [a-z]+\.ya?ml\b`)
+// otherFile names the file an example is for on its first line, such as "# prometheus.yml" for a
+// Prometheus scrape config. Only examples for transponder's own file are loaded.
+var otherFile = regexp.MustCompile(`^# ([a-z]+)\.ya?ml\b`)
+
+func otherProgram(body string) bool {
+	m := otherFile.FindStringSubmatch(body)
+	return m != nil && m[1] != "transponder"
+}
 
 var envName = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
 
@@ -41,7 +46,7 @@ func yamlExamples(t *testing.T, path string) []yamlExample {
 		case cur == nil && strings.TrimSpace(line) == "```yaml":
 			cur = &yamlExample{line: n + 1}
 		case cur != nil && strings.TrimSpace(line) == "```":
-			if !otherProgram.MatchString(cur.body) {
+			if !otherProgram(cur.body) {
 				out = append(out, *cur)
 			}
 			cur = nil

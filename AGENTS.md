@@ -56,7 +56,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/sse`: server-sent event reading and writing shared by the dialects
 - `internal/router`: routes, the plan of targets for a call and the cooldown of failing ones; access per route is planned
 - `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
-- `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it
+- `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it. `TestReadmeProviderTable` builds every type and fails until the README's provider table has its row, with the dialect, default base URL and capabilities the adapter really has
 - `internal/store`, `internal/store/sqlite`, `internal/store/postgres`: store interfaces, and SQLite and Postgres (through `pgx`) behind them, each with embedded migrations in its own `migrations` directory
 - `internal/store/storetest`: the test suite both stores pass, and the check that migrations follow expand and contract. `internal/store/postgres/pgtest` gives a test an empty Postgres schema
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
