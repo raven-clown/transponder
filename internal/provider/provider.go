@@ -13,6 +13,17 @@ import (
 // ErrUnsupported means the backend cannot do the requested operation.
 var ErrUnsupported = errors.New("provider: operation not supported")
 
+// CannotCarry marks an encoding error that says the backend cannot carry part of the request,
+// such as an image at a URL, as ErrUnsupported, so the gateway skips the target and keeps the
+// reason. Any other error comes back unchanged.
+func CannotCarry(err error) error {
+	var ce *schema.ContentError
+	if errors.As(err, &ce) {
+		return fmt.Errorf("%w: %w", ErrUnsupported, err)
+	}
+	return err
+}
+
 // Provider is one configured backend.
 type Provider interface {
 	Name() string

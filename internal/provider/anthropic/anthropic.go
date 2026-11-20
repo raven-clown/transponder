@@ -84,7 +84,7 @@ func headerFrom(ctx context.Context) http.Header {
 func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.ChatResponse, error) {
 	body, err := translated(req, false)
 	if err != nil {
-		return nil, err
+		return nil, provider.CannotCarry(err)
 	}
 	resp, err := a.Native(ctx, &provider.NativeCall{Path: "/messages", Body: body, Header: headerFrom(ctx)})
 	if err != nil {
@@ -102,7 +102,7 @@ func (a *Adapter) Chat(ctx context.Context, req *schema.ChatRequest) (*schema.Ch
 func (a *Adapter) ChatStream(ctx context.Context, req *schema.ChatRequest) (schema.Stream, error) {
 	body, err := translated(req, true)
 	if err != nil {
-		return nil, err
+		return nil, provider.CannotCarry(err)
 	}
 	resp, err := a.Native(ctx, &provider.NativeCall{Path: "/messages", Body: body, Header: headerFrom(ctx)}) //nolint:bodyclose // the stream closes it
 	if err != nil {

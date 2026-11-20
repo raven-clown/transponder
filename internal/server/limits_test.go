@@ -21,6 +21,7 @@ import (
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
+	"github.com/raven-clown/transponder/internal/tokens"
 )
 
 func setupLimited(t *testing.T, routes []router.Route, cfg limits.Config) *env {
@@ -225,9 +226,46 @@ func TestInputEstimateCountsTextThatLooksLikeData(t *testing.T) {
 			t.Fatalf("%s slipped past: %d %s", name, res.status, res.body)
 		}
 	}
-	small := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + strings.Repeat("QUJD", 500) + `"}},{"type":"image_url","image_url":{"url":"data:image/png;base64,` + strings.Repeat("QUJD", 500) + `"}}]}]}`
+	// Each image is 20,000 characters of base64, 5,000 tokens if it were read as text, and
+	// counts as tokens.Image instead.
+	e = setupLimited(t, []router.Route{anthropicRoute("*", "", statusUpstream(t, 500, `{}`))}, oneProfile(func(p *limits.Profile) { p.MaxInputTokens = 2*tokens.Image + 100 }))
+	data := strings.Repeat("QUJD", 5000)
+	small := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + data + `"}},{"type":"image_url","image_url":{"url":"data:image/png;base64,` + data + `"}}]}]}`
 	if res := e.messages(t, nil, small); res.status == http.StatusBadRequest {
 		t.Fatalf("base64 images counted as text: %s", res.body)
+	}
+}
+
+func TestInputEstimateCountsImages(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"x"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	})
+	e := setupLimited(t, []router.Route{openaiRoute("*", "", up)}, oneProfile(func(p *limits.Profile) { p.MaxInputTokens = 2*tokens.Image + 100 }))
+	image := `{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}`
+	block := `{"type":"image","source":{"type":"url","url":"https://example.com/a.png"}}`
+	tests := []struct {
+		name, path, content string
+		status              int
+	}{
+		{"two images fit", "/v1/chat/completions", image + "," + image, http.StatusOK},
+		{"three images are over the limit", "/v1/chat/completions", image + "," + image + "," + image, http.StatusBadRequest},
+		{"three image blocks are over the limit", "/v1/messages", block + "," + block + "," + block, http.StatusBadRequest},
+		// A tool schema may use the word image as a type without being a picture.
+		{"an object of type image without a source is not one", "/v1/chat/completions", image + "," + image + `,{"type":"text","text":"{\"type\":\"image\"}"}`, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := e.doPath(http.MethodPost, tt.path, e.auth(), `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[`+tt.content+`]}]}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.status != tt.status {
+				t.Fatalf("status %d, want %d: %s", res.status, tt.status, res.body)
+			}
+			if tt.status == http.StatusBadRequest && !strings.Contains(string(res.body), "over the limit") {
+				t.Fatalf("refused for another reason: %s", res.body)
+			}
+		})
 	}
 }
 

@@ -55,6 +55,44 @@ type part struct {
 	FunctionCall     *functionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *functionResponse `json:"functionResponse,omitempty"`
 	ThoughtSignature string            `json:"thoughtSignature,omitempty"`
+	InlineData       *inlineData       `json:"inlineData,omitempty"`
+}
+
+// inlineData is an image sent inside the request as base64.
+type inlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
+}
+
+// imageTypes are the image media types Gemini takes inline. GIF is not one of them.
+var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/webp": true, "image/heic": true, "image/heif": true}
+
+// userParts renders the content of a user turn in order. Gemini fetches a URL only for some
+// models and file types, and the gateway does not fetch images itself, so an image at a URL
+// makes the request one this target cannot carry.
+func userParts(m schema.Message) ([]part, error) {
+	if !m.HasImages() {
+		if text := m.Text(); text != "" {
+			return []part{{Text: text}}, nil
+		}
+		return nil, nil
+	}
+	parts := make([]part, 0, len(m.Content))
+	for _, p := range m.Content {
+		switch {
+		case p.Type == schema.PartImage && p.Image != nil:
+			if !p.Image.Inline() {
+				return nil, &schema.ContentError{Reason: "Gemini takes inline images only, not an image at a URL"}
+			}
+			if !imageTypes[p.Image.MediaType] {
+				return nil, &schema.ContentError{Reason: "Gemini takes PNG, JPEG, WebP, HEIC and HEIF images, not " + p.Image.MediaType}
+			}
+			parts = append(parts, part{InlineData: &inlineData{MimeType: p.Image.MediaType, Data: p.Image.Data}})
+		case p.Type == schema.PartText && p.Text != "":
+			parts = append(parts, part{Text: p.Text})
+		}
+	}
+	return parts, nil
 }
 
 type functionCall struct {
@@ -119,13 +157,21 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 	}
 	var system []string
 	for _, m := range req.Messages {
+		text := m.Text()
+		switch m.Role {
+		case schema.RoleSystem, schema.RoleTool, schema.RoleAssistant:
+			// Dropping the image would answer a different question than the one asked.
+			if m.HasImages() {
+				return nil, &schema.ContentError{Reason: "Gemini takes images in user messages only, not in " + m.Role + " messages"}
+			}
+		}
 		switch m.Role {
 		case schema.RoleSystem:
-			system = append(system, m.Content)
+			system = append(system, text)
 		case schema.RoleAssistant:
 			var parts []part
-			if m.Content != "" {
-				parts = append(parts, part{Text: m.Content})
+			if text != "" {
+				parts = append(parts, part{Text: text})
 			}
 			for _, c := range m.ToolCalls {
 				gid, sig := splitID(c.ID)
@@ -140,10 +186,14 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 			}
 		case schema.RoleTool:
 			gid, _ := splitID(m.ToolCallID)
-			add("user", part{FunctionResponse: &functionResponse{ID: gid, Name: names[m.ToolCallID], Response: responseObject(m.Content)}})
+			add("user", part{FunctionResponse: &functionResponse{ID: gid, Name: names[m.ToolCallID], Response: responseObject(text)}})
 		default:
-			if m.Content != "" {
-				add("user", part{Text: m.Content})
+			parts, err := userParts(m)
+			if err != nil {
+				return nil, err
+			}
+			if len(parts) > 0 {
+				add("user", parts...)
 			}
 		}
 	}
@@ -273,7 +323,7 @@ func DecodeResponse(body []byte) (*schema.ChatResponse, error) {
 			text.WriteString(p.Text)
 		}
 	}
-	resp.Message.Content = text.String()
+	resp.Message.Content = schema.Text(text.String())
 	resp.FinishReason = finishReason(c.FinishReason, len(resp.Message.ToolCalls) > 0)
 	return resp, nil
 }

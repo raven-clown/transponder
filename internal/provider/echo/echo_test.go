@@ -22,12 +22,12 @@ func chat(t *testing.T, msgs ...schema.Message) *schema.ChatResponse {
 
 func TestEchoReply(t *testing.T) {
 	resp := chat(t,
-		schema.Message{Role: "system", Content: "be brief"},
-		schema.Message{Role: "user", Content: "hi"},
-		schema.Message{Role: "assistant", Content: "yo"},
-		schema.Message{Role: "user", Content: "ping"},
+		schema.Message{Role: "system", Content: schema.Text("be brief")},
+		schema.Message{Role: "user", Content: schema.Text("hi")},
+		schema.Message{Role: "assistant", Content: schema.Text("yo")},
+		schema.Message{Role: "user", Content: schema.Text("ping")},
 	)
-	if resp.Message.Content != "echo: ping" || resp.Message.Role != "assistant" || resp.FinishReason != "stop" || resp.Model != "m" {
+	if resp.Message.Text() != "echo: ping" || resp.Message.Role != "assistant" || resp.FinishReason != "stop" || resp.Model != "m" {
 		t.Fatalf("resp = %+v", resp)
 	}
 	if resp.ID == "" {
@@ -36,21 +36,36 @@ func TestEchoReply(t *testing.T) {
 }
 
 func TestEchoUsage(t *testing.T) {
-	u := chat(t, schema.Message{Role: "user", Content: "abcdefgh"}).Usage
+	u := chat(t, schema.Message{Role: "user", Content: schema.Text("abcdefgh")}).Usage
 	if u.InputTokens != 2 || u.OutputTokens != 4 {
 		t.Fatalf("usage = %+v, want input 2 output 4", u)
 	}
 }
 
 func TestEchoUsageCountsRunes(t *testing.T) {
-	if u := chat(t, schema.Message{Role: "user", Content: "สวัสดี"}).Usage; u.InputTokens != 2 {
+	if u := chat(t, schema.Message{Role: "user", Content: schema.Text("สวัสดี")}).Usage; u.InputTokens != 2 {
 		t.Fatalf("input tokens = %d, want 2", u.InputTokens)
 	}
 }
 
 func TestEchoNoUserMessage(t *testing.T) {
-	if got := chat(t, schema.Message{Role: "system", Content: "x"}).Message.Content; got != "echo: " {
+	if got := chat(t, schema.Message{Role: "system", Content: schema.Text("x")}).Message.Text(); got != "echo: " {
 		t.Fatalf("content = %q", got)
+	}
+}
+
+func TestEchoAnswersWithTheTextParts(t *testing.T) {
+	resp := chat(t, schema.Message{Role: "user", Content: []schema.Part{
+		{Type: schema.PartText, Text: "what is "},
+		{Type: schema.PartImage, Image: &schema.Image{MediaType: "image/png", Data: "aGk="}},
+		{Type: schema.PartText, Text: "this?"},
+	}})
+	if got := resp.Message.Text(); got != "echo: what is this?" {
+		t.Fatalf("content = %q", got)
+	}
+	// 13 runes of text; the image adds nothing.
+	if resp.Usage.InputTokens != 4 {
+		t.Fatalf("input tokens = %d, want 4", resp.Usage.InputTokens)
 	}
 }
 
@@ -62,7 +77,7 @@ func TestEchoNameAndDialect(t *testing.T) {
 }
 
 func TestEchoStream(t *testing.T) {
-	req := &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: "hello there  friend"}}}
+	req := &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: schema.Text("hello there  friend")}}}
 	want, _ := New("echo").Chat(context.Background(), req)
 	st, err := New("echo").ChatStream(context.Background(), req)
 	if err != nil {
@@ -89,8 +104,8 @@ func TestEchoStream(t *testing.T) {
 			t.Fatalf("finish reason %q", ev.FinishReason)
 		}
 	}
-	if text.String() != want.Message.Content {
-		t.Fatalf("streamed %q, want %q", text.String(), want.Message.Content)
+	if text.String() != want.Message.Text() {
+		t.Fatalf("streamed %q, want %q", text.String(), want.Message.Text())
 	}
 	if usage == nil || *usage != want.Usage {
 		t.Fatalf("usage %+v, want %+v", usage, want.Usage)

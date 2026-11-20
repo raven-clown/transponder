@@ -28,7 +28,7 @@ func TestEncodeChatRequestRoundTrip(t *testing.T) {
 		t.Fatalf("tool_choice %s", wire["tool_choice"])
 	}
 
-	named := &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: "x"}}, Stream: true,
+	named := &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: schema.Text("x")}}, Stream: true,
 		ToolChoice: &schema.ToolChoice{Mode: schema.ToolChoiceTool, Name: "f"}}
 	b, err = EncodeChatRequest(named)
 	if err != nil {
@@ -130,10 +130,10 @@ func TestChunkDecoderRepeatedToolStart(t *testing.T) {
 func TestLongToolCallIDsAreShortened(t *testing.T) {
 	long := "gm_" + strings.Repeat("eyJpIjoiY2FsbF8x", 12)
 	req := &schema.ChatRequest{Model: "m", Messages: []schema.Message{
-		{Role: schema.RoleUser, Content: "x"},
+		{Role: schema.RoleUser, Content: schema.Text("x")},
 		{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{{ID: long, Name: "f", Arguments: "{}"}, {ID: "call_short", Name: "g", Arguments: "{}"}}},
-		{Role: schema.RoleTool, ToolCallID: long, Content: "1"},
-		{Role: schema.RoleTool, ToolCallID: "call_short", Content: "2"},
+		{Role: schema.RoleTool, ToolCallID: long, Content: schema.Text("1")},
+		{Role: schema.RoleTool, ToolCallID: "call_short", Content: schema.Text("2")},
 	}}
 	b, err := EncodeChatRequest(req)
 	if err != nil {
