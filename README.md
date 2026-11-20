@@ -408,6 +408,16 @@ Everything a console needs is a JSON API under `/admin/v1/`, described in [api/o
 curl localhost:8080/admin/v1/keys -H "Authorization: Bearer $ADMIN_KEY" \
   -d '{"name": "logbook", "role": "member", "teams": ["platform"]}'
 
+# add a provider and send gpt-* models to it, with no YAML and no restart
+curl localhost:8080/admin/v1/providers -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"name": "openai", "type": "openai", "api_key": "sk-..."}'
+curl localhost:8080/admin/v1/routes -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"match": "gpt-*", "targets": [{"provider": "openai"}]}'
+
+# a monthly budget for every user
+curl localhost:8080/admin/v1/budgets -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"subject": "user:*", "period": "monthly", "limit_usd": 20}'
+
 # spend per user this month, and the last changes made through the API
 curl "localhost:8080/admin/v1/usage?group_by=user" -H "Authorization: Bearer $ADMIN_KEY"
 curl localhost:8080/admin/v1/audit -H "Authorization: Bearer $ADMIN_KEY"
@@ -417,6 +427,10 @@ curl localhost:8080/admin/v1/audit -H "Authorization: Bearer $ADMIN_KEY"
 |---|---|
 | `GET /status` | Version, uptime, store health, the config version served and whether the last reload failed |
 | `GET /keys`, `POST /keys`, `GET/PATCH/DELETE /keys/{name}`, `POST /keys/{name}/rotate` | API keys. A secret is returned once, when the key is made or rotated; the store keeps only its hash |
+| `GET/POST /providers`, `GET/PATCH/DELETE /providers/{name}` | Providers. The API key is write-only: reads show `"api_key": {"set": true, "last4": "..."}`. Deleting one a route still uses is 409 `in_use` with the route ids |
+| `GET/POST /routes`, `GET/PATCH/DELETE /routes/{id}` | Routes, tried by `position`, lowest first. A new route without one goes last |
+| `GET/POST /budgets`, `GET/PATCH/DELETE /budgets/{id}` | Budgets: `subject`, `period` (`daily` or `monthly`) and `limit_usd` |
+| `GET/POST /profiles`, `GET/PATCH/DELETE /profiles/{name}` | Limit profiles: `limits` in the shared profile format, the `subjects` bound to it, and whether it is the `default` |
 | `GET /usage?group_by=user\|team\|key\|project\|model\|provider\|route\|day&from=&to=` | Calls, tokens and cost per group, this month by default |
 | `GET /requests` | Single usage records, newest first |
 | `GET /audit?actor=&resource=&from=&to=` | Every write through the API: who, what, when, the request id, and the item before and after |
@@ -426,6 +440,21 @@ curl localhost:8080/admin/v1/audit -H "Authorization: Bearer $ADMIN_KEY"
 - Every item has a `version`, also sent as the `ETag`. Send it back in `If-Match` on `PATCH`, `DELETE` and `rotate`, and a write over someone else's change is refused with 409 `version_conflict`. Without `If-Match` the write applies to whatever is stored.
 - Items declared in the YAML file show `"managed_by_file": true` and cannot be changed through the API (409 `managed_by_file`).
 - Every write and its audit record commit in one transaction that also raises the config version, so every replica picks the change up within 2 seconds, and the replica that took it before it answers.
+- Before a write commits, the whole config is loaded as it would be after it. A change that would leave a config that does not load, such as a second default profile or a subject bound to two profiles, is refused with 400 `invalid_config` and nothing is written.
+- The providers, routes, budgets and profiles of the YAML file are stored at start with `"source": "file"`. Change them in the file and restart; one removed from the file is removed from the store. A file item with the name of one made through the API replaces it, and the log says so. File routes come first, at positions 1000, 2000 and so on, so a route made through the API can be put between or before them.
+
+#### Provider keys at rest
+
+A provider key sent to the API is sealed with AES-256-GCM before it is stored, and never returned. The 32-byte key for that is `secrets_key` (or `TRANSPONDER_SECRETS_KEY`), written as base64 or 64 hex digits:
+
+```shell
+openssl rand -base64 32
+```
+
+- With SQLite and no `secrets_key`, transponder makes one at first start in `transponder.key` next to the database, readable by its owner only. Back it up with the database: without it the stored provider keys cannot be read.
+- With Postgres, set the same `secrets_key` on every replica. Without one, a provider can be added without a key, and one with a key is refused with 400 `secrets_key_missing`.
+- Changing a provider's `type` or `base_url` needs its `api_key` sent again (or `null` to drop it), so a stored key is never sent to a new host by someone who has not seen it.
+- Keys of providers declared in the YAML file stay in the file and are not stored.
 
 ### Limits
 
