@@ -209,8 +209,9 @@ const minThinkingBudget = 1024
 
 // estimateInput counts every key and string in a request body, and every number in an array,
 // which is how token-array inputs arrive. Tool schemas, tool arguments and descriptions all reach
-// the model, so they all count. Base64 payloads and signatures do not; an image counts as
-// tokens.Image instead, whatever its size.
+// the model, so they all count. Signatures do not, and neither does an image's base64 data: an
+// image counts as tokens.Image instead, whatever its size. Other inline files, such as a PDF,
+// count by the size of their data, since the model reads their pages.
 func estimateInput(body []byte) int64 {
 	var v any
 	if json.Unmarshal(body, &v) != nil {
@@ -218,21 +219,21 @@ func estimateInput(body []byte) int64 {
 	}
 	var b bytes.Buffer
 	var numbers, images int64
-	var walk func(key string, v any)
-	walk = func(key string, v any) {
+	var walk func(key string, v any, image bool)
+	walk = func(key string, v any, image bool) {
 		switch x := v.(type) {
 		case map[string]any:
 			if isImage(x) {
 				images++
+				image = true
 			}
 			for k, val := range x {
-				// Only a base64 source's data is binary; a text document keeps its text there.
-				if k == "data" && x["type"] == "base64" {
+				if image && k == "data" && x["type"] == "base64" {
 					continue
 				}
 				b.WriteString(k)
 				b.WriteByte(' ')
-				walk(k, val)
+				walk(k, val, image)
 			}
 		case []any:
 			for _, val := range x {
@@ -240,17 +241,17 @@ func estimateInput(body []byte) int64 {
 					numbers++
 					continue
 				}
-				walk(key, val)
+				walk(key, val, image)
 			}
 		case string:
-			if key == "signature" || base64DataURI.MatchString(x) {
+			if key == "signature" || (image && base64DataURI.MatchString(x)) {
 				return
 			}
 			b.WriteString(x)
 			b.WriteByte(' ')
 		}
 	}
-	walk("", v)
+	walk("", v, false)
 	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
 }
 

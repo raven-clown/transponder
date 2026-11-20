@@ -180,16 +180,24 @@ func promptTokens(body []byte) int64 {
 			b.WriteString(s)
 			continue
 		}
-		var parts []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+		var parts []json.RawMessage
+		if json.Unmarshal(m.Content, &parts) != nil {
+			continue
 		}
-		if json.Unmarshal(m.Content, &parts) == nil {
-			for _, p := range parts {
-				b.WriteString(p.Text)
-				if p.Type == "image_url" {
-					images++
-				}
+		for _, raw := range parts {
+			var p struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			_ = json.Unmarshal(raw, &p)
+			switch p.Type {
+			case "text":
+				b.Write([]byte(p.Text))
+			case "image_url":
+				images++
+			default:
+				// A file or audio part is read by the model too, so its data counts.
+				b.Write(raw)
 			}
 		}
 	}

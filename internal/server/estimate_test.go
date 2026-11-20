@@ -72,3 +72,37 @@ func TestEstimateWithoutProviderUsage(t *testing.T) {
 		})
 	}
 }
+
+// TestEstimateCountsDocuments checks that only image data is left out of the estimate. A PDF
+// or other file sent inline is read by the model, so its size counts, or a caller could send
+// a large document through a provider that reports no usage and pay next to nothing.
+func TestEstimateCountsDocuments(t *testing.T) {
+	data := strings.Repeat("QUJD", 25_000)
+	cases := []struct {
+		name  string
+		path  string
+		body  string
+		route func(string, *counted) router.Route
+		reply string
+	}{
+		{"anthropic document", "/v1/messages", `{"model":"m","max_tokens":16,"messages":[{"role":"user","content":[` +
+			`{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"` + data + `"}}]}]}`,
+			anRoute, `{"type":"message","role":"assistant","content":[{"type":"text","text":"a report"}],"stop_reason":"end_turn"}`},
+		{"chat file part", "/v1/chat/completions", `{"model":"m","messages":[{"role":"user","content":[` +
+			`{"type":"file","file":{"filename":"r.pdf","file_data":"data:application/pdf;base64,` + data + `"}}]}]}`,
+			oaRoute, `{"choices":[{"index":0,"message":{"role":"assistant","content":"a report"},"finish_reason":"stop"}]}`},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			up := countedUpstream(t, status(http.StatusOK, tt.reply))
+			e := setupRoutes(t, []router.Route{tt.route("*", up)})
+			res, err := e.doPath(http.MethodPost, tt.path, map[string]string{"Authorization": "Bearer " + e.key}, tt.body)
+			if err != nil || res.status != http.StatusOK {
+				t.Fatalf("status %d, err %v: %s", res.status, err, res.body)
+			}
+			if r := e.usage(t)[0]; r.InputTokens < int64(len(data))/8 {
+				t.Fatalf("input tokens %d for %d bytes of base64", r.InputTokens, len(data))
+			}
+		})
+	}
+}
