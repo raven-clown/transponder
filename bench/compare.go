@@ -34,10 +34,11 @@ func runMerge(args []string, stdout io.Writer) error {
 	if len(args) < 3 {
 		return errors.New("merge takes the file to write and at least two reports")
 	}
+	dest, inputs := args[0], args[1:]
 	var out report
 	runs := map[string][]row{}
 	var order []string
-	for _, path := range args[1:] {
+	for _, path := range inputs {
 		rep, err := readReport(path)
 		if err != nil {
 			return err
@@ -63,7 +64,7 @@ func runMerge(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(args[0], append(b, '\n'), 0o600)
+	return os.WriteFile(dest, append(b, '\n'), 0o600) //nolint:gosec // the file the caller named
 }
 
 // runCompare prints two reports side by side, the first as before and the second as after.

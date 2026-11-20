@@ -48,6 +48,8 @@ func fakeGateway(args []string) int {
 	}
 	_, _ = fmt.Fprint(os.Stderr, "transponder: created an admin API key. It is shown once, so save it now:\ntp-fake\n")
 	mux := http.NewServeMux()
+	// Should the free port the test picked for pprof be handed to the gateway too, it is here.
+	mux.Handle("GET /debug/pprof/", http.DefaultServeMux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") })
 	mux.HandleFunc("POST /", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tp-fake" {
