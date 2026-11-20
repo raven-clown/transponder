@@ -33,6 +33,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 
+### Fixed
+
+- With Postgres, two admin API writes at the same moment, such as deleting a provider while a route to it is created, could both pass validation and leave a stored config that no replica could load. Config writes now run one at a time.
+- A config file that no longer fits the items made through the admin API, such as one that drops a provider an API route uses, was stored anyway, after which no replica could load the config and every admin write failed with `invalid_config`. Start now refuses such a file with an error naming the conflict and keeps the stored config.
+- Deleting the last route through the admin API made every model answer from the free `echo` provider. With providers and no routes, calls now get 404 `model_not_found`.
+- An admin write whose caller disconnected right after the commit showed `reload_failed` in `/admin/v1/status` and logged an error until the next check.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
