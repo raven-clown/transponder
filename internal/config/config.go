@@ -3,6 +3,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -290,12 +293,18 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading config: %w", err)
 		}
-		expanded, err := expand(string(raw), env)
+		doc, err := expand(raw, env)
 		if err != nil {
-			return nil, err
-		}
-		if err := yaml.Unmarshal([]byte(expanded), &tree); err != nil {
+			var missing missingVarsError
+			if errors.As(err, &missing) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("parsing %s: %w", path, err)
+		}
+		if doc.Kind != 0 {
+			if err := doc.Decode(&tree); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", path, err)
+			}
 		}
 		if tree == nil {
 			tree = map[string]any{}
@@ -456,20 +465,80 @@ func envMap(environ []string) map[string]string {
 	return m
 }
 
-func expand(s string, env map[string]string) (string, error) {
-	var missing []string
-	out := os.Expand(s, func(name string) string {
-		v, ok := env[name]
+// missingVarsError names the variables a file uses that the environment does not set.
+type missingVarsError []string
+
+func (e missingVarsError) Error() string {
+	return "config: environment variables not set: " + strings.Join(e, ", ")
+}
+
+// expand parses raw as YAML and replaces ${VAR} and $VAR in its scalars, keys
+// included, from env. Each variable is first swapped for a marker made of
+// letters and digits, so it parses the same in any YAML context, and only the
+// markers left in scalars are filled in. Comments are never expanded, and a
+// value is used as written: a # or a newline in it stays part of the value.
+// A variable fills part of one scalar; it cannot add keys or list items.
+func expand(raw []byte, env map[string]string) (*yaml.Node, error) {
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+	prefix := "tpenv" + hex.EncodeToString(nonce[:]) + "n"
+	var names []string
+	marked := os.Expand(string(raw), func(name string) string {
+		names = append(names, name)
+		return prefix + strconv.Itoa(len(names)-1) + "x"
+	})
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(marked), &doc); err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return &doc, nil
+	}
+	marker := regexp.MustCompile(prefix + `([0-9]+)x`)
+	missing := map[string]bool{}
+	fill := func(m string) string {
+		i, err := strconv.Atoi(m[len(prefix) : len(m)-1])
+		if err != nil || i >= len(names) {
+			return m
+		}
+		v, ok := env[names[i]]
 		if !ok {
-			missing = append(missing, name)
+			missing[names[i]] = true
 		}
 		return v
-	})
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return "", fmt.Errorf("config: environment variables not set: %s", strings.Join(missing, ", "))
 	}
-	return out, nil
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		switch n.Kind {
+		case yaml.ScalarNode:
+			if !strings.Contains(n.Value, prefix) {
+				return
+			}
+			n.Value = marker.ReplaceAllStringFunc(n.Value, fill)
+			// A plain scalar is typed again from its new value, so ${PORT} can still be a number.
+			if n.Style&(yaml.TaggedStyle|yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) == 0 {
+				n.Tag = ""
+			}
+		case yaml.AliasNode:
+			// The anchored node is expanded where it is defined.
+		default:
+			for _, c := range n.Content {
+				walk(c)
+			}
+		}
+	}
+	walk(&doc)
+	if len(missing) > 0 {
+		out := make(missingVarsError, 0, len(missing))
+		for name := range missing {
+			out = append(out, name)
+		}
+		sort.Strings(out)
+		return nil, out
+	}
+	return &doc, nil
 }
 
 func applyEnv(tree map[string]any, environ []string) {
@@ -480,7 +549,7 @@ func applyEnv(tree map[string]any, environ []string) {
 			continue
 		}
 		name := strings.ToLower(k[len(envPrefix):])
-		kind, isKnown := known[name]
+		typ, isKnown := known[name]
 		if !isKnown {
 			continue
 		}
@@ -494,24 +563,31 @@ func applyEnv(tree map[string]any, environ []string) {
 			}
 			node = child
 		}
+		// Left as a string when it does not parse, so the error names what was set.
 		var value any = v
-		switch kind {
+		switch typ.Kind() {
 		case reflect.Bool:
 			if b, err := strconv.ParseBool(v); err == nil {
 				value = b
 			}
 		case reflect.Float64:
-			// Left as a string when it is not a number, so the error names what was set.
 			if f, err := strconv.ParseFloat(v, 64); err == nil {
 				value = f
+			}
+		case reflect.Int, reflect.Int64:
+			// A duration stays a string such as "30s".
+			if typ != reflect.TypeFor[time.Duration]() {
+				if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+					value = n
+				}
 			}
 		}
 		node[path[len(path)-1]] = value
 	}
 }
 
-func leafPaths(t reflect.Type, prefix string) map[string]reflect.Kind {
-	out := map[string]reflect.Kind{}
+func leafPaths(t reflect.Type, prefix string) map[string]reflect.Type {
+	out := map[string]reflect.Type{}
 	for f := range t.Fields() {
 		tag, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		if tag == "" || tag == "-" {
@@ -527,7 +603,7 @@ func leafPaths(t reflect.Type, prefix string) map[string]reflect.Kind {
 			}
 			continue
 		}
-		out[prefix+tag] = f.Type.Kind()
+		out[prefix+tag] = f.Type
 	}
 	return out
 }
