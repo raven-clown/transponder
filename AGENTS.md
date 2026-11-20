@@ -69,6 +69,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
 - `bench/`: the load suite, a fake upstream with fixed latency and body size and a fixed-rate load tool; not part of the gateway. Hot-path Go benchmarks live next to their code in `*_bench_test.go` and use only APIs v0.2.4 has too, so the same files run on the old tag. `cmd/transponder/pprof.go` serves pprof only in a build with `-tags pprof`
+- `docs/`: `design.md` is the approved plan, `architecture.md` the code as built and why, `configuration.md` every config key. `TestConfigReference` in `internal/config` fails when a key, its environment variable or its default is missing from `configuration.md`, and `TestDocsConfigExamples` in `cmd/transponder` loads every YAML example in it with `--config-test`
 - `demo/`: the Docker Compose demo with Prometheus, Grafana and Jaeger. `demo/sim` is its fake provider, key seeder and traffic, and is not part of the gateway. A change to a metric name or label must keep `demo/grafana/dashboards/transponder.json` working; `go test ./demo/...` checks every query names a metric the gateway serves, and the `demo` CI job runs the stack
 
 ## Rules

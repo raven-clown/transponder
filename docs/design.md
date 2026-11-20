@@ -76,6 +76,8 @@ Not in v1: a UI of any kind (the contract puts that in the separate console), se
 
 ## 4. Architecture
 
+This section is the plan as it was approved. [architecture.md](architecture.md) describes the code as it is built, with the reasons behind each pattern, for a contributor reading it for the first time.
+
 ```
 client (OpenAI or Anthropic dialect)
    |
