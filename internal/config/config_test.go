@@ -628,7 +628,9 @@ func TestLoadExpandsEdgeCases(t *testing.T) {
 		{
 			name: "a variable inside a flow list",
 			body: "providers: [{name: e, type: echo}]\nroutes:\n  - {match: '*', allow: [user:${HOST}], targets: [{provider: e}]}\n",
-			want: func(c *Bootstrap) bool { return len(c.Routes) == 1 && reflect.DeepEqual(c.Routes[0].Allow, []string{"user:h"}) },
+			want: func(c *Bootstrap) bool {
+				return len(c.Routes) == 1 && reflect.DeepEqual(c.Routes[0].Allow, []string{"user:h"})
+			},
 		},
 		{
 			name: "plain values keep their type",
