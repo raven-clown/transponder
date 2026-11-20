@@ -95,6 +95,10 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if c.ListenAddr != ":9000" || c.Store.SQLite != "/tmp/x.db" {
 		t.Fatalf("overrides not applied: %+v", c)
 	}
+	c, err = Load(writeFile(t, "previous_secrets_key: from-file\n"), []string{"TRANSPONDER_PREVIOUS_SECRETS_KEY=from-env"})
+	if err != nil || c.PreviousSecretsKey != "from-env" {
+		t.Fatalf("previous_secrets_key %q, %v", c.PreviousSecretsKey, err)
+	}
 }
 
 func TestLoadRejects(t *testing.T) {
