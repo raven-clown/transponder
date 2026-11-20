@@ -146,6 +146,38 @@ func TestOIDCVerify(t *testing.T) {
 	}
 }
 
+func TestOIDCRejectsIssuerThatDiffersOnlyByTrailingSlash(t *testing.T) {
+	p := authtest.NewIDP(t)
+	key := p.NewKey("issuer-slash")
+	for _, tt := range []struct {
+		name, tokenIssuer, wantIssuer string
+		wantHint                      bool
+	}{
+		{"token has the slash", p.Issuer() + "/", p.Issuer(), true},
+		{"config has the slash", p.Issuer(), p.Issuer() + "/", true},
+		{"plainly different", "https://elsewhere.example.com", p.Issuer(), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := p.Claims()
+			claims["iss"] = tt.tokenIssuer
+			token := authtest.Sign(t, jose.ES256, key, "issuer-slash", claims)
+			o := verifier(p, func(c *OIDCConfig) { c.Issuer = tt.wantIssuer })
+			_, err := o.Verify(context.Background(), token)
+			if !errors.Is(err, ErrUnauthenticated) {
+				t.Fatalf("err = %v, want ErrUnauthenticated", err)
+			}
+			got := err.Error()
+			hasHint := strings.Contains(got, "trailing slash") && strings.Contains(got, tt.tokenIssuer)
+			if hasHint != tt.wantHint {
+				t.Fatalf("err = %q, hint = %v, want %v", got, hasHint, tt.wantHint)
+			}
+			if tt.wantHint && !errors.Is(err, ErrIssuerTrailingSlash) {
+				t.Fatalf("err = %v, want ErrIssuerTrailingSlash", err)
+			}
+		})
+	}
+}
+
 func TestOIDCClaimNames(t *testing.T) {
 	p := authtest.NewIDP(t)
 	key := p.NewKey("k")

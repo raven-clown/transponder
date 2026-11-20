@@ -19,6 +19,10 @@ import (
 // could not be fetched. It is not the caller's fault, and a retry may work.
 var ErrUnavailable = errors.New("auth: identity provider unavailable")
 
+// ErrIssuerTrailingSlash marks a refused token whose issuer differs from the configured one
+// only by a trailing slash. The gateway logs that hint once at warn level.
+var ErrIssuerTrailingSlash = errors.New("the two differ only by a trailing slash")
+
 // DefaultClockSkew is how far the clocks of transponder and the identity provider may differ.
 const DefaultClockSkew = time.Minute
 
@@ -132,6 +136,12 @@ func (o *OIDC) Verify(ctx context.Context, token string) (Identity, error) {
 		Issuer string `json:"iss"`
 	}
 	if err := json.Unmarshal(jws.UnsafePayloadWithoutVerification(), &peek); err != nil || peek.Issuer != o.cfg.Issuer {
+		if err == nil && peek.Issuer != "" && strings.TrimSuffix(peek.Issuer, "/") == strings.TrimSuffix(o.cfg.Issuer, "/") {
+			// Still refused: the issuer must match exactly. The reason spells out
+			// the fix and quotes the token's value, whichever side has the slash.
+			return Identity{}, fmt.Errorf("%w: issuer is %q, want %q: %w; set auth.oidc.issuer to %q",
+				ErrUnauthenticated, peek.Issuer, o.cfg.Issuer, ErrIssuerTrailingSlash, peek.Issuer)
+		}
 		return Identity{}, rejectf("issuer is %q, want %q", peek.Issuer, o.cfg.Issuer)
 	}
 	header := jws.Signatures[0].Protected

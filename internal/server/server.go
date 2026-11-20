@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
@@ -92,6 +93,8 @@ func New(d Deps) http.Handler {
 
 type gateway struct {
 	d Deps
+	// issuerSlashWarned keeps the trailing-slash hint from flooding the log.
+	issuerSlashWarned sync.Once
 }
 
 // call is one gateway request on its way through.

@@ -1,19 +1,40 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/telemetry"
 )
+
+func TestAuthFailedWarnsOnceAboutTrailingSlashIssuer(t *testing.T) {
+	var logs bytes.Buffer
+	g := &gateway{d: Deps{Logger: slog.New(slog.NewTextHandler(&logs, nil))}}
+	err := fmt.Errorf("%w: issuer is %q, want %q: %w; set auth.oidc.issuer to %q",
+		auth.ErrUnauthenticated, "https://x/", "https://x", auth.ErrIssuerTrailingSlash, "https://x/")
+	write := func(http.ResponseWriter, int, string, string, string, string) {}
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/x", nil)
+	for range 2 {
+		g.authFailed(httptest.NewRecorder(), req, err, write)
+	}
+	if n := strings.Count(logs.String(), "trailing slash"); n != 1 {
+		t.Fatalf("warn count = %d, want 1:\n%s", n, logs.String())
+	}
+	if !strings.Contains(logs.String(), "level=WARN") {
+		t.Fatalf("hint is not at warn level:\n%s", logs.String())
+	}
+}
 
 func TestFallbackReason(t *testing.T) {
 	upstream := func(status int) error {

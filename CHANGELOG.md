@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- A token whose issuer differs from `auth.oidc.issuer` only by a trailing slash is still refused, but the reason now names the exact value and the setting to change, and the hint is logged once at warn level instead of only at debug level (#173).
+
 ## [0.3.0] - 2026-11-21
 
 ### Added

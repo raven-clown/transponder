@@ -307,8 +307,16 @@ func fallbackReason(err error) string {
 func (g *gateway) authFailed(w http.ResponseWriter, r *http.Request, err error, writeError errorFunc) {
 	switch {
 	case errors.Is(err, auth.ErrUnauthenticated):
-		// The reason names claims and key ids, never the token.
-		g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
+		// The reason names claims and key ids, never the token. A trailing-slash
+		// issuer is a config hint the operator needs at the default log level,
+		// but one line is enough (#173).
+		if errors.Is(err, auth.ErrIssuerTrailingSlash) {
+			g.issuerSlashWarned.Do(func() {
+				g.d.Logger.WarnContext(r.Context(), "credentials refused", "reason", err.Error())
+			})
+		} else {
+			g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
+		}
 		writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key or token is required")
 	case errors.Is(err, auth.ErrForbidden):
 		writeError(w, http.StatusForbidden, "permission_error", "forbidden", "", "this needs the viewer or admin role")
