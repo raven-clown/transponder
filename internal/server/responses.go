@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -181,14 +180,8 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 			break
 		}
 	}
-	if !st.Done() {
-		if err != nil && !errors.Is(err, io.EOF) {
-			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
-		}
-		if !st.Failed() {
-			out.write(st.ErrorFrame("upstream_error", streamCut))
-		}
-		c.cut = true
+	if !st.Done() && g.streamBroke(ctx, c, err) && !st.Failed() {
+		out.write(st.ErrorFrame("upstream_error", streamCut))
 	}
 	u, ok := st.Usage()
 	if !ok {
@@ -197,7 +190,7 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }

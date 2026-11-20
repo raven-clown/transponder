@@ -66,7 +66,8 @@ func (c *call) done() {
 
 // recordCall settles the call's reservations to its real usage and stores the usage record.
 func (g *gateway) recordCall(ctx context.Context, c *call) {
-	if c.ticket != nil && c.r.Context().Err() != nil && c.rec.Status >= http.StatusInternalServerError {
+	beforeAnswer := c.rec.Status >= http.StatusInternalServerError || (c.rec.Status == statusCallerGone && !c.cut)
+	if c.ticket != nil && c.r.Context().Err() != nil && beforeAnswer {
 		// The caller left before the answer; the provider may still have done and billed the work.
 		c.ticket.Keep()
 	}

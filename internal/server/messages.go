@@ -160,13 +160,12 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		}
 	}
 	if !dec.Done() {
-		if err != nil && !errors.Is(err, io.EOF) {
-			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
+		if upstreamErr != nil {
+			err = upstreamErr
 		}
-		if upstreamErr == nil {
+		if g.streamBroke(ctx, c, err) && upstreamErr == nil {
 			out.write(anthropic.ErrorFrame("api_error", streamCut))
 		}
-		c.cut = true
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()
@@ -175,7 +174,7 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }
@@ -225,10 +224,8 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 		for _, f := range enc.End() {
 			out.write(f)
 		}
-	} else {
-		g.d.Logger.WarnContext(ctx, "provider stream broke", "provider", c.rec.Provider, "err", err)
+	} else if g.streamBroke(ctx, c, err) {
 		out.write(anthropic.ErrorFrame("api_error", streamCut))
-		c.cut = true
 	}
 	if !haveUsage {
 		u = schema.Usage{InputTokens: estimateTokens(string(c.body)), OutputTokens: estimateTokens(text.String())}
@@ -236,7 +233,7 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }

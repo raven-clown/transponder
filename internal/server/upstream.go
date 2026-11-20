@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -126,6 +127,13 @@ func (g *gateway) rejected(c *call, err error) {
 // the caller's dialect is passed on as is, since it would fail the same way anywhere.
 func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 	ctx := c.r.Context()
+	if callerGone(c) {
+		g.d.Logger.InfoContext(ctx, "caller left before the answer", "provider", c.rec.Provider)
+		c.w.WriteHeader(statusCallerGone)
+		c.rec.Status = statusCallerGone
+		g.recordCall(ctx, c)
+		return
+	}
 	g.d.Logger.WarnContext(ctx, "provider call failed", "provider", c.rec.Provider, "err", err)
 	var pe *provider.Error
 	switch {
@@ -157,6 +165,36 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 		c.rec.Status = http.StatusBadGateway
 	}
 	g.recordCall(ctx, c)
+}
+
+// statusCallerGone records a call whose caller closed the connection before the answer ended,
+// as nginx does.
+const statusCallerGone = 499
+
+// callerGone reports whether the caller hung up. A request that ran out of time ends with
+// DeadlineExceeded instead, and counts as the provider's failure.
+func callerGone(c *call) bool {
+	return errors.Is(c.r.Context().Err(), context.Canceled)
+}
+
+// streamBroke handles a stream that stopped before its end, after the caller had its first
+// byte. It reports whether to send the caller an error event; a caller who left gets none.
+func (g *gateway) streamBroke(ctx context.Context, c *call, err error) bool {
+	c.cut = true
+	if callerGone(c) {
+		g.d.Logger.InfoContext(ctx, "caller left in the middle of the stream", "provider", c.rec.Provider)
+		return false
+	}
+	g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
+	return true
+}
+
+// streamStatus is the status recorded for a stream that began.
+func streamStatus(c *call) int {
+	if c.cut && callerGone(c) {
+		return statusCallerGone
+	}
+	return http.StatusOK
 }
 
 var errUpstreamTooLarge = errors.New("the provider's response is larger than the gateway accepts")

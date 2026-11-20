@@ -97,9 +97,9 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 			break
 		}
 		if err != nil {
-			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
-			out.write(openai.EncodeStreamError("upstream_error", "the provider stopped in the middle of the stream"))
-			c.cut = true
+			if g.streamBroke(ctx, c, err) {
+				out.write(openai.EncodeStreamError("upstream_error", streamCut))
+			}
 			break
 		}
 		pass(data)
@@ -110,7 +110,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }
@@ -160,9 +160,9 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 			break
 		}
 		if err != nil {
-			g.d.Logger.WarnContext(ctx, "provider stream broke", "provider", c.rec.Provider, "err", err)
-			out.write(openai.EncodeStreamError("upstream_error", "the provider stopped in the middle of the stream"))
-			c.cut = true
+			if g.streamBroke(ctx, c, err) {
+				out.write(openai.EncodeStreamError("upstream_error", streamCut))
+			}
 			break
 		}
 	}
@@ -172,7 +172,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }

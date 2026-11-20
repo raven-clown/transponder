@@ -33,6 +33,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 
+### Fixed
+
+- A caller that closes the connection, before the answer or in the middle of a stream, is recorded with status 499 and logged at info level, instead of 502 or 200 and a `provider call failed` or `upstream stream broke` warning, so provider alerts stay quiet (#25).
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
