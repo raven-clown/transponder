@@ -257,29 +257,69 @@ func ReadResponsesRefs(body []byte) ResponsesRefs {
 	return r
 }
 
-// storedItem reports whether an input item can only be read from the provider's store: an id
-// with nothing else but a type, which OpenAI reads as an item reference, or a reasoning item
-// without its encrypted content.
+// itemNeeds is the content an input item of each type must carry to stand without the store.
+var itemNeeds = map[string][]string{
+	"message":       {"role", "content"},
+	"reasoning":     {"encrypted_content"},
+	"function_call": {"call_id", "name", "arguments"},
+}
+
+// storedItem reports whether an input item with an id may be read from the provider's store
+// rather than from the request. It fails closed: an item of a known type must carry the content
+// that type needs, any other item must carry something besides its id and type, and a null or
+// empty value counts as missing. Keys match without regard to case, and every type the item
+// gives is checked, since a server may read either of two keys that differ by case.
 func storedItem(item any) bool {
 	m, ok := item.(map[string]any)
 	if !ok {
 		return false
 	}
-	var id, reasoning, encrypted, other bool
+	id := false
+	var types []string
+	has := map[string]bool{}
 	for k, v := range m {
+		key := strings.ToLower(k)
 		switch {
-		case strings.EqualFold(k, "id"):
-			id = v != nil
-		case strings.EqualFold(k, "type"):
-			reasoning = reasoning || v == "reasoning"
-		case strings.EqualFold(k, "encrypted_content"):
-			encrypted = encrypted || v != nil
-			other = true
-		default:
-			other = true
+		case key == "id":
+			id = id || present(v)
+		case key == "type":
+			if s, ok := v.(string); ok {
+				types = append(types, s)
+			}
+		case present(v):
+			has[key] = true
 		}
 	}
-	return id && (!other || (reasoning && !encrypted))
+	if !id {
+		return false
+	}
+	if len(has) == 0 {
+		return true
+	}
+	for _, typ := range types {
+		for _, need := range itemNeeds[typ] {
+			if !has[need] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// present reports whether a JSON value carries anything: not null, an empty string, an empty
+// array or an empty object.
+func present(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case string:
+		return x != ""
+	case []any:
+		return len(x) > 0
+	case map[string]any:
+		return len(x) > 0
+	}
+	return true
 }
 
 // hasField reports whether any key that matches name without regard to case has a value other
