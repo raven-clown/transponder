@@ -197,7 +197,8 @@ func SyncFile(ctx context.Context, st SyncStore, cfg *config.Bootstrap, now func
 			}
 			return nil
 		})
-		if err == nil || attempt == 2 || !(errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrVersionConflict) || errors.Is(err, store.ErrNotFound)) {
+		raced := errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrVersionConflict) || errors.Is(err, store.ErrNotFound)
+		if !raced || attempt == 2 {
 			return err
 		}
 	}

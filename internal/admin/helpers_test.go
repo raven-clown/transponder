@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
+	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/runtime"
+	"github.com/raven-clown/transponder/internal/secrets"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
@@ -59,6 +61,8 @@ type env struct {
 	reload *fakeReloader
 	logs   *bytes.Buffer
 	keys   map[auth.Role]string
+	file   *config.Bootstrap
+	box    *secrets.Box
 }
 
 func newEnv(t *testing.T) *env {
@@ -80,14 +84,25 @@ func newEnv(t *testing.T) *env {
 		}
 		e.keys[role] = plain
 	}
+	if e.box, err = secrets.New(bytes.Repeat([]byte{1}, 32)); err != nil {
+		t.Fatal(err)
+	}
 	return e.on(db)
 }
 
 // on returns an env with the same keys whose admin API uses st.
 func (e *env) on(st Store) *env {
-	e = &env{t: e.t, db: e.db, store: st, keys: e.keys, spec: loadSpec(e.t), logs: &bytes.Buffer{},
+	return e.with(st, e.file, e.box)
+}
+
+// with returns an env with the same keys on st, with file as the config file and box sealing
+// provider keys.
+func (e *env) with(st Store, file *config.Bootstrap, box *secrets.Box) *env {
+	e = &env{t: e.t, db: e.db, store: st, keys: e.keys, file: file, box: box, spec: loadSpec(e.t), logs: &bytes.Buffer{},
 		reload: &fakeReloader{status: runtime.Status{Version: 1, LoadedAt: testNow.Add(-time.Hour)}}}
 	e.h = New(Deps{
+		File:      e.file,
+		Secrets:   e.box,
 		Auth:      auth.NewAuthenticator(e.db, func() time.Time { return testNow }),
 		Store:     st,
 		Reload:    e.reload,

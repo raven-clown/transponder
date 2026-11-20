@@ -88,6 +88,11 @@ func (h *handler) providerSpec() *itemSpec {
 			if err := json.Unmarshal(it.Body, &b); err != nil {
 				return err
 			}
+			moved := (body.Type != nil && *body.Type != b.Type) || (body.BaseURL != nil && *body.BaseURL != b.BaseURL)
+			// Otherwise a stored key could be sent to a new host by someone who never saw it.
+			if moved && it.Secret != "" && body.APIKey == nil {
+				return invalid("api_key", "send api_key again, or null to drop it, when type or base_url changes")
+			}
 			if body.Type != nil {
 				b.Type = *body.Type
 			}
