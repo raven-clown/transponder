@@ -1203,6 +1203,30 @@ func TestLoadLive(t *testing.T) {
 	}
 }
 
+// A reload after any admin write must not send traffic straight back to a target in cooldown.
+func TestLoadLiveKeepsCooldowns(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "a", Type: "echo"}, {Name: "b", Type: "echo"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "a"}, {Provider: "b"}}}},
+		Settings:  config.Settings{CooldownFailures: 2, Cooldown: time.Minute},
+	}
+	src := &limiterSource{}
+	first, err := loadLive(cfg, http.DefaultClient, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primary, _ := first.router.Resolve("m")
+	first.router.Report(primary, false)
+	first.router.Report(primary, false)
+	next, err := loadLive(cfg, http.DefaultClient, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := next.router.Resolve("m"); got.Provider.Name() != "b" {
+		t.Fatalf("after a reload the first target is %s, want b while a cools down", got.Provider.Name())
+	}
+}
+
 // A reload builds the routes again from the config, so each route keeps its allow list.
 func TestLoadLiveKeepsRouteAccess(t *testing.T) {
 	cfg := &config.Bootstrap{
