@@ -23,7 +23,8 @@ const (
 // ErrUnauthenticated means the request carries no valid credentials.
 var ErrUnauthenticated = errors.New("auth: unauthenticated")
 
-// Identity is the caller of a request.
+// Identity is the caller of a request. User is the user id from the token, or the key name
+// for an API key. Key is the key name, empty when the caller signed in with a token.
 type Identity struct {
 	OrgID string
 	User  string
@@ -36,6 +37,7 @@ type Identity struct {
 type Authenticator struct {
 	keys store.KeyStore
 	now  func() time.Time
+	oidc *OIDC
 }
 
 // NewAuthenticator returns an Authenticator that looks keys up in keys.
@@ -43,7 +45,16 @@ func NewAuthenticator(keys store.KeyStore, now func() time.Time) *Authenticator 
 	return &Authenticator{keys: keys, now: now}
 }
 
-// Authenticate reads Authorization: Bearer or x-api-key and returns the caller.
+// WithOIDC makes a also accept tokens that o verifies. API keys keep working next to them.
+func (a *Authenticator) WithOIDC(o *OIDC) *Authenticator {
+	a.oidc = o
+	return a
+}
+
+// Authenticate reads Authorization: Bearer or x-api-key and returns the caller. A JWT is
+// checked against the OIDC issuer when one is configured; anything else is looked up as an
+// API key. The error wraps ErrUnauthenticated when the credentials are missing or not valid,
+// and ErrUnavailable when the identity provider's keys could not be fetched.
 func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	token := bearer(r.Header.Get("Authorization"))
 	if token == "" {
@@ -51,6 +62,9 @@ func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	}
 	if token == "" {
 		return Identity{}, ErrUnauthenticated
+	}
+	if a.oidc != nil && looksLikeJWT(token) {
+		return a.oidc.Verify(r.Context(), token)
 	}
 	k, err := a.keys.KeyByHash(r.Context(), HashKey(token))
 	if errors.Is(err, store.ErrNotFound) {
@@ -62,7 +76,17 @@ func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	if k.Disabled || (!k.ExpiresAt.IsZero() && !k.ExpiresAt.After(a.now())) {
 		return Identity{}, ErrUnauthenticated
 	}
-	return Identity{OrgID: k.OrgID, User: k.Name, Teams: k.Teams, Key: k.Name, Role: Role(k.Role)}, nil
+	return Identity{OrgID: k.OrgID, User: k.Name, Teams: k.Teams, Key: k.Name, Role: keyRole(k.Role)}, nil
+}
+
+// keyRole is the role of a stored key. A key with no role, or one this version does not
+// know, is a member: it can call the gateway as before and nothing more.
+func keyRole(s string) Role {
+	r, err := ParseRole(s)
+	if err != nil {
+		return RoleMember
+	}
+	return r
 }
 
 func bearer(h string) string {

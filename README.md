@@ -269,11 +269,63 @@ ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY c
 
 The admin API is on the roadmap below.
 
+### Sign-in and roles
+
+API keys always work. To also let people call transponder with a token from your OpenID Connect provider (Okta, Entra ID, Keycloak, Zitadel, Google, Auth0 and others), name the issuer and the audience:
+
+```yaml
+auth:
+  oidc:
+    issuer: "https://idp.example.com/realms/acme"   # the iss claim; keys are found through its discovery document
+    audience: "transponder"                         # tokens issued for another service are refused
+    # jwks_url: "https://idp.example.com/keys"      # only for an issuer without a discovery document
+    user_claim: sub                                 # default sub; email or preferred_username also work
+    teams_claim: groups                             # default groups
+    roles_claim: realm_access.roles                 # a dotted name reads a nested claim
+    role_mapping:                                   # claim value -> admin, viewer or member
+      platform-admins: admin
+      auditors: viewer
+    clock_skew: 1m                                  # allowance on exp and nbf, default 1m
+```
+
+```shell
+curl localhost:8080/v1/chat/completions -H "Authorization: Bearer $ID_TOKEN"   -d '{"model": "fast", "messages": [{"role": "user", "content": "hi"}]}'
+```
+
+- A bearer token or `x-api-key` value that is a JWT is checked against the issuer: signature, `iss`, `aud`, `exp` and `nbf`. Anything else is looked up as an API key. Only asymmetric signatures (RS, PS, ES and EdDSA) are accepted.
+- The caller's user id comes from `user_claim` and their teams from `teams_claim`, so budgets and profiles for `user:` and `team:` subjects apply to people who sign in. A caller with a token has no `key:` subject.
+- Every caller has a role. A token gets the highest role its `roles_claim` values map to, and `member` when none does. An API key carries the role it was created with.
+- The signing keys are fetched when the first token arrives and kept for an hour. A token naming a key transponder has not seen makes it read the keys again, at most once every 10 seconds, so made-up key ids cannot flood the identity provider. When the provider cannot be reached, keys already fetched keep working; with none yet, calls with a token get 503 `auth_unavailable` while API keys keep working, and `/readyz` reports `oidc`.
+- When `role_mapping` gives someone `admin`, the first start does not print an admin key, since that person can sign in instead.
+- Each key can be set from the environment too, such as `TRANSPONDER_AUTH__OIDC__ISSUER`. `role_mapping` is a map, so it is set in the file.
+
+### Access per route
+
+A route can say who may call it. Leave `allow` out and every caller with a valid key or token may:
+
+```yaml
+routes:
+  - match: "claude-*"
+    allow: ["team:platform", "user:alice@example.com", "key:ci", "role:admin"]
+    targets:
+      - provider: claude
+  - match: "*"
+    targets:
+      - provider: local
+```
+
+- `user:<id>` matches the user id from a token, and also an API key of that name, since a key counts as `user:<key name>`. Use `key:<name>` to let in only the key.
+- `team:<name>` matches any of the caller's teams: the teams of a key, or the `teams_claim` of a token.
+- `role:<role>` lets in that role and the ones above it, so `role:viewer` also lets in admins.
+- Any one matching entry is enough. A caller outside the list gets 403 `route_forbidden`, and the message names the route. Nothing is recorded or charged. Anthropic-dialect callers get `permission_error` with the same code.
+- `GET /v1/models` lists only the routes the caller may use.
+- `--config-test` checks every entry.
+
 ### Limits
 
 Budgets cap what a user, a team or a key spends in USD, per UTC day or month. Profiles, in the same format as the other mothership projects, cap tokens and requests:
 
-Until sign-in with OIDC lands, the caller is the API key: each key counts as `user:<key name>` as well as `key:<key name>`, so name keys after the people or services that hold them.
+A caller with an API key counts as `user:<key name>` as well as `key:<key name>`, so name keys after the people or services that hold them. A caller who signs in with a token counts as `user:` and `team:` from its claims.
 
 ```yaml
 budgets:

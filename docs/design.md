@@ -230,7 +230,7 @@ routes:
 
 - The request's `model` is matched against routes by `position`, lowest first. `match` is an exact name or a glob. The first route that matches wins.
 - A target without `model` keeps the model the caller asked for.
-- `allow` lists who may use the route: `user:<id>`, `team:<name>` or `key:<name>`. Empty means every authenticated caller. A caller outside the list gets 403 `route_forbidden`. This is the "give someone access" task in the console.
+- `allow` lists who may use the route: `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>`, where a role entry also admits the roles above it. Empty means every authenticated caller. `/v1/models` lists only the routes a caller may use. A caller outside the list gets 403 `route_forbidden`. This is the "give someone access" task in the console.
 - With the `allow_direct` setting, `provider/model` (for example `local/llama3.2`) goes straight to that provider with no fallback. Only admins may use it when any route has a non-empty `allow`, so direct calls cannot get around access rules.
 - No match gives 404 `model_not_found`.
 - Route names are stable aliases, as the contract says. Other projects ask for a role, such as logbook's `memory-extract`, and the admin decides which provider serves it. Renaming a route through the admin API is allowed but logged in the audit as a breaking change.
@@ -248,7 +248,7 @@ Each streamed attempt has a timeout (`attempt_timeout`, default 60s until the fi
 
 Every request, gateway or admin, needs a caller, as the contract says:
 
-- `Authorization: Bearer <token>`. If the token is a JWT it is verified against the configured OIDC issuer (JWKS fetched and cached through `coreos/go-oidc`), audience checked. Otherwise it is looked up as an API key.
+- `Authorization: Bearer <token>`. If the token is a JWT it is verified against the configured OIDC issuer (JWKS fetched and cached in `internal/auth`, signatures checked with `go-jose`), audience checked. Otherwise it is looked up as an API key.
 - `x-api-key: <token>` is accepted the same way, because Anthropic clients send that header when given an API key.
 
 The result is an `Identity{User, Teams, Key, Role}`. There are three roles:

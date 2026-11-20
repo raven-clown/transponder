@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/provider"
 )
 
@@ -23,9 +24,11 @@ type Target struct {
 	Model    string
 }
 
-// Route sends models matching Match, an exact name or a glob, to its targets in order.
+// Route sends models matching Match, an exact name or a glob, to its targets in order, for the
+// callers Access lets in.
 type Route struct {
 	Match   string
+	Access  Access
 	Targets []Target
 }
 
@@ -38,9 +41,10 @@ type Resolved struct {
 	Model    string
 }
 
-// Plan is the targets to try for one call, in order.
+// Plan is the targets to try for one call, in order, and who may make the call.
 type Plan struct {
 	Route   string
+	Access  Access
 	Targets []Resolved
 }
 
@@ -100,7 +104,7 @@ func (r *Router) Plan(model string) (Plan, error) {
 		if len(rt.Targets) == 0 || !r.globs[i].MatchString(model) {
 			continue
 		}
-		p := Plan{Route: rt.Match}
+		p := Plan{Route: rt.Match, Access: rt.Access}
 		var cooling []Resolved
 		r.mu.Lock()
 		now := r.now()
@@ -173,9 +177,18 @@ func (r *Router) Report(t Resolved, ok bool) {
 // sorted and without duplicates. The models targets send upstream are left out, since a
 // caller asking for one of them would not reach that route.
 func (r *Router) Models() []string {
+	return r.models(func(Access) bool { return true })
+}
+
+// ModelsFor returns the names of Models whose route lets id in.
+func (r *Router) ModelsFor(id auth.Identity) []string {
+	return r.models(func(a Access) bool { return a.Permits(id) })
+}
+
+func (r *Router) models(permits func(Access) bool) []string {
 	seen := map[string]bool{}
 	for _, rt := range r.routes {
-		if !strings.ContainsAny(rt.Match, "*?") {
+		if !strings.ContainsAny(rt.Match, "*?") && permits(rt.Access) {
 			seen[rt.Match] = true
 		}
 	}

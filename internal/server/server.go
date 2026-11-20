@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -79,6 +80,7 @@ type call struct {
 	resolved router.Resolved // the target being tried
 	cut      bool            // the answering target's stream broke after it had started
 	fail     errorFunc
+	id       auth.Identity
 	caller   limits.Caller
 	ticket   *limits.Ticket
 }
@@ -97,12 +99,19 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	start := g.d.Now()
 	id, err := g.d.Auth.Authenticate(r)
 	if err != nil {
-		if !errors.Is(err, auth.ErrUnauthenticated) {
+		switch {
+		case errors.Is(err, auth.ErrUnauthenticated):
+			// The reason names claims and key ids, never the token.
+			g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
+			writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key or token is required")
+		case errors.Is(err, auth.ErrUnavailable):
+			g.d.Logger.WarnContext(r.Context(), "checking a token", "err", err)
+			w.Header().Set("Retry-After", "10")
+			writeError(w, http.StatusServiceUnavailable, "api_error", "auth_unavailable", "", "the identity provider could not be reached to check the token")
+		default:
 			g.d.Logger.ErrorContext(r.Context(), "authenticating", "err", err)
-			writeError(w, http.StatusInternalServerError, "api_error", "", "", "could not check the API key")
-			return nil
+			writeError(w, http.StatusInternalServerError, "api_error", "", "", "could not check the credentials")
 		}
-		writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key is required")
 		return nil
 	}
 	if r.ContentLength > maxBodyBytes {
@@ -119,7 +128,9 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		}
 		return nil
 	}
-	return &call{w: w, r: r, body: body, fail: writeError, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
+	// Handlers and adapters read the caller from the request context.
+	r = r.WithContext(auth.WithIdentity(r.Context(), id))
+	return &call{w: w, r: r, body: body, fail: writeError, id: id, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -131,11 +142,16 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	}}
 }
 
-// resolve finds the targets for model, or writes 404 and records nothing.
+// resolve finds the targets for model, or writes 404 or 403 and records nothing.
 func (g *gateway) resolve(c *call, model string) bool {
 	plan, err := g.d.Router.Plan(model)
 	if err != nil {
 		c.fail(c.w, http.StatusNotFound, "invalid_request_error", "model_not_found", "model", "no route serves model "+model)
+		return false
+	}
+	if !plan.Access.Permits(c.id) {
+		c.fail(c.w, http.StatusForbidden, "permission_error", "route_forbidden", "model",
+			fmt.Sprintf("route %q does not allow this caller to use model %s", plan.Route, model))
 		return false
 	}
 	c.plan = plan
