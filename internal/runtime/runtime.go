@@ -54,6 +54,11 @@ type Reloader[T any] struct {
 	cur    atomic.Pointer[Snapshot[T]]
 	mu     sync.Mutex // one load at a time
 	status atomic.Pointer[Status]
+
+	// OnReload, when set, is told how each reload went: true for a new config swapped in, false
+	// for a version that could not be read or loaded. The load at start is not a reload. Set it
+	// before the first Check.
+	OnReload func(ok bool)
 }
 
 // New loads the config at the store's current version. A config that does not load at start is
@@ -108,6 +113,9 @@ func (r *Reloader[T]) Check(ctx context.Context) (bool, error) {
 	r.cur.Store(snap)
 	r.status.Store(&Status{Version: v, LoadedAt: snap.LoadedAt})
 	r.log.InfoContext(ctx, "config reloaded", "from_version", cur.Version, "version", v)
+	if r.OnReload != nil {
+		r.OnReload(true)
+	}
 	return true, nil
 }
 
@@ -119,6 +127,9 @@ func (r *Reloader[T]) failed(ctx context.Context, version int64, err error) {
 	if !old.Failed || old.FailedVersion != version || old.Error != st.Error {
 		r.log.ErrorContext(ctx, "config reload failed, the previous config keeps serving",
 			"version", old.Version, "failed_version", version, "err", err)
+	}
+	if r.OnReload != nil {
+		r.OnReload(false)
 	}
 }
 

@@ -19,8 +19,18 @@ updates:
     commit-message:
       prefix: "ci(deps)"
   - package-ecosystem: docker
-    directory: /
+    directories: ["/", "/demo"]
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "build(deps)"
+  # The Prometheus, Grafana and Jaeger images of the demo.
+  - package-ecosystem: docker-compose
+    directory: /demo
+    schedule:
+      interval: weekly
+    groups:
+      demo:
+        patterns: ["*"]
     commit-message:
       prefix: "build(deps)"

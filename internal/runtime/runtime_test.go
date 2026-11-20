@@ -167,6 +167,32 @@ func TestCheckWhenTheStoreIsDown(t *testing.T) {
 	}
 }
 
+// OnReload hears of each reload that was tried, and of nothing while the version stands still.
+func TestOnReload(t *testing.T) {
+	r, vs, _ := setup(t, 2)
+	var got []bool
+	r.OnReload = func(ok bool) { got = append(got, ok) }
+	ctx := context.Background()
+	steps := []struct {
+		name string
+		do   func()
+		want []bool
+	}{
+		{"no change", func() {}, nil},
+		{"a config that does not load", func() { vs.v.Store(2) }, []bool{false}},
+		{"a fix", func() { vs.v.Store(3) }, []bool{false, true}},
+		{"the store down", func() { vs.fail.Store(true) }, []bool{false, true, false}},
+		{"the store back at the same version", func() { vs.fail.Store(false) }, []bool{false, true, false}},
+	}
+	for _, s := range steps {
+		s.do()
+		_, _ = r.Check(ctx)
+		if fmt.Sprint(got) != fmt.Sprint(s.want) {
+			t.Fatalf("%s: OnReload heard %v, want %v", s.name, got, s.want)
+		}
+	}
+}
+
 func TestRun(t *testing.T) {
 	r, vs, _ := setup(t)
 	ctx, cancel := context.WithCancel(context.Background())

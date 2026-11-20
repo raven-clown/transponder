@@ -20,6 +20,7 @@ import (
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
+	"github.com/raven-clown/transponder/internal/telemetry"
 )
 
 type env struct {
@@ -81,6 +82,9 @@ func setupDeps(t *testing.T, routes []router.Route, change func(*server.Deps)) *
 		Usage:  db,
 		Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		Now:    time.Now,
+		// Every test of the gateway runs with metrics on, so streams, trailers and body
+		// limits are checked through the writer that counts status codes.
+		Metrics: telemetry.NewMetrics("test"),
 	}
 	if change != nil {
 		change(&deps)

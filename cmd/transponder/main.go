@@ -159,6 +159,8 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
+	metrics := telemetry.NewMetrics(version)
+	reloader.OnReload = metrics.ConfigReloaded
 	reloadCtx, stopReloads := context.WithCancel(ctx)
 	reloadsDone := make(chan struct{})
 	go func() {
@@ -170,6 +172,17 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		stopReloads()
 		<-reloadsDone
 	}()
+	stopOps, err := serveOps(ctx, cfg.OpsListenAddr, server.Ops(ready, metrics), logger)
+	if err != nil {
+		return err
+	}
+	defer stopOps()
+	tracer, flushSpans, err := startTracing(cfg.OTel, metrics, logger)
+	if err != nil {
+		return err
+	}
+	// Runs once the open requests have ended, so their spans are in the last export.
+	defer flushSpans()
 	gw := server.New(server.Deps{
 		Auth: authn,
 		Live: func() (*router.Router, *limits.Limiter) {
@@ -184,6 +197,8 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          ready,
+		Metrics:        metrics,
+		Tracer:         tracer,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.

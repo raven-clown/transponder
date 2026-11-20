@@ -162,6 +162,41 @@ func TestCooldown(t *testing.T) {
 	r.Report(other.Targets[0], false)
 }
 
+// Only a wildcard route with a target that sets no model sends the caller's own name upstream.
+func TestModelFromCaller(t *testing.T) {
+	a := echo.New("a")
+	r := New([]Route{
+		{Match: "fast", Targets: []Target{{Provider: a, Model: "small"}}},
+		{Match: "gpt-4o", Targets: []Target{{Provider: a}}},
+		{Match: "gpt-?", Targets: []Target{{Provider: a}}},
+		{Match: "*", Targets: []Target{{Provider: a, Model: "pinned"}, {Provider: a}}},
+	})
+	tests := []struct {
+		model string
+		want  []bool
+	}{
+		{"fast", []bool{false}},
+		{"gpt-4o", []bool{false}},
+		{"gpt-5", []bool{true}},
+		{"anything", []bool{false, true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			p, err := r.Plan(tt.model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]bool, len(p.Targets))
+			for i, target := range p.Targets {
+				got[i] = target.ModelFromCaller
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ModelFromCaller = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHealthIsBounded(t *testing.T) {
 	a := echo.New("a")
 	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)

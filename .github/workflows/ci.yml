@@ -75,6 +75,32 @@ jobs:
         with:
           version: v2.15.0
 
+  demo:
+    name: demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the compose file is valid
+        working-directory: demo
+        run: docker compose config --quiet
+      - name: the demo starts
+        working-directory: demo
+        run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: the dashboard has data and the traces arrive
+        working-directory: demo
+        run: ./check.sh
+      - name: logs of a failed run
+        if: failure()
+        working-directory: demo
+        run: docker compose ps --all && docker compose logs --no-color
+      - name: stop
+        if: always()
+        working-directory: demo
+        run: docker compose down --volumes
+
   release-check:
     name: release dry run
     runs-on: ubuntu-latest
