@@ -36,6 +36,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Fixed
 
 - A caller that closes the connection, before the answer or in the middle of a stream, is recorded with status 499 and logged at info level, instead of 502 or 200 and a `provider call failed` or `upstream stream broke` warning, so provider alerts stay quiet (#25).
+- When a provider reports no usage, `/v1/messages` estimates the input like the other endpoints: an inline image counts as 1,000 tokens instead of a quarter token per byte of its base64 data, which billed a 300 KB image as about 100,000 tokens. The answer is counted too.
+- A translated answer or stream that carries no usage (an Anthropic-compatible server without `usage`, an OpenAI-compatible one without `usage` behind `/v1/messages`) is now estimated and marked so, instead of being recorded as 0 tokens and 0 cost.
 
 ## [0.2.4] - 2026-11-14
 

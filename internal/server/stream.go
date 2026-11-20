@@ -80,7 +80,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 	haveUsage := false
 	pass := func(data []byte) {
 		cu, ok, only := openai.ChunkUsage(data)
-		if ok {
+		if ok && reported(cu) {
 			u, haveUsage = cu, true
 		}
 		text.WriteString(deltaText(data))
@@ -144,10 +144,12 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 	haveUsage := false
 	ev := first
 	for {
-		if ev.Usage != nil {
+		if ev.Usage != nil && reported(*ev.Usage) {
 			u, haveUsage = *ev.Usage, true
 		}
 		text.WriteString(ev.Text)
+		text.WriteString(ev.ToolName)
+		text.WriteString(ev.ToolArgs)
 		if ev.Type != schema.EventUsage || includeUsage {
 			frame, err := openai.EncodeChunk(id, c.resolved.Model, c.rec.Time, ev)
 			if err == nil && frame != nil {

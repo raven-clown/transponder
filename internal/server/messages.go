@@ -73,8 +73,11 @@ func (g *gateway) messagesNative(c *call, n provider.Native) error {
 		return failed(err, true)
 	}
 	u, ok := anthropic.ParseUsage(out)
-	if !ok {
-		u = schema.Usage{InputTokens: estimateTokens(string(c.body))}
+	if !ok || !reported(u) {
+		u = schema.Usage{InputTokens: estimateInput(c.body)}
+		if resp, err := anthropic.DecodeResponse(out); err == nil {
+			u.OutputTokens = estimateTokens(answerText(resp))
+		}
 		c.rec.Estimated = true
 	}
 	cost := g.price(c.r.Context(), c, u)
@@ -104,11 +107,16 @@ func (g *gateway) messagesTranslated(c *call) error {
 		writeAnthropicError(c.w, http.StatusInternalServerError, "", "", "", "could not encode the response")
 		return nil //nolint:nilerr // the 500 above is the answer
 	}
-	cost := g.price(c.r.Context(), c, resp.Usage)
+	u := resp.Usage
+	if !reported(u) {
+		u = schema.Usage{InputTokens: estimateInput(c.body), OutputTokens: estimateTokens(answerText(resp))}
+		c.rec.Estimated = true
+	}
+	cost := g.price(c.r.Context(), c, u)
 	c.rec.Status = http.StatusOK
 	g.recordCall(c.r.Context(), c)
 
-	setUsageHeaders(c.w.Header(), resp.Usage, cost)
+	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
@@ -169,7 +177,11 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()
-	if !dec.Done() {
+	if !reported(u) {
+		u.InputTokens = estimateInput(c.body)
+		c.rec.Estimated = true
+	}
+	if c.rec.Estimated {
 		u.OutputTokens = max(u.OutputTokens, estimateTokens(text.String()))
 	}
 	cost := g.price(ctx, c, u)
@@ -208,10 +220,11 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 	var text strings.Builder
 	haveUsage := false
 	for {
-		if ev.Usage != nil {
+		if ev.Usage != nil && reported(*ev.Usage) {
 			u, haveUsage = *ev.Usage, true
 		}
 		text.WriteString(ev.Text)
+		text.WriteString(ev.ToolName)
 		text.WriteString(ev.ToolArgs)
 		for _, f := range enc.Frames(ev) {
 			out.write(f)
@@ -228,7 +241,7 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 		out.write(anthropic.ErrorFrame("api_error", streamCut))
 	}
 	if !haveUsage {
-		u = schema.Usage{InputTokens: estimateTokens(string(c.body)), OutputTokens: estimateTokens(text.String())}
+		u = schema.Usage{InputTokens: estimateInput(c.body), OutputTokens: estimateTokens(text.String())}
 		c.rec.Estimated = true
 	}
 	cost := g.price(ctx, c, u)
