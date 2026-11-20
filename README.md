@@ -129,7 +129,7 @@ docker compose up --build -d --wait
 flowchart LR
     callers["Callers<br/>OpenAI and Anthropic SDKs,<br/>Claude Code, Codex CLI"]
     subgraph gw["transponder"]
-        direction LR
+        direction TB
         auth["Sign-in<br/>API key or OIDC token"]
         router["Router<br/>route, allow list"]
         limits["Limits<br/>budgets, rates, tokens"]
@@ -197,28 +197,28 @@ flowchart LR
 
 ## Providers
 
-| Type | Provider | Dialect | Default base URL | Chat and streaming | Tools | Images | Embeddings | Responses API |
-|---|---|---|---|---|---|---|---|---|
-| `openai` | OpenAI | `openai` | `https://api.openai.com/v1` | yes | yes | URL and inline | yes | yes |
-| `anthropic` | Anthropic | `anthropic` | `https://api.anthropic.com/v1` | yes | yes | URL and inline | no | no |
-| `gemini` | Google Gemini API | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | yes | yes | inline only | yes | no |
-| `ollama` | Ollama | `openai` | `http://localhost:11434/v1` | yes | yes | URL and inline | yes | yes |
-| `vllm` | vLLM | `openai` | `http://localhost:8000/v1` | yes | yes | URL and inline | yes | yes |
-| `llamacpp` | llama.cpp server | `openai` | `http://localhost:8080/v1` | yes | yes | URL and inline | yes | yes |
-| `lmstudio` | LM Studio | `openai` | `http://localhost:1234/v1` | yes | yes | URL and inline | yes | yes |
-| `openrouter` | OpenRouter | `openai` | `https://openrouter.ai/api/v1` | yes | yes | URL and inline | yes | yes |
-| `litellm` | LiteLLM Proxy | `openai` | `http://localhost:4000/v1` | yes | yes | URL and inline | yes | yes |
-| `cloudflare` | Cloudflare AI Gateway | `openai` | set `base_url` | yes | yes | URL and inline | yes | yes |
-| `vercel` | Vercel AI Gateway | `openai` | `https://ai-gateway.vercel.sh/v1` | yes | yes | URL and inline | yes | yes |
-| `xai` | xAI (Grok) | `openai` | `https://api.x.ai/v1` | yes | yes | URL and inline | yes | yes |
-| `mistral` | Mistral AI | `openai` | `https://api.mistral.ai/v1` | yes | yes | URL and inline | yes | yes |
-| `nvidia` | NVIDIA NIM | `openai` | `https://integrate.api.nvidia.com/v1` | yes | yes | URL and inline | yes | yes |
-| `groq` | Groq | `openai` | `https://api.groq.com/openai/v1` | yes | yes | URL and inline | yes | yes |
-| `cerebras` | Cerebras | `openai` | `https://api.cerebras.ai/v1` | yes | yes | URL and inline | yes | yes |
-| `siliconflow` | SiliconFlow | `openai` | `https://api.siliconflow.com/v1` | yes | yes | URL and inline | yes | yes |
-| `echo` | built-in test provider | none | built in | yes | no | ignored | yes | no |
+| Provider and `type` | Dialect | Default base URL | Tools | Images | Embeddings | Responses API |
+|---|---|---|---|---|---|---|
+| OpenAI `openai` | `openai` | `https://api.openai.com/v1` | yes | URL, inline | yes | yes |
+| Anthropic `anthropic` | `anthropic` | `https://api.anthropic.com/v1` | yes | URL, inline | no | no |
+| Google Gemini API `gemini` | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | yes | inline | yes | no |
+| Ollama `ollama` | `openai` | `http://localhost:11434/v1` | yes | URL, inline | yes | yes |
+| vLLM `vllm` | `openai` | `http://localhost:8000/v1` | yes | URL, inline | yes | yes |
+| llama.cpp server `llamacpp` | `openai` | `http://localhost:8080/v1` | yes | URL, inline | yes | yes |
+| LM Studio `lmstudio` | `openai` | `http://localhost:1234/v1` | yes | URL, inline | yes | yes |
+| OpenRouter `openrouter` | `openai` | `https://openrouter.ai/api/v1` | yes | URL, inline | yes | yes |
+| LiteLLM Proxy `litellm` | `openai` | `http://localhost:4000/v1` | yes | URL, inline | yes | yes |
+| Cloudflare AI Gateway `cloudflare` | `openai` | set `base_url` | yes | URL, inline | yes | yes |
+| Vercel AI Gateway `vercel` | `openai` | `https://ai-gateway.vercel.sh/v1` | yes | URL, inline | yes | yes |
+| xAI (Grok) `xai` | `openai` | `https://api.x.ai/v1` | yes | URL, inline | yes | yes |
+| Mistral AI `mistral` | `openai` | `https://api.mistral.ai/v1` | yes | URL, inline | yes | yes |
+| NVIDIA NIM `nvidia` | `openai` | `https://integrate.api.nvidia.com/v1` | yes | URL, inline | yes | yes |
+| Groq `groq` | `openai` | `https://api.groq.com/openai/v1` | yes | URL, inline | yes | yes |
+| Cerebras `cerebras` | `openai` | `https://api.cerebras.ai/v1` | yes | URL, inline | yes | yes |
+| SiliconFlow `siliconflow` | `openai` | `https://api.siliconflow.com/v1` | yes | URL, inline | yes | yes |
+| built-in test provider `echo` | none | built in | no | ignored | yes | no |
 
-- A test builds every registered provider type and checks this table against what its adapter does, so the table cannot fall behind the code.
+- Every type serves chat, plain and streamed. A test builds every registered provider type and checks this table against what its adapter does, so the table cannot fall behind the code.
 - *Dialect* is the API the provider speaks. A caller of the same dialect is passed through with only `model` changed; any other is translated. `/v1/responses` goes only to `openai`-dialect targets.
 - *Embeddings* and *Responses API* say what transponder sends; whether a server has that endpoint is up to it. A target that answers 404, 405 or 501 to `/v1/responses` is skipped.
 - `base_url` overrides the default for any type: a self-hosted NIM is usually `http://localhost:8000/v1`, SiliconFlow in China is `https://api.siliconflow.cn/v1`, and Cloudflare is your gateway's compatibility endpoint, `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat`. llama.cpp's server listens on 8080 by default, as transponder does, so on one host move one of them.

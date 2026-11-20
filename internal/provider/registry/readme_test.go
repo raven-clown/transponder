@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -19,7 +20,10 @@ import (
 
 const readmePath = "../../../README.md"
 
-const providerTableHeader = "| Type | Provider | Dialect | Default base URL | Chat and streaming | Tools | Images | Embeddings | Responses API |"
+const providerTableHeader = "| Provider and `type` | Dialect | Default base URL | Tools | Images | Embeddings | Responses API |"
+
+// rowType reads the provider type, the last code span of a row's first cell.
+var rowType = regexp.MustCompile("`([a-z0-9]+)`$")
 
 // recorder answers every call with an empty JSON object and keeps the bodies it was sent, so a
 // probe can see what an adapter puts on the wire without a network.
@@ -111,9 +115,9 @@ func capabilities(t *testing.T, s Spec) []string {
 	images := "no"
 	switch {
 	case byURL && inline:
-		images = "URL and inline"
+		images = "URL, inline"
 	case inline:
-		images = "inline only"
+		images = "inline"
 	case !calledURL && !calledInline:
 		images = "ignored"
 	}
@@ -121,7 +125,10 @@ func capabilities(t *testing.T, s Spec) []string {
 	_, embedErr := p.Embed(ctx, &schema.EmbedRequest{Model: "m", Input: []string{"hi"}})
 	_, native := p.(provider.Native)
 
-	return []string{base, yesNo(chat), yesNo(tools), images, yesNo(!unsupported(embedErr)), yesNo(native && p.Dialect() == "openai")}
+	if !chat {
+		t.Errorf("%s does not serve chat, plain and streamed, which the README says every type does", s.Type)
+	}
+	return []string{base, yesNo(tools), images, yesNo(!unsupported(embedErr)), yesNo(native && p.Dialect() == "openai")}
 }
 
 // TestReadmeProviderTable keeps the README's provider table in step with the registry: every
@@ -148,7 +155,12 @@ func TestReadmeProviderTable(t *testing.T) {
 			for i := range cells {
 				cells[i] = strings.TrimSpace(cells[i])
 			}
-			typ := strings.Trim(cells[0], "`")
+			m := rowType.FindStringSubmatch(cells[0])
+			if m == nil {
+				t.Errorf("README provider row %q does not end its first cell with the type in backticks", cells[0])
+				continue
+			}
+			typ := m[1]
 			if _, dup := rows[typ]; dup {
 				t.Errorf("README lists %s twice", typ)
 			}
@@ -184,8 +196,8 @@ func TestReadmeProviderTable(t *testing.T) {
 			}
 			want := append([]string{dialect}, capabilities(t, spec)...)
 			for i, w := range want {
-				if got := cells[i+2]; got != w {
-					t.Errorf("%s: README says %q, the adapter gives %q", columns[i+2], got, w)
+				if got := cells[i+1]; got != w {
+					t.Errorf("%s: README says %q, the adapter gives %q", columns[i+1], got, w)
 				}
 			}
 		})
