@@ -22,7 +22,7 @@ func (db *DB) CreateKey(ctx context.Context, k store.APIKey) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.w.ExecContext(ctx, `INSERT INTO api_keys
+	_, err = db.writer(ctx).ExecContext(ctx, `INSERT INTO api_keys
 		(org_id, name, hash, last4, role, teams, disabled, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		k.OrgID, k.Name, k.Hash[:], k.Last4, k.Role, string(teams), k.Disabled,
@@ -43,7 +43,7 @@ func (db *DB) KeyByHash(ctx context.Context, hash [32]byte) (store.APIKey, error
 		created  int64
 		disabled bool
 	)
-	err := db.sql.QueryRowContext(ctx, `SELECT org_id, name, hash, last4, role, teams, disabled, expires_at, created_at
+	err := db.reader(ctx).QueryRowContext(ctx, `SELECT org_id, name, hash, last4, role, teams, disabled, expires_at, created_at
 		FROM api_keys WHERE hash = ?`, hash[:]).
 		Scan(&k.OrgID, &k.Name, &h, &k.Last4, &k.Role, &teams, &disabled, &expires, &created)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -70,7 +70,7 @@ func (db *DB) KeyByHash(ctx context.Context, hash [32]byte) (store.APIKey, error
 // HasAdminKey reports whether orgID has an enabled, unexpired admin key at now.
 func (db *DB) HasAdminKey(ctx context.Context, orgID string, now time.Time) (bool, error) {
 	var n int
-	err := db.sql.QueryRowContext(ctx, `SELECT count(*) FROM api_keys
+	err := db.reader(ctx).QueryRowContext(ctx, `SELECT count(*) FROM api_keys
 		WHERE org_id = ? AND role = 'admin' AND disabled = 0 AND (expires_at IS NULL OR expires_at > ?)`,
 		orgID, now.UnixMilli()).Scan(&n)
 	return n > 0, err

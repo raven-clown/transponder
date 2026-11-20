@@ -14,6 +14,8 @@ import (
 
 	"github.com/raven-clown/transponder/internal/auth/authtest"
 	"github.com/raven-clown/transponder/internal/config"
+	"github.com/raven-clown/transponder/internal/runtime"
+	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
 
 func TestBuildAuth(t *testing.T) {
@@ -152,6 +154,63 @@ func TestServeWithOIDC(t *testing.T) {
 			}
 		})
 	}
+}
+
+// After a config reload a token still signs in, and a route still refuses callers outside its
+// allow list: OIDC is set up once at start, and the reload builds routes with their access.
+func TestReloadKeepsOIDCAndRouteAccess(t *testing.T) {
+	p := authtest.NewIDP(t)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{
+		ListenAddr: ln.Addr().String(),
+		Store:      config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")},
+		LogLevel:   "info",
+		Auth: config.Auth{OIDC: config.OIDC{
+			Issuer: p.Issuer(), Audience: authtest.Audience, UserClaim: "sub", TeamsClaim: "groups", ClockSkew: time.Minute,
+		}},
+		Providers: []config.Provider{{Name: "e", Type: "echo"}},
+		Routes:    []config.Route{{Match: "*", Allow: []string{"team:ml"}, Targets: []config.Target{{Provider: "e"}}}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var logs lockedBuffer
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, ln, &logs, io.Discard) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+	}()
+	addr := ln.Addr().String()
+	member := p.Token(p.Claims())
+	outsiderClaims := p.Claims()
+	outsiderClaims["groups"] = []string{"sales"}
+	outsider := p.Token(outsiderClaims)
+	const body = `{"model":"m","messages":[{"role":"user","content":"ping"}]}`
+	check := func(when string) {
+		t.Helper()
+		if status, out := postChat(t, addr, member, body); status != http.StatusOK {
+			t.Fatalf("%s: a member of ml got %d: %s", when, status, out)
+		}
+		if status, _ := postChat(t, addr, outsider, body); status != http.StatusForbidden {
+			t.Fatalf("%s: a caller outside ml got %d, want 403", when, status)
+		}
+	}
+	check("before the reload")
+
+	db, err := sqlite.Open(context.Background(), cfg.Store.SQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.UpdateConfig(context.Background(), func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, runtime.DefaultInterval+time.Second, `"from_version":1,"version":2`, &logs)
+	check("after the reload")
 }
 
 func TestReadyzWithIdentityProviderDown(t *testing.T) {

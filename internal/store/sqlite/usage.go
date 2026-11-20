@@ -16,7 +16,7 @@ func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.w.ExecContext(ctx, `INSERT INTO usage
+	_, err = db.writer(ctx).ExecContext(ctx, `INSERT INTO usage
 		(org_id, time, request_id, user_id, teams, key, project, route, provider, model, endpoint,
 		 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_nusd,
 		 estimated, status, latency_ms, fallbacks)
@@ -29,7 +29,7 @@ func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
 
 // RecentUsage returns up to limit records for orgID, newest first.
 func (db *DB) RecentUsage(ctx context.Context, orgID string, limit int) ([]store.UsageRecord, error) {
-	rows, err := db.sql.QueryContext(ctx, `SELECT org_id, time, request_id, user_id, teams, key, project,
+	rows, err := db.reader(ctx).QueryContext(ctx, `SELECT org_id, time, request_id, user_id, teams, key, project,
 		route, provider, model, endpoint, input_tokens, output_tokens, cache_read_tokens,
 		cache_write_tokens, reasoning_tokens, cost_nusd, estimated, status, latency_ms, fallbacks
 		FROM usage WHERE org_id = ? ORDER BY time DESC, id DESC LIMIT ?`, orgID, limit)
@@ -68,7 +68,7 @@ func (db *DB) RecentUsage(ctx context.Context, orgID string, limit int) ([]store
 // UsageSince calls fn for each of orgID's records from since on, oldest first, with the fields
 // the limiter needs to rebuild its counters.
 func (db *DB) UsageSince(ctx context.Context, orgID string, since time.Time, fn func(store.UsageRecord) error) error {
-	rows, err := db.sql.QueryContext(ctx, `SELECT time, user_id, teams, key, input_tokens, output_tokens,
+	rows, err := db.reader(ctx).QueryContext(ctx, `SELECT time, user_id, teams, key, input_tokens, output_tokens,
 		cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_nusd
 		FROM usage WHERE org_id = ? AND time >= ? ORDER BY time, id`, orgID, since.UnixMilli())
 	if err != nil {

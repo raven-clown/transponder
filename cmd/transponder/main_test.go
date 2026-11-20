@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,12 +15,17 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
+	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/store/postgres"
+	"github.com/raven-clown/transponder/internal/store/postgres/pgtest"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
 
@@ -111,16 +117,81 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestServeRejectsPostgres(t *testing.T) {
-	cfg := &config.Bootstrap{Store: config.Store{Postgres: "postgres://x"}}
+func TestServeFailsOnUnreachablePostgres(t *testing.T) {
+	dsn := "postgres://u:secret@127.0.0.1:1/db?connect_timeout=2" //nolint:gosec // a made-up password, to check it stays out of the error
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, LogLevel: "info"}
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
 	err = serve(context.Background(), cfg, ln, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "postgres store is not supported yet") {
-		t.Fatalf("err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "opening postgres") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("err = %v, want it to say postgres could not be opened, without the password", err)
+	}
+}
+
+// chat sends one chat call with key and returns the status.
+func chat(t *testing.T, addr, key string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+addr+"/v1/chat/completions",
+		strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"ping"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// Two replicas on one Postgres share the admin key and the usage records.
+func TestServeTwoReplicasOnPostgres(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	listen := func() net.Listener {
+		ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, LogLevel: "info"}
+	first := listen()
+	key, stopFirst := startServe(t, cfg, first)
+	defer stopFirst()
+
+	// The second replica finds the admin key in the database and prints none of its own.
+	second := listen()
+	ctx, cancel := context.WithCancel(context.Background())
+	var stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, second, io.Discard, &stderr) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("the second replica printed %q", stderr.String())
+		}
+	}()
+
+	for _, ln := range []net.Listener{first, second} {
+		if status := chat(t, ln.Addr().String(), key); status != http.StatusOK {
+			t.Fatalf("status %d from %s", status, ln.Addr())
+		}
+	}
+	db, err := postgres.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	recs, err := db.RecentUsage(context.Background(), store.DefaultOrg, 10)
+	if err != nil || len(recs) != 2 {
+		t.Fatalf("usage records = %+v, %v, want one from each replica", recs, err)
 	}
 }
 
@@ -873,7 +944,7 @@ func TestBuildLimiterSeedsFromUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
-	l, err := buildLimiter(ctx, cfg, db, func() time.Time { return now })
+	l, _, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
 	if err != nil || l == nil {
 		t.Fatalf("limiter %v, %v", l, err)
 	}
@@ -883,9 +954,284 @@ func TestBuildLimiterSeedsFromUsage(t *testing.T) {
 	if _, d := l.Admit(ctx, limits.Caller{User: "bob"}, limits.Estimate{CostNUSD: 200_000_000}); d != nil {
 		t.Fatalf("bob denied: %+v", d)
 	}
-	none, err := buildLimiter(ctx, &config.Bootstrap{}, db, time.Now)
+	none, _, err := buildLimiter(ctx, &config.Bootstrap{}, db, slog.New(slog.DiscardHandler), time.Now)
 	if err != nil || none != nil {
 		t.Fatalf("limiter without limits %v, %v", none, err)
+	}
+}
+
+// With shared limits the first replica fills the counters from the usage table and the next
+// one finds them filled, so last month's spend is not counted twice.
+func TestBuildLimiterSharedSeedsOnce(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	ctx := context.Background()
+	db, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	now := time.Now()
+	if err := db.RecordUsage(ctx, store.UsageRecord{OrgID: store.DefaultOrg, Time: now, User: "alice", CostNUSD: 600_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
+	var stops []func()
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+	var replicas []*limits.Limiter
+	for range 2 {
+		l, stop, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
+		if err != nil {
+			t.Fatal(err)
+		}
+		stops = append(stops, stop)
+		replicas = append(replicas, l)
+	}
+	for _, l := range replicas {
+		st := l.Status(ctx, limits.Caller{User: "alice"})
+		if len(st) != 1 || st[0].Used != 600_000_000 {
+			t.Fatalf("status %+v, want this month's spend counted once", st)
+		}
+	}
+	if _, d := replicas[1].Admit(ctx, limits.Caller{User: "alice"}, limits.Estimate{CostNUSD: 500_000_000}); d == nil {
+		t.Fatal("the second replica let alice past her budget")
+	}
+
+	cfg.Limits.Store = "memory"
+	l, stop, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	if st := l.Status(ctx, limits.Caller{User: "alice"}); len(st) != 1 || st[0].Used != 600_000_000 {
+		t.Fatalf("memory limits on Postgres: status %+v", st)
+	}
+}
+
+// startReplica runs serve on ln for a replica that finds the admin key already made, and
+// returns a function that stops it.
+func startReplica(t *testing.T, cfg *config.Bootstrap, ln net.Listener) func() {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, ln, io.Discard, io.Discard) }()
+	return func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+	}
+}
+
+// Two transponder replicas on one Postgres take calls for one user at the same time. Each call
+// costs what it reserved, and together they must stay within the user's budget.
+func TestServeTwoReplicasShareABudget(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":500}}`)
+	}))
+	defer up.Close()
+	const budgetUSD = 0.05
+	cfg := &config.Bootstrap{
+		Store:     config.Store{Postgres: dsn},
+		LogLevel:  "error",
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: up.URL, APIKey: "sk-test"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+		Budgets:   []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: budgetUSD}},
+	}
+	listen := func() net.Listener {
+		ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	first, second := listen(), listen()
+	key, stopFirst := startServe(t, cfg, first)
+	defer stopFirst()
+	defer startReplica(t, cfg, second)()
+
+	var mu sync.Mutex
+	statuses := map[int]int{}
+	var wg sync.WaitGroup
+	for i := range 40 {
+		addr := []net.Listener{first, second}[i%2].Addr().String()
+		wg.Go(func() {
+			status, _ := postChat(t, addr, key, `{"model":"gpt-5","max_tokens":500,"messages":[{"role":"user","content":"ping"}]}`)
+			mu.Lock()
+			statuses[status]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if statuses[http.StatusOK] == 0 || statuses[http.StatusPaymentRequired] == 0 || statuses[http.StatusOK]+statuses[http.StatusPaymentRequired] != 40 {
+		t.Fatalf("statuses %v, want some calls served and the rest refused for the budget", statuses)
+	}
+
+	db, err := postgres.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	recs, err := db.RecentUsage(context.Background(), store.DefaultOrg, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spent int64
+	var served int
+	for _, r := range recs {
+		if r.Status == http.StatusOK {
+			spent += r.CostNUSD
+			served++
+		}
+	}
+	if served != statuses[http.StatusOK] || spent > int64(budgetUSD*1e9) {
+		t.Fatalf("%d calls spent %d nano-USD of a %v USD budget", served, spent, budgetUSD)
+	}
+}
+
+// serveLogged runs serve on a fresh port and returns its log and a function that stops it.
+func serveLogged(t *testing.T, cfg *config.Bootstrap) (*lockedBuffer, func()) {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &lockedBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, ln, logs, io.Discard) }()
+	return logs, func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+	}
+}
+
+// waitFor polls until every log contains want, or fails after within.
+func waitFor(t *testing.T, within time.Duration, want string, logs ...*lockedBuffer) {
+	t.Helper()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(within)
+	for _, l := range logs {
+		for !strings.Contains(l.String(), want) {
+			select {
+			case <-tick.C:
+			case <-deadline:
+				t.Fatalf("no %q within %s in:\n%s", want, within, l)
+			}
+		}
+	}
+}
+
+// A write that raises config_version reaches every replica within the reload interval.
+func TestReloadReachesEveryReplica(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name     string
+		replicas int
+		cfg      func(t *testing.T) *config.Bootstrap
+		open     func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore
+	}{
+		{"sqlite", 1, func(t *testing.T) *config.Bootstrap {
+			return &config.Bootstrap{Store: config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")}, LogLevel: "info"}
+		}, func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore {
+			db, err := sqlite.Open(ctx, cfg.Store.SQLite)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			return db
+		}},
+		{"postgres", 2, func(t *testing.T) *config.Bootstrap {
+			return &config.Bootstrap{Store: config.Store{Postgres: pgtest.DSN(t)}, LogLevel: "info"}
+		}, func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore {
+			db, err := postgres.Open(ctx, cfg.Store.Postgres)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			return db
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg(t)
+			var logs []*lockedBuffer
+			for range tt.replicas {
+				l, stop := serveLogged(t, cfg)
+				defer stop()
+				logs = append(logs, l)
+			}
+			waitFor(t, 10*time.Second, `"msg":"listening"`, logs...)
+			db := tt.open(t, cfg)
+			v, err := db.UpdateConfig(ctx, func(context.Context) error { return nil })
+			if err != nil || v != 2 {
+				t.Fatalf("UpdateConfig = %d, %v", v, err)
+			}
+			waitFor(t, runtime.DefaultInterval+time.Second, `"from_version":1,"version":2`, logs...)
+		})
+	}
+}
+
+func TestLoadLive(t *testing.T) {
+	base := limits.New(limits.Config{}, limits.NewMemoryStore(), time.Now)
+	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
+	l, err := loadLive(cfg, http.DefaultClient, base)
+	if err != nil || l.router == nil || l.limiter == nil || len(l.limiter.Status(context.Background(), limits.Caller{User: "a"})) != 1 {
+		t.Fatalf("live %+v, %v", l, err)
+	}
+	if l, err := loadLive(&config.Bootstrap{}, http.DefaultClient, nil); err != nil || l.limiter != nil {
+		t.Fatalf("live without limits %+v, %v", l, err)
+	}
+	bad := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "nope"}}, Routes: []config.Route{{Match: "*", Targets: []config.Target{{Provider: "p"}}}}}
+	if _, err := loadLive(bad, http.DefaultClient, nil); err == nil {
+		t.Fatal("a config with an unknown provider type loaded")
+	}
+	badLimits := &config.Bootstrap{DefaultProfile: "gone"}
+	if _, err := loadLive(badLimits, http.DefaultClient, base); err == nil {
+		t.Fatal("a config with an unknown default profile loaded")
+	}
+	badAllow := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "echo"}}, Routes: []config.Route{{Match: "*", Allow: []string{"group:x"}, Targets: []config.Target{{Provider: "p"}}}}}
+	if _, err := loadLive(badAllow, http.DefaultClient, nil); err == nil {
+		t.Fatal("a route with an unknown allow entry loaded")
+	}
+}
+
+// A reload builds the routes again from the config, so each route keeps its allow list.
+func TestLoadLiveKeepsRouteAccess(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "p", Type: "echo"}},
+		Routes: []config.Route{
+			{Match: "private-*", Allow: []string{"team:ml", "role:admin"}, Targets: []config.Target{{Provider: "p"}}},
+			{Match: "*", Targets: []config.Target{{Provider: "p"}}},
+		},
+	}
+	for i := range 2 {
+		l, err := loadLive(cfg, http.DefaultClient, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		private, err := l.router.Plan("private-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := private.Access.Entries(); len(got) != 2 {
+			t.Fatalf("load %d: allow %v, want team:ml and role:admin", i, got)
+		}
+		if private.Access.Permits(auth.Identity{User: "bob", Role: auth.RoleMember}) ||
+			!private.Access.Permits(auth.Identity{User: "ann", Teams: []string{"ml"}, Role: auth.RoleMember}) {
+			t.Fatalf("load %d: the allow list does not hold", i)
+		}
+		open, err := l.router.Plan("other")
+		if err != nil || !open.Access.Open() {
+			t.Fatalf("load %d: an open route got an allow list: %v %v", i, open.Access.Entries(), err)
+		}
 	}
 }
 

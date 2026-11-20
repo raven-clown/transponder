@@ -26,6 +26,8 @@ go run ./cmd/transponder --config transponder.yaml
 
 On Windows without gcc, `-race` is not available: run `go test ./...` locally and let CI run the race detector.
 
+Tests that need Postgres are skipped unless `TRANSPONDER_TEST_POSTGRES` holds the URL of a server, such as `postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable`. Each test works in a schema of its own and drops it. CI sets the variable in the coverage job.
+
 ## Layout
 
 Planned in `docs/design.md` section 4. Packages marked (planned) do not exist yet; update this list as packages land.
@@ -41,17 +43,21 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/router`: routes, the plan of targets for a call and the cooldown of failing ones; access per route is planned
 - `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
 - `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it
-- `internal/store`, `internal/store/sqlite`: store interfaces, SQLite with embedded migrations in `internal/store/sqlite/migrations`
+- `internal/store`, `internal/store/sqlite`, `internal/store/postgres`: store interfaces, and SQLite and Postgres (through `pgx`) behind them, each with embedded migrations in its own `migrations` directory
+- `internal/store/storetest`: the test suite both stores pass, and the check that migrations follow expand and contract. `internal/store/postgres/pgtest` gives a test an empty Postgres schema
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
-- `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface; only the memory store exists so far
+- `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface: `MemoryStore` in one process, `Failover` for `on_store_error`, and the shared one in `internal/store/postgres/counters.go`. `internal/limits/limitstest` is the suite every counter store passes
 - `internal/tokens`: the token estimate used when a provider reports no usage
-- `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): live config, sealed secrets, logs and metrics
+- `internal/runtime`: the live config and its reload. Each replica checks `config_version` every 2 seconds and swaps in a new snapshot; a call keeps the snapshot it started with. A write to the runtime config goes through `store.ConfigStore.UpdateConfig`, which raises the version in the same transaction
+- `internal/telemetry`: the JSON logger
+- `internal/secrets` (planned): sealed secrets
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
 
 ## Rules
 
 - Follow CONTRIBUTING.md: tests with every change, a failing test first for a bug fix, table-driven tests, no network in unit tests, no bare `time.Sleep`.
+- A schema change adds the next numbered migration to `internal/store/sqlite/migrations` and `internal/store/postgres/migrations`, to both unless the table is used by one store only (the shared limit counters live only in Postgres). A store method is added to both stores and to the suite in `internal/store/storetest`. Migrations follow expand and contract: one only adds tables, indexes and columns that are nullable or have a default. A removal or rename waits for a later release and starts with `-- contract: <what and why>`.
 - Commit after every change, with a Conventional Commits message, and push it.
 - Never commit straight to `main`. Start each piece of work on its own branch off `main`, named `feat/<topic>`, `fix/<topic>`, `ci/<topic>` or `docs/<topic>`, and push it after every commit.
 - When the work is done, open a pull request with a Conventional Commits title and a plain English description. Wait until every required check is green: the three test jobs, coverage, lint, analyze, dependency review and pr title. A macOS job cancelled while waiting for a runner is not a failure: rerun it with `gh run rerun <id> --failed`.
