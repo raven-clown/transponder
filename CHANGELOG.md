@@ -33,6 +33,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 
+### Fixed
+
+- Parallel tool calls streamed by an OpenAI-compatible server that leaves out each call's `index` are kept apart. They were merged into one call with both names and arguments run together, which broke tool use for `/v1/messages` callers and every translated stream.
+- An Anthropic tool call with no input reaches an OpenAI caller with `"arguments": "{}"` when streamed, as it does when not streamed, instead of an empty string that does not parse. Input sent whole in `content_block_start` is passed on too.
+- Tool call ids made by other providers, such as `functions.get_weather:0`, are rewritten to ones Anthropic accepts (letters, digits, `_` and `-`) in requests to Anthropic and in answers to `/v1/messages` callers, so a conversation that moves to Anthropic is no longer refused with 400.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
