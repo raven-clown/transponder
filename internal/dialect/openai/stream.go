@@ -135,8 +135,55 @@ func frame(payload []byte) []byte {
 	return append(out, '\n', '\n')
 }
 
+// OpeningChunk reports whether a stream chunk comes before any output: it has no usage, and
+// its choices, if any, have no finish reason and a delta with nothing but a role and empty
+// fields. Azure's prompt_filter_results chunk and the usual role chunk are such chunks.
+func OpeningChunk(data []byte) bool {
+	// Most chunks carry text, and those need no decoding. Text quoted inside another string
+	// has its quotes escaped, so it cannot match.
+	if i := bytes.Index(data, contentKey); i >= 0 && i+len(contentKey) < len(data) && data[i+len(contentKey)] != '"' {
+		return false
+	}
+	var w struct {
+		Choices []struct {
+			Delta        map[string]json.RawMessage `json:"delta"`
+			FinishReason *string                    `json:"finish_reason"`
+		} `json:"choices"`
+		Usage json.RawMessage `json:"usage"`
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(data, &w) != nil || !blank(w.Usage) || !blank(w.Error) {
+		return false
+	}
+	for _, ch := range w.Choices {
+		if ch.FinishReason != nil && *ch.FinishReason != "" {
+			return false
+		}
+		for k, v := range ch.Delta {
+			if k != "role" && !blank(v) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+var contentKey = []byte(`"content":"`)
+
+// blank reports whether a JSON value is missing, null, an empty string or an empty list.
+func blank(raw json.RawMessage) bool {
+	switch string(bytes.TrimSpace(raw)) {
+	case "", "null", `""`, "[]":
+		return true
+	}
+	return false
+}
+
 // IsStreamError reports whether a stream payload is an error object instead of a chunk.
 func IsStreamError(data []byte) bool {
+	if !bytes.Contains(data, []byte(`"error"`)) {
+		return false
+	}
 	var w struct {
 		Error   json.RawMessage   `json:"error"`
 		Choices []json.RawMessage `json:"choices"`

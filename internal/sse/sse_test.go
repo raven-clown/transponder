@@ -107,6 +107,32 @@ func TestFrame(t *testing.T) {
 	}
 }
 
+// TestReaderEndsCleanly checks streams whose last line has no newline but holds no event: a
+// comment, a field the reader ignores or stray spaces end the stream cleanly, since nothing
+// was cut. Gemini streams end with io.EOF only.
+func TestReaderEndsCleanly(t *testing.T) {
+	for name, tail := range map[string]string{
+		"comment":       ": keep-alive",
+		"ignored field": "id: 7",
+		"spaces":        "  ",
+		"carriage":      "\r",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := readAll(t, "data: a\n\n"+tail)
+			if !errors.Is(err, io.EOF) || len(got) != 1 || string(got[0].Data) != "a" {
+				t.Fatalf("events %+v, err %v; want one event and io.EOF", got, err)
+			}
+		})
+	}
+}
+
+func TestReaderByteOrderMark(t *testing.T) {
+	got, err := readAll(t, "\xEF\xBB\xBFevent: x\ndata: a\n\n")
+	if !errors.Is(err, io.EOF) || len(got) != 1 || got[0].Name != "x" || string(got[0].Data) != "a" {
+		t.Fatalf("events %+v, err %v", got, err)
+	}
+}
+
 func TestReaderEmptyData(t *testing.T) {
 	got, err := readAll(t, "event: ping\ndata:\n\n")
 	if !errors.Is(err, io.EOF) || len(got) != 1 || got[0].Name != "ping" || got[0].Data == nil || len(got[0].Data) != 0 {

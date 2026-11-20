@@ -93,7 +93,7 @@ func TestCutStreamsCoolTheTargetDown(t *testing.T) {
 		viaMsg bool
 	}{
 		"openai": {func(c *counted) router.Target { return oaTarget("a", "", c) }, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}\n\n", streamPing, false},
-		"anthropic": {func(c *counted) router.Target { return anTarget("", c) }, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n",
+		"anthropic": {func(c *counted) router.Target { return anTarget("", c) }, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n" + anTextDelta("partial"),
 			`{"model":"m","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`, true},
 	}
 	for name, tt := range cuts {

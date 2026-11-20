@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -157,38 +156,31 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 		return responsesFailed(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	rd := sse.NewReader(resp.Body)
-	ev, err := rd.Next()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
-	if err == nil && openai.IsResponseStreamError(ev) {
-		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
-	}
+	next, err := open(clocked(sse.NewReader(resp.Body).Next, started), openai.OpeningResponseEvent, func(ev sse.Event) error {
+		if openai.IsResponseStreamError(ev) {
+			return fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
+		}
+		return nil
+	})
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
 	var st openai.ResponseStream
 	for {
+		var ev sse.Event
+		if ev, err = next(); err != nil {
+			break
+		}
 		st.Add(ev.Data)
 		out.write(sse.Frame(ev.Name, ev.Data))
 		if st.Failed() {
 			break
 		}
-		if ev, err = rd.Next(); err != nil {
-			break
-		}
 	}
-	if !st.Done() {
-		if err != nil && !errors.Is(err, io.EOF) {
-			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
-		}
-		if !st.Failed() {
-			out.write(st.ErrorFrame("upstream_error", streamCut))
-		}
-		c.cut = true
+	if !st.Done() && g.streamBroke(ctx, c, err) && !st.Failed() {
+		out.write(st.ErrorFrame("upstream_error", streamCut))
 	}
 	u, ok := st.Usage()
 	if !ok {
@@ -197,7 +189,7 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }

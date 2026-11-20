@@ -73,8 +73,11 @@ func (g *gateway) messagesNative(c *call, n provider.Native) error {
 		return failed(err, true)
 	}
 	u, ok := anthropic.ParseUsage(out)
-	if !ok {
-		u = schema.Usage{InputTokens: estimateTokens(string(c.body))}
+	if !ok || !reported(u) {
+		u = schema.Usage{InputTokens: estimateInput(c.body)}
+		if resp, err := anthropic.DecodeResponse(out); err == nil {
+			u.OutputTokens = estimateTokens(answerText(resp))
+		}
 		c.rec.Estimated = true
 	}
 	cost := g.price(c.r.Context(), c, u)
@@ -104,11 +107,16 @@ func (g *gateway) messagesTranslated(c *call) error {
 		writeAnthropicError(c.w, http.StatusInternalServerError, "", "", "", "could not encode the response")
 		return nil //nolint:nilerr // the 500 above is the answer
 	}
-	cost := g.price(c.r.Context(), c, resp.Usage)
+	u := resp.Usage
+	if !reported(u) {
+		u = schema.Usage{InputTokens: estimateInput(c.body), OutputTokens: estimateTokens(answerText(resp))}
+		c.rec.Estimated = true
+	}
+	cost := g.price(c.r.Context(), c, u)
 	c.rec.Status = http.StatusOK
 	g.recordCall(c.r.Context(), c)
 
-	setUsageHeaders(c.w.Header(), resp.Usage, cost)
+	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
@@ -129,16 +137,14 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		return failed(err, true)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	rd := sse.NewReader(resp.Body)
-	ev, err := rd.Next()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
-	if err == nil && ev.Name == "error" {
-		err = fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
-	}
+	next, err := open(clocked(sse.NewReader(resp.Body).Next, started), anthropic.OpeningEvent, func(ev sse.Event) error {
+		if ev.Name == "error" {
+			return fmt.Errorf("the provider began the stream with an error: %s", upstreamMessage(ev.Data))
+		}
+		return nil
+	})
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -146,6 +152,10 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 	var upstreamErr *anthropic.StreamError
 	var text strings.Builder
 	for {
+		var ev sse.Event
+		if ev, err = next(); err != nil {
+			break
+		}
 		evs, derr := dec.Events(ev)
 		for _, e := range evs {
 			text.WriteString(e.Text)
@@ -155,27 +165,27 @@ func (g *gateway) messagesStreamNative(c *call, n provider.Native) error {
 		if errors.As(derr, &upstreamErr) {
 			break
 		}
-		if ev, err = rd.Next(); err != nil {
-			break
-		}
 	}
 	if !dec.Done() {
-		if err != nil && !errors.Is(err, io.EOF) {
-			g.d.Logger.WarnContext(ctx, "upstream stream broke", "provider", c.rec.Provider, "err", err)
+		if upstreamErr != nil {
+			err = upstreamErr
 		}
-		if upstreamErr == nil {
+		if g.streamBroke(ctx, c, err) && upstreamErr == nil {
 			out.write(anthropic.ErrorFrame("api_error", streamCut))
 		}
-		c.cut = true
 		c.rec.Estimated = true
 	}
 	u := dec.Usage()
-	if !dec.Done() {
+	if !reported(u) {
+		u.InputTokens = estimateInput(c.body)
+		c.rec.Estimated = true
+	}
+	if c.rec.Estimated {
 		u.OutputTokens = max(u.OutputTokens, estimateTokens(text.String()))
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }
@@ -195,12 +205,9 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 		return failed(err, false)
 	}
 	defer func() { _ = st.Close() }()
-	ev, err := st.Recv()
-	if err == nil && !started() {
-		err = errAttemptTimeout
-	}
+	next, err := open(clocked(st.Recv, started), startEvent, noFailure)
 	if err != nil {
-		return failed(fmt.Errorf("stream ended before its first event: %w", err), false)
+		return failed(fmt.Errorf("stream ended before its first output: %w", err), false)
 	}
 
 	out := startSSE(c.w)
@@ -209,34 +216,34 @@ func (g *gateway) messagesStreamTranslated(c *call) error {
 	var text strings.Builder
 	haveUsage := false
 	for {
-		if ev.Usage != nil {
+		var ev schema.Event
+		if ev, err = next(); err != nil {
+			break
+		}
+		if ev.Usage != nil && reported(*ev.Usage) {
 			u, haveUsage = *ev.Usage, true
 		}
 		text.WriteString(ev.Text)
+		text.WriteString(ev.ToolName)
 		text.WriteString(ev.ToolArgs)
 		for _, f := range enc.Frames(ev) {
 			out.write(f)
-		}
-		if ev, err = st.Recv(); err != nil {
-			break
 		}
 	}
 	if errors.Is(err, io.EOF) {
 		for _, f := range enc.End() {
 			out.write(f)
 		}
-	} else {
-		g.d.Logger.WarnContext(ctx, "provider stream broke", "provider", c.rec.Provider, "err", err)
+	} else if g.streamBroke(ctx, c, err) {
 		out.write(anthropic.ErrorFrame("api_error", streamCut))
-		c.cut = true
 	}
 	if !haveUsage {
-		u = schema.Usage{InputTokens: estimateTokens(string(c.body)), OutputTokens: estimateTokens(text.String())}
+		u = schema.Usage{InputTokens: estimateInput(c.body), OutputTokens: estimateTokens(text.String())}
 		c.rec.Estimated = true
 	}
 	cost := g.price(ctx, c, u)
 	out.finish(u, cost)
-	c.rec.Status = http.StatusOK
+	c.rec.Status = streamStatus(c)
 	g.recordCall(ctx, c)
 	return nil
 }

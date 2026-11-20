@@ -2,8 +2,6 @@
 
 What can go wrong around transponder, what it does then, and the test that holds it to that. Paths are relative to the repository root.
 
-The request-path sections (upstream down, slow, partial stream, huge body, caller gone) list the tests on `next/v0.3.0` today. Workstream B adds more there, and its pull requests add their tests to these sections.
-
 ## Upstream down
 
 A target that cannot be reached, answers 5xx, 429, 408, 401 or 403, or closes before it answers, is skipped, and the next target of the route is tried. The response carries `X-Transponder-Fallbacks` with the number of skipped targets. A 400, 404, 413 or 422 from the provider is the caller's own mistake, which another provider would not fix, so it goes back to the caller as is. When every target fails, the caller gets 502 `upstream_error` naming the last provider.
@@ -21,7 +19,7 @@ After `settings.cooldown_failures` failures in a row (default 3), a target is pu
 
 ## Upstream slow
 
-`settings.attempt_timeout` (default 1m) bounds how long one target may take to send its response headers, or its first event when streaming. A target past it is skipped as above, with the reason `timeout`. Once the answer has started, a slow body is not cut by the attempt timeout. `settings.request_timeout` (default 10m) bounds the whole call, streaming included, and stops fallback when it runs out.
+`settings.attempt_timeout` (default 1m) bounds how long one target may take to send its response headers, or its first event when streaming. A target past it is skipped as above, with the reason `timeout`. Once the answer has started, a slow body is not cut by the attempt timeout. `settings.request_timeout` (default 10m) bounds the whole call, streaming included, and stops fallback when it runs out. There is no timeout between two events of a stream, since a reasoning model can be silent for minutes: a stream that stalls after its first output runs until `request_timeout`, ends with an error event, and counts as a failure toward the target's cooldown.
 
 | Behaviour | Test |
 |---|---|
@@ -29,17 +27,20 @@ After `settings.cooldown_failures` failures in a row (default 3), a target is pu
 | A slow answer that has started is not cut | `TestAttemptTimeoutSparesSlowAnswers` in `internal/server/timeout_test.go` |
 | Request timeout, streamed and not | `TestRequestTimeout`, `TestRequestTimeoutNonStreaming` in `internal/server/timeout_test.go` |
 | The request deadline stops fallback | `TestRequestDeadlineStopsFallback` in `internal/server/fallback_test.go` |
+| A stream that stalls after its first output ends at the request timeout and cools its target down | `TestStalledStream` in `internal/server/stall_test.go` |
 
 ## Partial stream
 
-Until the first event reaches the caller, a stream that fails falls back like any other attempt. After that the caller already has the headers and part of the answer, so there is no fallback. The stream ends with an error event (`upstream_error`) in the caller's dialect, usage is recorded for what was sent, and the cut counts as a failure toward the target's cooldown.
+Events that carry no output yet (an OpenAI role chunk, `message_start`, a ping, an empty text block start, `response.created`, at most 64 of them) are held back until the first event that does. Until then nothing has reached the caller, so a stream that ends or sends an error, such as Anthropic's `overloaded_error` right after `message_start`, falls back like any other attempt. After that the caller already has the headers and part of the answer, so there is no fallback. The stream ends with an error event (`upstream_error`) in the caller's dialect, the status stays 200 and the usage trailers are sent, usage is recorded as estimated for what was sent, and the cut counts as a failure toward the target's cooldown. An event over 16 MiB is treated as a cut, and so is an event a translated stream cannot read.
 
 | Behaviour | Test |
 |---|---|
 | Fallback before the first event | `TestStreamFallbackBeforeFirstEvent` in `internal/server/fallback_test.go` |
-| No fallback after the first byte, error event sent | `TestStreamNoFallbackAfterFirstByte` in `internal/server/fallback_test.go` |
+| Fallback after opening events that carry no output, on every streamed path | `TestStreamFailsInItsOpening` in `internal/server/opening_test.go`, `TestOpen` in `internal/server/opening_internal_test.go` |
+| No fallback after output, error event sent once | `TestStreamNoFallbackAfterFirstByte` in `internal/server/fallback_test.go`, `TestStreamFailsAfterOutput` in `internal/server/opening_test.go` |
+| Oversized and malformed events, before and after output, with status, headers and trailers | `TestBadUpstreamEvents` in `internal/server/hardening_test.go` |
+| A finished stream whose last line holds no event is not taken for a cut | `TestReaderEndsCleanly` in `internal/sse/sse_test.go`, `TestChatStream` in `internal/provider/gemini/gemini_test.go` |
 | A cut stream counts toward cooldown | `TestCutStreamsCoolTheTargetDown` in `internal/server/fallback_review_test.go` |
-| An error right after the opening events still falls back; oversized and malformed events once a stream began (workstream B, pending) | `internal/server/hardening_test.go` on `v030/request-path` |
 
 ## Huge body
 
@@ -50,15 +51,16 @@ A request body over 20 MiB is refused with 413 `body_too_large`. When the caller
 | Request body over the cap, declared and not | `TestChatCompletionsBodyTooLarge`, `TestChatCompletionsDeclaredBodyTooLargeWithoutReading`, `TestChatCompletionsUnknownLengthBodyTooLarge` in `internal/server/chat_test.go`, `TestResponsesBodyTooLarge` in `internal/server/responses_test.go` |
 | Provider response over the cap | `TestUpstreamBodyTooLarge` in `internal/server/embed_test.go` |
 | Inline image over the cap | `TestInlineImageSizeCap` in `internal/server/images_test.go` |
+| A body of about 16 MiB in any script reaches the provider unchanged, in every dialect pair | `TestUnicodeAndLargeMessages` in `internal/server/hardening_test.go` |
 
 ## Caller gone
 
-A caller that disconnects ends the call: the upstream request is cancelled through its context, and no other target is tried. An admin API write whose caller leaves after the commit stays committed, and its reload runs to the end.
+A caller that disconnects ends the call: the upstream request is cancelled through its context, and no other target is tried. The call is recorded with status 499 and logged at info level, and the target is not counted as failing. When the caller left before the answer, what the call reserved against the caller's limits stays counted, since the provider may have done and billed the work. An admin API write whose caller leaves after the commit stays committed, and its reload runs to the end.
 
 | Behaviour | Test |
 |---|---|
 | No fallback after the caller leaves | `TestNoFallbackAfterCallerLeaves` in `internal/server/fallback_test.go` |
-| The upstream request is cancelled on every path, and the call is recorded as 499 (workstream B, pending) | `internal/server/disconnect_test.go` on `v030/request-path` |
+| The upstream request is cancelled on every path, and the call is recorded as 499 without a warning | `TestCallerDisconnect` in `internal/server/disconnect_test.go` |
 | An admin write's reload does not run on the caller's context | `TestCreateKey` in `internal/admin/keys_test.go`, `TestCheckWithCancelledContext` in `internal/runtime/runtime_test.go` |
 | A caller that leaves during the identity provider key fetch gets 503, not 500 | `TestOIDCCallerGivesUpDuringFetch` in `internal/auth/oidc_test.go` |
 | A caller that leaves is not taken for a limit store outage | `TestFailoverCancelledCaller` in `internal/limits/failover_test.go` |

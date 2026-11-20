@@ -272,8 +272,8 @@ settings:
   cooldown: 30s          # for how long
 ```
 
-- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first event, or cannot take the request, such as an image at a URL going to Gemini, which takes inline images only.
-- A request the provider rejects as wrong (any other 4xx) is not sent elsewhere. Nor is anything retried once the first byte has reached the caller, after the caller has gone, or past `request_timeout`. The same target is never tried twice in one call.
+- The next target takes over when one is unreachable or times out, answers 408, 429, any 5xx or Anthropic's 529, rejects the gateway's own key (401, 403), fails a stream before its first output (events that carry none yet, such as a role chunk, `message_start` or a ping, are held back until then), or cannot take the request, such as an image at a URL going to Gemini, which takes inline images only.
+- A request the provider rejects as wrong (any other 4xx) is not sent elsewhere. Nor is anything retried once output has reached the caller, after the caller has gone, or past `request_timeout`. The same target is never tried twice in one call.
 - After three failures in a row a target is put last for 30 seconds, so calls stop waiting on it. It is still tried when every other target has failed. This is kept per process, by provider and upstream model.
 - A call that is not streamed has no timeout of its own per target, so a target that hangs holds it until `request_timeout`. Streams move on after `attempt_timeout`.
 - `X-Transponder-Provider`, `X-Transponder-Model` and `X-Transponder-Fallbacks` say which target answered and how many were tried before it. The usage record has the same.

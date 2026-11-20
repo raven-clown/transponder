@@ -43,27 +43,30 @@ func TestChat(t *testing.T) {
 }
 
 func TestChatStream(t *testing.T) {
-	srv := fake(t, "/models/m:streamGenerateContent?alt=sse",
-		"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]}}]}\r\n\r\n"+
-			"data: {\"candidates\":[{\"content\":{\"parts\":[]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3}}\r\n\r\n")
-	st, err := New("g", srv.URL, "gk", nil).ChatStream(context.Background(), &schema.ChatRequest{Model: "m"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = st.Close() }()
-	n := 0
-	for {
-		_, err := st.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
+	// A finished stream may end with a line that holds no event, such as a comment.
+	for _, tail := range []string{"", ": done"} {
+		srv := fake(t, "/models/m:streamGenerateContent?alt=sse",
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}]}}]}\r\n\r\n"+
+				"data: {\"candidates\":[{\"content\":{\"parts\":[]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3}}\r\n\r\n"+tail)
+		st, err := New("g", srv.URL, "gk", nil).ChatStream(context.Background(), &schema.ChatRequest{Model: "m"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		n++
-	}
-	if n != 4 {
-		t.Fatalf("%d events", n)
+		n := 0
+		for {
+			_, err := st.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatalf("tail %q: %v", tail, err)
+			}
+			n++
+		}
+		_ = st.Close()
+		if n != 4 {
+			t.Fatalf("tail %q: %d events", tail, n)
+		}
 	}
 }
 

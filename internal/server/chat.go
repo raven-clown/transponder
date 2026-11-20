@@ -100,11 +100,16 @@ func (g *gateway) chatCanonical(c *call) error {
 		writeError(c.w, http.StatusInternalServerError, "api_error", "", "", "could not encode the response")
 		return nil //nolint:nilerr // the 500 above is the answer
 	}
-	cost := g.price(c.r.Context(), c, resp.Usage)
+	u := resp.Usage
+	if !reported(u) {
+		u = schema.Usage{InputTokens: promptTokens(c.body), OutputTokens: estimateTokens(answerText(resp))}
+		c.rec.Estimated = true
+	}
+	cost := g.price(c.r.Context(), c, u)
 	c.rec.Status = http.StatusOK
 	g.recordCall(c.r.Context(), c)
 
-	setUsageHeaders(c.w.Header(), resp.Usage, cost)
+	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(http.StatusOK)
 	_, _ = c.w.Write(body) //nolint:gosec // JSON we encoded, served as application/json
@@ -139,6 +144,23 @@ func replyText(body []byte) string {
 	return b.String()
 }
 
+// reported tells usage a provider sent from none at all, which translated responses and
+// streams carry as zeros. No real call uses zero tokens.
+func reported(u schema.Usage) bool {
+	return u != schema.Usage{}
+}
+
+// answerText joins the text and tool arguments of a translated answer, for estimating output tokens.
+func answerText(resp *schema.ChatResponse) string {
+	var b strings.Builder
+	b.WriteString(resp.Message.Text())
+	for _, tc := range resp.Message.ToolCalls {
+		b.WriteString(tc.Name)
+		b.WriteString(tc.Arguments)
+	}
+	return b.String()
+}
+
 // promptTokens estimates the input of a chat request from the text of its messages, plus
 // tokens.Image for each image, for a provider that reports no usage.
 func promptTokens(body []byte) int64 {
@@ -158,16 +180,24 @@ func promptTokens(body []byte) int64 {
 			b.WriteString(s)
 			continue
 		}
-		var parts []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+		var parts []json.RawMessage
+		if json.Unmarshal(m.Content, &parts) != nil {
+			continue
 		}
-		if json.Unmarshal(m.Content, &parts) == nil {
-			for _, p := range parts {
-				b.WriteString(p.Text)
-				if p.Type == "image_url" {
-					images++
-				}
+		for _, raw := range parts {
+			var p struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			_ = json.Unmarshal(raw, &p)
+			switch p.Type {
+			case "text":
+				b.Write([]byte(p.Text))
+			case "image_url":
+				images++
+			default:
+				// A file or audio part is read by the model too, so its data counts.
+				b.Write(raw)
 			}
 		}
 	}

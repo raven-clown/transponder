@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"math"
 	"net/http"
 	"regexp"
@@ -66,7 +67,8 @@ func (c *call) done() {
 
 // recordCall settles the call's reservations to its real usage and stores the usage record.
 func (g *gateway) recordCall(ctx context.Context, c *call) {
-	if c.ticket != nil && c.r.Context().Err() != nil && c.rec.Status >= http.StatusInternalServerError {
+	beforeAnswer := c.rec.Status >= http.StatusInternalServerError || (c.rec.Status == statusCallerGone && !c.cut)
+	if c.ticket != nil && c.r.Context().Err() != nil && beforeAnswer {
 		// The caller left before the answer; the provider may still have done and billed the work.
 		c.ticket.Keep()
 	}
@@ -208,8 +210,9 @@ const minThinkingBudget = 1024
 
 // estimateInput counts every key and string in a request body, and every number in an array,
 // which is how token-array inputs arrive. Tool schemas, tool arguments and descriptions all reach
-// the model, so they all count. Base64 payloads and signatures do not; an image counts as
-// tokens.Image instead, whatever its size.
+// the model, so they all count. Signatures do not, and neither does an image's base64 data: an
+// image counts as tokens.Image instead, whatever its size. Other inline files, such as a PDF,
+// count by the size of their data, since the model reads their pages.
 func estimateInput(body []byte) int64 {
 	var v any
 	if json.Unmarshal(body, &v) != nil {
@@ -223,12 +226,9 @@ func estimateInput(body []byte) int64 {
 		case map[string]any:
 			if isImage(x) {
 				images++
+				x = withoutImageData(x)
 			}
 			for k, val := range x {
-				// Only a base64 source's data is binary; a text document keeps its text there.
-				if k == "data" && x["type"] == "base64" {
-					continue
-				}
 				b.WriteString(k)
 				b.WriteByte(' ')
 				walk(k, val)
@@ -242,7 +242,7 @@ func estimateInput(body []byte) int64 {
 				walk(key, val)
 			}
 		case string:
-			if key == "signature" || base64DataURI.MatchString(x) {
+			if key == "signature" {
 				return
 			}
 			b.WriteString(x)
@@ -251,6 +251,34 @@ func estimateInput(body []byte) int64 {
 	}
 	walk("", v)
 	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
+}
+
+// withoutImageData returns an image part without the fields that hold its inline data: an
+// Anthropic base64 source's data, and a data: URL in image_url or file_data. Anything else
+// in the part still counts.
+func withoutImageData(part map[string]any) map[string]any {
+	out := maps.Clone(part)
+	if src, ok := out["source"].(map[string]any); ok && src["type"] == "base64" {
+		src = maps.Clone(src)
+		delete(src, "data")
+		out["source"] = src
+	}
+	if u, ok := out["image_url"].(map[string]any); ok && isDataURI(u["url"]) {
+		u = maps.Clone(u)
+		delete(u, "url")
+		out["image_url"] = u
+	}
+	for _, k := range []string{"image_url", "file_data"} {
+		if isDataURI(out[k]) {
+			delete(out, k)
+		}
+	}
+	return out
+}
+
+func isDataURI(v any) bool {
+	s, ok := v.(string)
+	return ok && base64DataURI.MatchString(s)
 }
 
 // isImage reports whether a JSON object is an image part, in the form of OpenAI's chat or
