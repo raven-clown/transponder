@@ -33,6 +33,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 
+### Fixed
+
+- With `limits.on_store_error: local`, a call admitted while Postgres was down and finished after it came back gave its reservation back to the shared counters, so each such call took its estimate off the shared budget and budgets could be overspent across replicas. Each reservation is now settled where it was counted.
+- A budget of `0` USD was treated as no budget, and as an exact `user:<id>` rule it also replaced `user:*` for that period, so a user set to 0 could spend without a cap. It now refuses every paid call.
+- A target in cooldown got traffic again after every config reload, which every admin API write causes. Reloads now keep the record of failing targets.
+- A caller that disconnected while the shared limit counters were asked was taken as a Postgres outage, logging that the counters were unreachable and counting locally.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
