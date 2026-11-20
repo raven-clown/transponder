@@ -10,6 +10,7 @@ import (
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/auth/authtest"
 	"github.com/raven-clown/transponder/internal/provider/echo"
+	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
 )
 
@@ -18,13 +19,19 @@ const messagesPing = `{"model":"claude-test","max_tokens":16,"messages":[{"role"
 // setupOIDC starts a gateway that accepts API keys and tokens from a local identity provider.
 func setupOIDC(t *testing.T) (*env, *authtest.IDP) {
 	t.Helper()
+	return setupOIDCRoutes(t, echoRoutes(echo.New("echo")))
+}
+
+// setupOIDCRoutes is setupOIDC over the given routes.
+func setupOIDCRoutes(t *testing.T, routes []router.Route) (*env, *authtest.IDP) {
+	t.Helper()
 	p := authtest.NewIDP(t)
 	p.NewKey("k1")
 	o, err := auth.NewOIDC(auth.OIDCConfig{Issuer: p.Issuer(), Audience: authtest.Audience, TeamsClaim: "groups", Client: p.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := setupDeps(t, echoRoutes(echo.New("echo")), func(d *server.Deps) { d.Auth = d.Auth.WithOIDC(o) })
+	e := setupDeps(t, routes, func(d *server.Deps) { d.Auth = d.Auth.WithOIDC(o) })
 	return e, p
 }
 

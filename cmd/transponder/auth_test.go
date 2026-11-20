@@ -179,3 +179,28 @@ func TestReadyzWithIdentityProviderDown(t *testing.T) {
 		t.Fatalf("models with an API key: status %d, body %s", status, body)
 	}
 }
+
+func TestBuildRouterAccess(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "e", Type: "echo"}},
+		Routes: []config.Route{
+			{Match: "fast", Allow: []string{"team:platform"}, Targets: []config.Target{{Provider: "e"}}},
+			{Match: "*", Targets: []config.Target{{Provider: "e"}}},
+		},
+	}
+	r, err := buildRouter(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := r.Plan("fast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Access.Open() || strings.Join(p.Access.Entries(), ",") != "team:platform" {
+		t.Fatalf("access = %v", p.Access.Entries())
+	}
+	cfg.Routes[0].Allow = []string{"role:owner"}
+	if _, err := buildRouter(cfg, nil); err == nil || !strings.Contains(err.Error(), `route "fast"`) {
+		t.Fatalf("err = %v", err)
+	}
+}

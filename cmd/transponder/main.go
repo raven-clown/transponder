@@ -257,7 +257,11 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 	}
 	routes := make([]router.Route, 0, len(cfg.Routes))
 	for _, r := range cfg.Routes {
-		rt := router.Route{Match: r.Match}
+		access, err := router.ParseAccess(r.Allow)
+		if err != nil {
+			return nil, fmt.Errorf("route %q: %w", r.Match, err)
+		}
+		rt := router.Route{Match: r.Match, Access: access}
 		for _, t := range r.Targets {
 			target, ok := providers[t.Provider]
 			if !ok {

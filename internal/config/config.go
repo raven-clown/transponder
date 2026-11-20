@@ -19,6 +19,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/registry"
+	"github.com/raven-clown/transponder/internal/router"
 )
 
 const envPrefix = "TRANSPONDER_"
@@ -226,7 +227,10 @@ type Provider struct {
 
 // Route sends the models matching Match to its targets.
 type Route struct {
-	Match   string   `yaml:"match"`
+	Match string `yaml:"match"`
+	// Allow lists who may use the route: user:<id>, team:<name>, key:<name> or role:<role>.
+	// Empty lets every authenticated caller in.
+	Allow   []string `yaml:"allow"`
 	Targets []Target `yaml:"targets"`
 }
 
@@ -380,6 +384,9 @@ func (c *Bootstrap) validate() error {
 		}
 		if len(r.Targets) == 0 {
 			return fmt.Errorf("config: route %q has no targets", r.Match)
+		}
+		if _, err := router.ParseAccess(r.Allow); err != nil {
+			return fmt.Errorf("config: route %q: %w", r.Match, err)
 		}
 		for _, t := range r.Targets {
 			if !names[t.Provider] {

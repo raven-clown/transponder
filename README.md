@@ -299,6 +299,28 @@ curl localhost:8080/v1/chat/completions -H "Authorization: Bearer $ID_TOKEN"   -
 - When `role_mapping` gives someone `admin`, the first start does not print an admin key, since that person can sign in instead.
 - Each key can be set from the environment too, such as `TRANSPONDER_AUTH__OIDC__ISSUER`. `role_mapping` is a map, so it is set in the file.
 
+### Access per route
+
+A route can say who may call it. Leave `allow` out and every caller with a valid key or token may:
+
+```yaml
+routes:
+  - match: "claude-*"
+    allow: ["team:platform", "user:alice@example.com", "key:ci", "role:admin"]
+    targets:
+      - provider: claude
+  - match: "*"
+    targets:
+      - provider: local
+```
+
+- `user:<id>` matches the user id from a token, and also an API key of that name, since a key counts as `user:<key name>`. Use `key:<name>` to let in only the key.
+- `team:<name>` matches any of the caller's teams: the teams of a key, or the `teams_claim` of a token.
+- `role:<role>` lets in that role and the ones above it, so `role:viewer` also lets in admins.
+- Any one matching entry is enough. A caller outside the list gets 403 `route_forbidden`, and the message names the route. Nothing is recorded or charged. Anthropic-dialect callers get `permission_error` with the same code.
+- `GET /v1/models` lists only the routes the caller may use.
+- `--config-test` checks every entry.
+
 ### Limits
 
 Budgets cap what a user, a team or a key spends in USD, per UTC day or month. Profiles, in the same format as the other mothership projects, cap tokens and requests:
