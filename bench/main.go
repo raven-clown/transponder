@@ -26,6 +26,7 @@ const usage = `usage: bench <command> [flags]
   upstream   serve the fake upstream on its own
   load       drive one URL at a fixed rate and report latency, errors and throughput
   compare    print two reports from run -out as a before and after table
+  merge      combine reports of separate runs of one binary, each number the median
 `
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -43,6 +44,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = runLoad(ctx, args[1:], stdout, stderr)
 	case "compare":
 		err = runCompare(args[1:], stdout)
+	case "merge":
+		err = runMerge(args[1:], stdout)
 	default:
 		_, _ = fmt.Fprintf(stderr, "bench: unknown command %q\n%s", args[0], usage)
 		return 2
