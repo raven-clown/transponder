@@ -41,15 +41,11 @@ func EncodeChatRequestWith(req *schema.ChatRequest, o EncodeOptions) ([]byte, er
 				wm.ToolCalls[i].ID = upstreamID(wm.ToolCalls[i].ID)
 			}
 		}
-		if text := m.Text(); text == "" && len(m.ToolCalls) > 0 {
-			wm.Content = json.RawMessage("null")
-		} else {
-			content, err := json.Marshal(text)
-			if err != nil {
-				return nil, err
-			}
-			wm.Content = content
+		content, err := encodeContent(m)
+		if err != nil {
+			return nil, err
 		}
+		wm.Content = content
 		w.Messages = append(w.Messages, wm)
 	}
 	for _, t := range req.Tools {

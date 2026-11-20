@@ -150,3 +150,24 @@ func TestEmbedUnsupported(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestSkipsImagesItCannotCarry(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer srv.Close()
+	a := New("claude", srv.URL, "k", nil)
+	ctx := context.Background()
+	req := &schema.ChatRequest{Model: "claude-x", Messages: []schema.Message{{Role: "user", Content: []schema.Part{
+		{Type: schema.PartImage, Image: &schema.Image{MediaType: "image/heic", Data: "aGk="}},
+	}}}}
+	var ce *schema.ContentError
+	if _, err := a.Chat(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("Chat err = %v", err)
+	}
+	if _, err := a.ChatStream(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("ChatStream err = %v", err)
+	}
+	if called {
+		t.Fatal("a request Anthropic cannot carry reached the upstream")
+	}
+}

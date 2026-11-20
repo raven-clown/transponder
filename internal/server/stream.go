@@ -105,7 +105,7 @@ func (g *gateway) chatStreamNative(c *call, n provider.Native, includeUsage bool
 		pass(data)
 	}
 	if !haveUsage {
-		u = schema.Usage{InputTokens: estimateTokens(promptText(c.body)), OutputTokens: estimateTokens(text.String())}
+		u = schema.Usage{InputTokens: promptTokens(c.body), OutputTokens: estimateTokens(text.String())}
 		c.rec.Estimated = true
 	}
 	cost := g.price(ctx, c, u)
@@ -167,7 +167,7 @@ func (g *gateway) chatStreamCanonical(c *call, includeUsage bool) error {
 		}
 	}
 	if !haveUsage {
-		u = schema.Usage{InputTokens: estimateTokens(promptText(c.body)), OutputTokens: estimateTokens(text.String())}
+		u = schema.Usage{InputTokens: promptTokens(c.body), OutputTokens: estimateTokens(text.String())}
 		c.rec.Estimated = true
 	}
 	cost := g.price(ctx, c, u)

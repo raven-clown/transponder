@@ -131,3 +131,25 @@ func TestRejectsUnsafeModelNames(t *testing.T) {
 		t.Fatal("an unsafe model name reached the upstream")
 	}
 }
+
+func TestSkipsImagesItCannotCarry(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer srv.Close()
+	a := New("g", srv.URL, "gk", nil)
+	ctx := context.Background()
+	req := &schema.ChatRequest{Model: "gemini-2.5-flash", Messages: []schema.Message{{Role: "user", Content: []schema.Part{
+		{Type: schema.PartText, Text: "what is this?"},
+		{Type: schema.PartImage, Image: &schema.Image{URL: "https://example.com/a.png"}},
+	}}}}
+	var ce *schema.ContentError
+	if _, err := a.Chat(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("Chat err = %v", err)
+	}
+	if _, err := a.ChatStream(ctx, req); !errors.Is(err, provider.ErrUnsupported) || !errors.As(err, &ce) {
+		t.Fatalf("ChatStream err = %v", err)
+	}
+	if called {
+		t.Fatal("a request Gemini cannot carry reached the upstream")
+	}
+}

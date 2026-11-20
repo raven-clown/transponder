@@ -49,7 +49,19 @@ type wireBlock struct {
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`
 	IsError   bool            `json:"is_error,omitempty"`
+	Source    *wireSource     `json:"source,omitempty"`
 }
+
+// wireSource is where an image block's picture comes from: base64 data or a URL.
+type wireSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
+}
+
+// imageTypes are the media types Anthropic takes as base64.
+var imageTypes = map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true}
 
 type wireTool struct {
 	Type        string          `json:"type,omitempty"`
@@ -184,11 +196,19 @@ func decodeMessage(m wireMessage) ([]schema.Message, error) {
 	}
 	var out []schema.Message
 	msg := schema.Message{Role: m.Role}
-	var text []string
 	for _, b := range bs {
 		switch b.Type {
 		case "text":
-			text = append(text, b.Text)
+			msg.Content = schema.AppendText(msg.Content, b.Text)
+		case "image":
+			if m.Role != schema.RoleUser {
+				return nil, &RequestError{Message: "messages: image blocks are only supported in user messages"}
+			}
+			img, err := decodeImage(b.Source)
+			if err != nil {
+				return nil, err
+			}
+			msg.Content = append(msg.Content, schema.Part{Type: schema.PartImage, Image: img})
 		case "thinking", "redacted_thinking":
 		case "tool_use":
 			args := "{}"
@@ -208,11 +228,71 @@ func decodeMessage(m wireMessage) ([]schema.Message, error) {
 			return nil, unsupported(b.Type, "messages")
 		}
 	}
-	msg.Content = schema.Text(strings.Join(text, ""))
 	if len(msg.Content) > 0 || len(msg.ToolCalls) > 0 {
 		out = append(out, msg)
 	}
 	return out, nil
+}
+
+// decodeImage reads the source of an image block: base64 data or a URL. An image kept in
+// Anthropic's Files API exists only there.
+func decodeImage(src *wireSource) (*schema.Image, error) {
+	if src == nil {
+		return nil, &RequestError{Message: "messages: an image block needs a source"}
+	}
+	switch src.Type {
+	case "base64":
+		img, err := schema.NewInlineImage(src.MediaType, src.Data)
+		if err != nil {
+			return nil, &RequestError{Message: "messages: " + err.Error()}
+		}
+		return img, nil
+	case "url":
+		if !strings.HasPrefix(src.URL, "https://") && !strings.HasPrefix(src.URL, "http://") {
+			return nil, &RequestError{Message: "messages: an image source of type url needs an http or https url"}
+		}
+		return &schema.Image{URL: src.URL}, nil
+	case "file":
+		return nil, unsupported("file image", "messages")
+	default:
+		return nil, &RequestError{Message: "messages: an image source must be of type base64 or url"}
+	}
+}
+
+// imageBlock renders an image part. Anthropic takes four media types as base64; any other
+// makes the request one this target cannot carry.
+func imageBlock(img *schema.Image) (wireBlock, error) {
+	if !img.Inline() {
+		return wireBlock{Type: "image", Source: &wireSource{Type: "url", URL: img.URL}}, nil
+	}
+	if !imageTypes[img.MediaType] {
+		return wireBlock{}, &schema.ContentError{Reason: "Anthropic takes JPEG, PNG, GIF and WebP images, not " + img.MediaType}
+	}
+	return wireBlock{Type: "image", Source: &wireSource{Type: "base64", MediaType: img.MediaType, Data: img.Data}}, nil
+}
+
+// userBlocks renders the content of a user turn in order.
+func userBlocks(m schema.Message) ([]wireBlock, error) {
+	if !m.HasImages() {
+		if text := m.Text(); text != "" {
+			return []wireBlock{{Type: "text", Text: text}}, nil
+		}
+		return nil, nil
+	}
+	bs := make([]wireBlock, 0, len(m.Content))
+	for _, p := range m.Content {
+		switch {
+		case p.Type == schema.PartImage && p.Image != nil:
+			b, err := imageBlock(p.Image)
+			if err != nil {
+				return nil, err
+			}
+			bs = append(bs, b)
+		case p.Type == schema.PartText && p.Text != "":
+			bs = append(bs, wireBlock{Type: "text", Text: p.Text})
+		}
+	}
+	return bs, nil
 }
 
 // EncodeRequest renders a canonical request as a Messages request. Consecutive tool results
@@ -241,6 +321,13 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 	for _, m := range req.Messages {
 		text := m.Text()
 		switch m.Role {
+		case schema.RoleSystem, schema.RoleTool, schema.RoleAssistant:
+			// Dropping the image would answer a different question than the one asked.
+			if m.HasImages() {
+				return nil, &schema.ContentError{Reason: "Anthropic takes images in user messages only, not in " + m.Role + " messages"}
+			}
+		}
+		switch m.Role {
 		case schema.RoleSystem:
 			system = append(system, text)
 		case schema.RoleTool:
@@ -261,8 +348,12 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 				add("assistant", bs...)
 			}
 		default:
-			if text != "" {
-				add("user", wireBlock{Type: "text", Text: text})
+			bs, err := userBlocks(m)
+			if err != nil {
+				return nil, err
+			}
+			if len(bs) > 0 {
+				add("user", bs...)
 			}
 		}
 	}

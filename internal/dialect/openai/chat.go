@@ -103,11 +103,11 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 		req.MaxTokens = w.MaxCompletionTokens
 	}
 	for _, m := range w.Messages {
-		content, err := messageText(m.Content)
+		content, err := messageContent(m.Content, m.Role)
 		if err != nil {
 			return nil, err
 		}
-		msg := schema.Message{Role: m.Role, Content: schema.Text(content), ToolCallID: m.ToolCallID}
+		msg := schema.Message{Role: m.Role, Content: content, ToolCallID: m.ToolCallID}
 		for _, tc := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments})
 		}
@@ -126,7 +126,7 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 	return req, nil
 }
 
-// messageText reads content given as a string, a list of text parts, or null.
+// messageText reads the content of a response, given as a string, a list of text parts, or null.
 func messageText(raw json.RawMessage) (string, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {

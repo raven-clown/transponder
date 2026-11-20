@@ -10,6 +10,7 @@ import (
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/provider"
 	"github.com/raven-clown/transponder/internal/router"
+	"github.com/raven-clown/transponder/internal/schema"
 	"github.com/raven-clown/transponder/internal/tokens"
 )
 
@@ -137,7 +138,13 @@ func (g *gateway) upstreamFailed(c *call, err error, sameDialect bool) {
 		c.fail(c.w, http.StatusBadGateway, "api_error", "upstream_too_large", "", "the provider's response is larger than 64 MiB; ask for fewer inputs or base64 encoding")
 		c.rec.Status = http.StatusBadGateway
 	case errors.Is(err, provider.ErrUnsupported):
-		c.fail(c.w, http.StatusBadRequest, "invalid_request_error", "unsupported", "model", "the provider for this model cannot serve this request")
+		msg := "the provider for this model cannot serve this request"
+		// Name the content that could not be carried, so the caller knows what to change.
+		var ce *schema.ContentError
+		if errors.As(err, &ce) {
+			msg += ": " + ce.Reason
+		}
+		c.fail(c.w, http.StatusBadRequest, "invalid_request_error", "unsupported", "model", msg)
 		c.rec.Status = http.StatusBadRequest
 	default:
 		c.fail(c.w, http.StatusBadGateway, "api_error", "upstream_error", "", "the provider did not answer")
