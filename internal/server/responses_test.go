@@ -422,6 +422,8 @@ func TestResponsesStoredStateRefused(t *testing.T) {
 		"a conversation by id":                  {bob, `{"model":"m","input":"x","conversation":"conv_689667905b048191b4740501625afd940c7533ace33a2dab"}`, "conversation"},
 		"a conversation as an object":           {bob, `{"model":"m","input":"x","conversation":{"id":"conv_1"}}`, "conversation"},
 		"an item the provider stored":           {bob, `{"model":"m","input":[{"type":"item_reference","id":"msg_67ccd2bf17f0819081ff3bb2cf6508e60bb6a6b452d3795b"}]}`, "input"},
+		"a stored item by id alone":             {bob, `{"model":"m","input":[{"role":"user","content":"and then?"},{"id":"msg_67ccd2bf17f0819081ff3bb2cf6508e60bb6a6b452d3795b"}]}`, "input"},
+		"stored reasoning":                      {bob, `{"model":"m","input":[{"type":"reasoning","id":"rs_68af4030baa48193b0b43b4c2a176a1a05438e46b5f69a3b","summary":[]}]}`, "input"},
 		"stored state on a stream":              {bob, `{"model":"m","input":"x","stream":true,"previous_response_id":"` + made.ID + `"}`, "previous_response_id"},
 	}
 	for name, tt := range tests {

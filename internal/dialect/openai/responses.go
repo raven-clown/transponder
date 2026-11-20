@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/raven-clown/transponder/internal/schema"
@@ -204,7 +205,7 @@ func IsResponseStreamError(ev sse.Event) bool {
 type ResponsesRefs struct {
 	PreviousResponse bool // previous_response_id is set
 	Conversation     bool // conversation is set
-	ItemReference    bool // input has an item_reference, an item the provider stored
+	ItemReference    bool // input names an item the provider stored, with or without type item_reference
 	Prompt           bool // prompt names a prompt stored with the provider
 	Files            int  // input_file parts in input, by id, by URL or inline
 }
@@ -240,6 +241,9 @@ func ReadResponsesRefs(body []byte) ResponsesRefs {
 		}
 		var v any
 		if json.Unmarshal(raw, &v) == nil {
+			if items, ok := v.([]any); ok && slices.ContainsFunc(items, storedItem) {
+				r.ItemReference = true
+			}
 			walkTypes(v, func(typ string) {
 				switch typ {
 				case "item_reference":
@@ -251,6 +255,31 @@ func ReadResponsesRefs(body []byte) ResponsesRefs {
 		}
 	}
 	return r
+}
+
+// storedItem reports whether an input item can only be read from the provider's store: an id
+// with nothing else but a type, which OpenAI reads as an item reference, or a reasoning item
+// without its encrypted content.
+func storedItem(item any) bool {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return false
+	}
+	var id, reasoning, encrypted, other bool
+	for k, v := range m {
+		switch {
+		case strings.EqualFold(k, "id"):
+			id = v != nil
+		case strings.EqualFold(k, "type"):
+			reasoning = reasoning || v == "reasoning"
+		case strings.EqualFold(k, "encrypted_content"):
+			encrypted = encrypted || v != nil
+			other = true
+		default:
+			other = true
+		}
+	}
+	return id && (!other || (reasoning && !encrypted))
 }
 
 // hasField reports whether any key that matches name without regard to case has a value other
