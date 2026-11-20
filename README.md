@@ -34,7 +34,7 @@ An LLM gateway that knows who is spending what. One Go binary in front of Anthro
 
 ## What it does
 
-- Speaks the OpenAI API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
+- Speaks the OpenAI API (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`) and the Anthropic API (`/v1/messages`), so the OpenAI and Anthropic SDKs, Claude Code and most tools work with only a base URL change.
 - Serves `/healthz` (the process is up) and `/readyz` (the store answers) without an API key, for liveness and readiness probes.
 - Serves Prometheus metrics on `/metrics`: requests, latency, tokens and cost by provider and model, fallbacks and limit refusals.
 - Exports a trace for every call over OTLP when `otel.endpoint` is set, with a span for each provider it tried, and never the prompt or the answer.
@@ -294,6 +294,49 @@ Chat requests can carry images on both endpoints: `image_url` parts on `/v1/chat
 - Images go only in user messages.
 - For limits, each image counts as 1,000 input tokens until the provider reports the real usage. That is about what a 1024 by 1024 picture costs on OpenAI, Anthropic and Gemini.
 
+### Responses API
+
+`POST /v1/responses` is the OpenAI Responses API, which the Codex CLI, newer OpenAI SDK code and VS Code's custom endpoint use instead of chat completions:
+
+```shell
+curl http://localhost:8080/v1/responses \
+  -H "Authorization: Bearer $TRANSPONDER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5", "input": "Say hello."}'
+```
+
+For the Codex CLI, add a provider to `~/.codex/config.toml` and export a transponder key as `TRANSPONDER_KEY`:
+
+```toml
+model = "gpt-5"
+model_provider = "transponder"
+
+[model_providers.transponder]
+name = "transponder"
+base_url = "http://localhost:8080/v1"
+env_key = "TRANSPONDER_KEY"
+wire_api = "responses"
+```
+
+- It is a passthrough. The request goes to a target that speaks the OpenAI API (`openai` and the OpenAI-compatible provider types) as it came, with only `model` changed to the target's model, and the answer comes back as the provider sent it, streamed or not. Tools, reasoning, structured output and whatever else the provider supports work without transponder knowing about them.
+- Anthropic, Gemini and `echo` targets are skipped, since this API is not translated yet. So is a server that has no `/responses` endpoint and answers 404, 405 or 501. When no target of the route can serve the call, the caller gets a 400 `unsupported` that says why.
+- Usage is read from the final body, or from the `response.completed`, `response.incomplete` or `response.failed` event of a stream, with cached input and reasoning tokens counted apart. The `X-Usage-*` headers (trailers on a stream), usage records, budgets, limits, `allow` on routes and fallback work as they do for chat. `llm.max_output_tokens` in a profile lowers `max_output_tokens`, which is the only other field transponder ever changes.
+- `background: true` is refused with a 400, and `GET`, `DELETE` and `cancel` on `/v1/responses/{id}` are not served. The result of a background response, and its usage, would have to be fetched later, which the gateway cannot do.
+
+Stored responses and fallback: transponder keeps no state for this API. `store` and `previous_response_id` are sent on as they are, so a response is stored by the provider that answered the call (`X-Transponder-Provider` names it), and only that provider can continue it.
+
+- A call with `previous_response_id` is tried on the route's targets in order, like any other. A target that answers that it does not hold the response (`previous_response_not_found`, or any other 4xx that names `previous_response_id`) is skipped, so the call reaches the provider that holds the response wherever it is in the route.
+- If that provider is down, the caller gets the 502 for the outage, which can be retried, and not a `not found` from the provider after it.
+- If no target holds the response, the caller gets a 400 `previous_response_not_found` and has to send the conversation again in `input`.
+- A compatible server that ignores `previous_response_id` instead of rejecting it answers without the earlier turns. Keep such a server out of routes that serve chained calls.
+- For a conversation that has to survive a change of provider, send `store: false` and the whole conversation in `input` on every call, the way stateless clients such as the Codex CLI do. Each call then stands on its own and falls back like chat. Encrypted reasoning items in `input` can still only be read by the provider that made them, and another provider's 400 for them is passed on.
+
+What a passthrough cannot see or check:
+
+- Whatever a request names by id lives in the provider account behind the route, and every caller of that route shares it: stored responses, conversations, prompts, files, vector stores and containers. transponder does not record who created them, so a caller who knows another caller's response id can continue that response. Ids are long and random and the gateway never lists them. If callers must not reach each other's context even with an id, have them send `store: false`, or give each group its own provider key or project behind its own route with `allow`.
+- Limits count what the request carries. The earlier turns behind a `previous_response_id`, and files named by id, are not counted by `llm.max_input_tokens` before the call. Their tokens are in the usage the provider reports, which is what budgets and token allowances are settled at.
+- Only tokens are priced. Hosted tools the provider bills per call, such as web search, code interpreter, file search and image generation, cost more at the provider than the usage record shows.
+
 ### Claude Code
 
 Point Claude Code at transponder with a transponder API key:
@@ -493,7 +536,7 @@ Each milestone ships as a release when it lands:
 7. Access per route, OIDC and roles, the admin API with OpenAPI and an audit log, Postgres and several replicas
 8. Metrics, tracing and a five-minute demo
 
-After that: the OpenAI Responses API, a shared counter store for several replicas, organisations, Bedrock and Vertex, and caching.
+After that: translating the OpenAI Responses API for Anthropic and Gemini targets, a shared counter store for several replicas, organisations, Bedrock and Vertex, and caching.
 
 ## How to help
 

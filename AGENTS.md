@@ -4,7 +4,7 @@ Instructions for coding agents working in this repository. Keep this file curren
 
 ## Project
 
-transponder is an LLM gateway in one Go binary. It serves OpenAI-compatible `/v1/chat/completions` and `/v1/embeddings` and Anthropic-compatible `/v1/messages` in front of Anthropic, OpenAI, Gemini and Ollama, falls back across providers, records usage and cost per user, and enforces budgets. Its configuration lives in SQL and is managed through a JSON admin API under `/admin/v1/`. It is used by teams that want per-user model spend and limits from their existing OIDC provider, and by the other mothership projects for chat and embeddings. The design is in `docs/design.md`.
+transponder is an LLM gateway in one Go binary. It serves OpenAI-compatible `/v1/chat/completions`, `/v1/responses` (a passthrough to OpenAI-dialect targets) and `/v1/embeddings` and Anthropic-compatible `/v1/messages` in front of Anthropic, OpenAI, Gemini and Ollama, falls back across providers, records usage and cost per user, and enforces budgets. Its configuration lives in SQL and is managed through a JSON admin API under `/admin/v1/`. It is used by teams that want per-user model spend and limits from their existing OIDC provider, and by the other mothership projects for chat and embeddings. The design is in `docs/design.md`.
 
 It is one of four projects described in the shared contract at https://github.com/raven-clown/mothership/blob/main/CONTRACT.md. Follow the contract. A change to how the projects connect goes to the contract first.
 

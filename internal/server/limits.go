@@ -253,9 +253,12 @@ func estimateInput(body []byte) int64 {
 	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
 }
 
-// isImage reports whether a JSON object is an image part, in OpenAI's or Anthropic's form.
+// isImage reports whether a JSON object is an image part, in the form of OpenAI's chat or
+// Responses API or of Anthropic.
 func isImage(part map[string]any) bool {
 	switch part["type"] {
+	case "input_image":
+		return true
 	case "image_url":
 		return part["image_url"] != nil
 	case "image":
