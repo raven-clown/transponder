@@ -114,11 +114,18 @@ func (s *Reader) readLine() ([]byte, error) {
 	}
 }
 
+const maxPresized = 64 << 20
+
 // Frame renders one event: an event: line when name is set and one data: line per line of data.
 func Frame(name string, data []byte) []byte {
-	size := len(data) + 1 + (bytes.Count(data, []byte{'\n'})+1)*len("data: \n")
-	if name != "" {
-		size += len("event: \n") + len(name)
+	// Sized up front so a frame is one allocation. Past maxPresized the sum could overflow an
+	// int on 32-bit systems, so such a frame grows as it is written.
+	var size int
+	if len(data) < maxPresized && len(name) < maxPresized {
+		size = len(data) + 1 + (bytes.Count(data, []byte{'\n'})+1)*len("data: \n")
+		if name != "" {
+			size += len("event: \n") + len(name)
+		}
 	}
 	out := make([]byte, 0, size)
 	if name != "" {
