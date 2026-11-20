@@ -1,6 +1,6 @@
 # Failure modes
 
-What can go wrong around transponder, what it does then, and the test that holds it to that. Paths are relative to the repository root. A test marked with a pull request lands with that pull request into `next/v0.3.0`.
+What can go wrong around transponder, what it does then, and the test that holds it to that. Paths are relative to the repository root.
 
 The request-path sections (upstream down, slow, partial stream, huge body, caller gone) list the tests on `next/v0.3.0` today. Workstream B adds more there, and its pull requests add their tests to these sections.
 
@@ -16,7 +16,7 @@ After `settings.cooldown_failures` failures in a row (default 3), a target is pu
 | No fallback on the caller's own bad request | `TestNoFallbackOnBadRequest` in `internal/server/fallback_test.go` |
 | Every target fails | `TestAllTargetsFail` in `internal/server/fallback_test.go` |
 | Cooldown order, end and restart | `TestCooldown` in `internal/router/router_test.go`, `TestCooldownSkipsFailingTarget` in `internal/server/fallback_test.go` |
-| A reload keeps the cooldowns (#138) | `TestLoadLiveKeepsCooldowns` in `cmd/transponder/main_test.go`, `TestKeepHealth` in `internal/router/router_test.go` |
+| A reload keeps the cooldowns | `TestLoadLiveKeepsCooldowns` in `cmd/transponder/main_test.go`, `TestKeepHealth` in `internal/router/router_test.go` |
 | The record of failing targets stays bounded | `TestHealthIsBounded` in `internal/router/router_test.go` |
 
 ## Upstream slow
@@ -59,9 +59,9 @@ A caller that disconnects ends the call: the upstream request is cancelled throu
 |---|---|
 | No fallback after the caller leaves | `TestNoFallbackAfterCallerLeaves` in `internal/server/fallback_test.go` |
 | The upstream request is cancelled on every path, and the call is recorded as 499 (workstream B, pending) | `internal/server/disconnect_test.go` on `v030/request-path` |
-| An admin write's reload does not run on the caller's context (#135) | `TestCreateKey` in `internal/admin/keys_test.go`, `TestCheckWithCancelledContext` in `internal/runtime/runtime_test.go` |
-| A caller that leaves during the identity provider key fetch gets 503, not 500 (#139) | `TestOIDCCallerGivesUpDuringFetch` in `internal/auth/oidc_test.go` |
-| A caller that leaves is not taken for a limit store outage (#138) | `TestFailoverCancelledCaller` in `internal/limits/failover_test.go` |
+| An admin write's reload does not run on the caller's context | `TestCreateKey` in `internal/admin/keys_test.go`, `TestCheckWithCancelledContext` in `internal/runtime/runtime_test.go` |
+| A caller that leaves during the identity provider key fetch gets 503, not 500 | `TestOIDCCallerGivesUpDuringFetch` in `internal/auth/oidc_test.go` |
+| A caller that leaves is not taken for a limit store outage | `TestFailoverCancelledCaller` in `internal/limits/failover_test.go` |
 
 ## Store locked or full
 
@@ -79,7 +79,7 @@ A caller that disconnects ends the call: the upstream request is cancelled throu
 | A full database fails writes, keeps reads and recovers | `TestWriteFailsWhenTheDatabaseIsFull` in `internal/store/sqlite/failure_test.go` |
 | A failed usage write is counted | `TestMetricsCountDroppedUsageRecords` in `internal/server/metrics_test.go` |
 | Limit store down, local and deny | `TestLimitStoreDown` in `internal/server/limits_test.go`, `TestFailoverLocalShare`, `TestFailoverDeny`, `TestAdmitWhenTheStoreFails` in `internal/limits/failover_test.go` |
-| A reservation settles where it was counted (#138) | `TestFailoverSettlesWhereReserved` in `internal/limits/failover_test.go` |
+| A reservation settles where it was counted | `TestFailoverSettlesWhereReserved` in `internal/limits/failover_test.go` |
 | Migrations on an old file and a failed migration | `TestMigrationKeepsUsage` in `internal/store/sqlite/usage_test.go`, `TestMigrateRollsBack`, `TestMigrationsExpandAndContract` in `internal/store/sqlite/sqlite_test.go` |
 | A reload when the store cannot be read | `internal/runtime/runtime_test.go` |
 
@@ -92,7 +92,7 @@ Budgets and token allowances count per UTC day and month. When the clock jumps b
 | A jump back or forward across midnight | `TestMemoryClockJumps` in `internal/limits/store_test.go` |
 | Day and month windows in UTC | `TestWindows` in `internal/limits/store_test.go` |
 | Token expiry with skew | `TestOIDCClockSkew` in `internal/auth/oidc_test.go` |
-| A token issued in the future, malformed `nbf` or `iat` (#139) | `TestOIDCTimeClaims` in `internal/auth/oidc_test.go` |
+| A token issued in the future, malformed `nbf` or `iat` | `TestOIDCTimeClaims` in `internal/auth/oidc_test.go` |
 
 ## Bad config
 
@@ -102,12 +102,12 @@ While running, the runtime config (providers, routes, budgets, profiles) is relo
 
 | Behaviour | Test |
 |---|---|
-| File and environment errors | `TestLoadRejects`, `TestLoadExpandsEdgeCases`, `TestLoadIntEnvOverride` (#136) in `internal/config/config_test.go`, `FuzzExpand` in the same file |
+| File and environment errors | `TestLoadRejects`, `TestLoadExpandsEdgeCases`, `TestLoadIntEnvOverride` in `internal/config/config_test.go`, `FuzzExpand` in the same file |
 | `--config-test` | `TestConfigTest` in `cmd/transponder/main_test.go` |
 | A bad reload keeps the old config, in-flight calls keep theirs | `internal/runtime/runtime_test.go` |
 | An admin write that breaks the config is rolled back | `TestInvalidConfigRollsBack` in `internal/admin/items_test.go` |
-| A config file that conflicts with API items (#135) | `TestSyncFileKeepsTheStoreLoadable` in `internal/admin/runtime_test.go` |
-| Providers left with no routes answer `model_not_found`, not echo (#135) | `TestBuildRouterProvidersWithoutRoutes` in `cmd/transponder/main_test.go` |
+| A config file that conflicts with API items | `TestSyncFileKeepsTheStoreLoadable` in `internal/admin/runtime_test.go` |
+| Providers left with no routes answer `model_not_found`, not echo | `TestBuildRouterProvidersWithoutRoutes` in `cmd/transponder/main_test.go` |
 
 ## Many replicas
 
@@ -120,7 +120,7 @@ A budget or token allowance added while running counts spend from the counters a
 | Two replicas share keys and usage | `TestServeTwoReplicasOnPostgres` in `cmd/transponder/main_test.go` |
 | A budget holds across replicas | `TestServeTwoReplicasShareABudget` in `cmd/transponder/main_test.go`, `internal/store/postgres/counters_test.go` |
 | A change reaches every replica | `TestReloadReachesEveryReplica` in `cmd/transponder/main_test.go`, `TestServeAdminWriteReachesOtherReplica` in `cmd/transponder/admin_test.go` |
-| Concurrent config writes are serialised (#135) | `UpdateConfigSerialised` in `internal/store/storetest/storetest.go`, run by `TestStore` on SQLite and Postgres |
+| Concurrent config writes are serialised | `UpdateConfigSerialised` in `internal/store/storetest/storetest.go`, run by `TestStore` on SQLite and Postgres |
 | Counters filled once from usage | `TestBuildLimiterSeedsFromUsage`, `TestBuildLimiterSharedSeedsOnce` in `cmd/transponder/main_test.go` |
 
 ## Identity provider down
@@ -131,7 +131,7 @@ With OIDC on, the issuer's keys are cached for an hour and read again for an unk
 |---|---|
 | Provider down, with and without cached keys | `TestOIDCProviderDown`, `TestOIDCProviderUnreachable` in `internal/auth/oidc_test.go`, `TestIdentityProviderDown` in `internal/server/oidc_test.go` |
 | Refresh for an unknown key is bounded | `TestOIDCUnknownKeyRefreshIsBounded`, `TestOIDCConcurrentCallersShareOneFetch` in `internal/auth/oidc_test.go` |
-| Key rotation, with and without `kid` | `TestOIDCRotatedKey`, `TestOIDCRotatedKeyWithoutKid` (#139) in `internal/auth/oidc_test.go` |
+| Key rotation, with and without `kid` | `TestOIDCRotatedKey`, `TestOIDCRotatedKeyWithoutKid` in `internal/auth/oidc_test.go` |
 
 ## Secrets key changed
 
@@ -139,7 +139,7 @@ Provider keys stored through the admin API are sealed under `secrets_key`. A rep
 
 | Behaviour | Test |
 |---|---|
-| A previous key opens, a wrong key is `ErrWrongKey` (#137) | `TestPreviousKey` in `internal/secrets/secrets_test.go` |
-| Sealing every stored key again in one write (#137) | `TestResealAfterSecretsKeyChange` in `internal/admin/items_test.go` |
-| The `secrets rotate` command (#137) | `TestSecretsRotate` in `cmd/transponder/secrets_test.go` |
+| A previous key opens, a wrong key is `ErrWrongKey` | `TestPreviousKey` in `internal/secrets/secrets_test.go` |
+| Sealing every stored key again in one write | `TestResealAfterSecretsKeyChange` in `internal/admin/items_test.go` |
+| The `secrets rotate` command | `TestSecretsRotate` in `cmd/transponder/secrets_test.go` |
 | A key that does not open blocks writes rather than corrupting them | `TestStoredKeyNeedsTheSameSecretsKey` in `internal/admin/items_test.go` |
