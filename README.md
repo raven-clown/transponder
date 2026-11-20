@@ -332,8 +332,6 @@ ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_AUTH_TOKEN=$TRANSPONDER_KEY c
 
 `/v1/messages` sends the request to Anthropic as it came, with only the model changed, so thinking, prompt caching and beta features keep working, and usage and cost are recorded for the key. A route can also send Claude Code's requests to Gemini, OpenAI or a local model. Those are translated, tools and images included, though features only Anthropic has, such as its server tools, PDF documents and images in tool results, are refused on those routes.
 
-The admin API is on the roadmap below.
-
 ### Sign-in and roles
 
 API keys always work. To also let people call transponder with a token from your OpenID Connect provider (Okta, Entra ID, Keycloak, Zitadel, Google, Auth0 and others), name the issuer and the audience:
@@ -385,6 +383,34 @@ routes:
 - Any one matching entry is enough. A caller outside the list gets 403 `route_forbidden`, and the message names the route. Nothing is recorded or charged. Anthropic-dialect callers get `permission_error` with the same code.
 - `GET /v1/models` lists only the routes the caller may use.
 - `--config-test` checks every entry.
+
+### Admin API
+
+Everything a console needs is a JSON API under `/admin/v1/`, described in [api/openapi.yaml](api/openapi.yaml) and served at `/admin/v1/openapi.yaml`. It takes the same API keys and tokens as the gateway: `viewer` may call every `GET`, and every other method needs `admin`.
+
+```shell
+# make a key for a service; the secret is in the answer and is shown only this once
+curl localhost:8080/admin/v1/keys -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"name": "logbook", "role": "member", "teams": ["platform"]}'
+
+# spend per user this month, and the last changes made through the API
+curl "localhost:8080/admin/v1/usage?group_by=user" -H "Authorization: Bearer $ADMIN_KEY"
+curl localhost:8080/admin/v1/audit -H "Authorization: Bearer $ADMIN_KEY"
+```
+
+| Endpoint | What it does |
+|---|---|
+| `GET /status` | Version, uptime, store health, the config version served and whether the last reload failed |
+| `GET /keys`, `POST /keys`, `GET/PATCH/DELETE /keys/{name}`, `POST /keys/{name}/rotate` | API keys. A secret is returned once, when the key is made or rotated; the store keeps only its hash |
+| `GET /usage?group_by=user\|team\|key\|project\|model\|provider\|route\|day&from=&to=` | Calls, tokens and cost per group, this month by default |
+| `GET /requests` | Single usage records, newest first |
+| `GET /audit?actor=&resource=&from=&to=` | Every write through the API: who, what, when, the request id, and the item before and after |
+
+- Lists take `cursor` and `limit` (default 50, at most 500) and return `{"items": [...], "next_cursor": "..."}`, with no `next_cursor` on the last page.
+- Errors are `{"error": {"code": "...", "message": "...", "field": "..."}}`. A refused field is named in `field`.
+- Every item has a `version`, also sent as the `ETag`. Send it back in `If-Match` on `PATCH`, `DELETE` and `rotate`, and a write over someone else's change is refused with 409 `version_conflict`. Without `If-Match` the write applies to whatever is stored.
+- Items declared in the YAML file show `"managed_by_file": true` and cannot be changed through the API (409 `managed_by_file`).
+- Every write and its audit record commit in one transaction that also raises the config version, so every replica picks the change up within 2 seconds, and the replica that took it before it answers.
 
 ### Limits
 

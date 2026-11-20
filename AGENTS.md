@@ -36,7 +36,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/config`: bootstrap YAML, env overrides, and the providers and routes declared in the file
 - `internal/auth`: OIDC JWT verification with a cached JWKS, API keys, identity and roles; `internal/auth/authtest` is a local OIDC provider for tests
 - `internal/server`: HTTP mux, middleware, gateway handlers
-- `internal/admin` (planned): `/admin/v1` handlers, pagination, audit writes
+- `internal/admin`: `/admin/v1` handlers, pagination, `If-Match` versions and audit writes. Every write goes through `commit`, which runs it with its audit record in one `UpdateConfig` and then reloads. `spec_test.go` checks that the served routes and `api/openapi.yaml` match both ways and validates every response the tests get against the file, so a new endpoint goes in the file first
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic`, `internal/dialect/gemini`: each wire format to and from the canonical types, in both directions, with usage parsing
 - `internal/sse`: server-sent event reading and writing shared by the dialects
@@ -52,7 +52,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/telemetry`: the JSON logger
 - `internal/secrets` (planned): sealed secrets
 - `internal/testutil` (planned): shared fakes
-- `api/openapi.yaml` (planned): the admin API description
+- `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
 
 ## Rules
 
