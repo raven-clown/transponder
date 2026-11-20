@@ -33,7 +33,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
 - `bench/` measures transponder on one machine with no network: `go run ./bench run -bin <binary>` starts the binary in front of a fake provider with a fixed latency and answer size and reports calls per second, the latency it adds at p50, p95 and p99, errors and memory for plain, streamed, translated and embeddings calls. `docs/benchmarks.md` has the method and the numbers against v0.2.4.
+- `docs/configuration.md` lists every config key with its default and environment variable, checked against the code by a test, and `docs/architecture.md` explains how the code is built, with walkthroughs for adding a provider or a dialect.
 - `transponder secrets rotate` and `previous_secrets_key` (`TRANSPONDER_PREVIOUS_SECRETS_KEY`) change `secrets_key` without losing the provider keys stored through the admin API. Before, a new `secrets_key` left them unreadable: the server would not start, and every admin config write failed with `invalid_config`. With both keys set, replicas read keys sealed under either; the command seals them all again under the new key in one write, with an audit record each.
+
+### Changed
+
+- **Breaking:** `${VAR}` in the config file fills in part of one value and can no longer add YAML structure. A variable that held a list or a map, such as `targets: ${TARGETS}`, is now read as a string and the file is refused. Move such lists into the file and keep only secrets in variables (#136).
 
 ### Fixed
 
