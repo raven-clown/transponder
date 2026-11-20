@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -253,6 +254,11 @@ func upstreamID(id string) string {
 // ShortenToolCallIDs rewrites the tool call ids of a raw chat request that are too long for
 // OpenAI, the same way EncodeChatRequest does. A body with none comes back untouched.
 func ShortenToolCallIDs(body []byte) []byte {
+	// Most calls carry no tool call at all. A key can only hide from this check written with
+	// \u escapes, so a body with any of those is still read in full.
+	if !bytes.Contains(body, []byte("tool_call")) && !bytes.Contains(body, []byte(`\u`)) {
+		return body
+	}
 	var top map[string]json.RawMessage
 	if json.Unmarshal(body, &top) != nil {
 		return body

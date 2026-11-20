@@ -7,6 +7,26 @@ import (
 	"github.com/raven-clown/transponder/internal/tokens"
 )
 
+func TestMaxField(t *testing.T) {
+	top := topFields([]byte(`{"max_tokens":10,"Max_Completion_Tokens":40,"n":3,"N":2,"max_output_tokens":"x"}`))
+	for _, tt := range []struct {
+		fields []string
+		want   int64
+	}{
+		{[]string{"max_completion_tokens", "max_tokens"}, 40},
+		{[]string{"n"}, 3},
+		{[]string{"max_output_tokens"}, 0},
+		{[]string{"missing"}, 0},
+	} {
+		if got := maxField(top, tt.fields...); got != tt.want {
+			t.Errorf("maxField(%v) = %d, want %d", tt.fields, got, tt.want)
+		}
+	}
+	if topFields([]byte(`[1]`)) != nil || maxField(nil, "n") != 0 {
+		t.Error("a body that is not an object has no fields")
+	}
+}
+
 func TestEstimateInputImageData(t *testing.T) {
 	big := strings.Repeat("QUJD", 25_000)
 	bigText := tokens.Estimate(big)
