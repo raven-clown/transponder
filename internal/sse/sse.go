@@ -92,7 +92,16 @@ func (s *Reader) readLine() ([]byte, error) {
 			_, _ = s.r.Discard(3)
 		}
 	}
-	var line []byte
+	// A line that fits the buffer is returned without a copy. It is only valid until the next
+	// read, and Next copies what it keeps before then.
+	chunk, err := s.r.ReadSlice('\n')
+	if len(chunk) > MaxEventBytes {
+		return nil, ErrEventTooLarge
+	}
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		return chunk, err
+	}
+	line := append([]byte(nil), chunk...)
 	for {
 		chunk, err := s.r.ReadSlice('\n')
 		line = append(line, chunk...)
@@ -107,7 +116,11 @@ func (s *Reader) readLine() ([]byte, error) {
 
 // Frame renders one event: an event: line when name is set and one data: line per line of data.
 func Frame(name string, data []byte) []byte {
-	var out []byte
+	size := len(data) + 1 + (bytes.Count(data, []byte{'\n'})+1)*len("data: \n")
+	if name != "" {
+		size += len("event: \n") + len(name)
+	}
+	out := make([]byte, 0, size)
 	if name != "" {
 		out = append(append(append(out, "event: "...), name...), '\n')
 	}
