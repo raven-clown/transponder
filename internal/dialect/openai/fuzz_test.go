@@ -50,11 +50,11 @@ func FuzzPeekAndRewrite(f *testing.F) {
 	f.Add([]byte(`{"model":"m","messages":[{"role":"assistant","tool_calls":[{"id":"` + strings.Repeat("x", 60) + `"}]},{"role":"tool","tool_call_id":"` + strings.Repeat("x", 60) + `"}]}`))
 	f.Add([]byte(`{"model":"m","input":["a",[1,2]],"background":false,"store":true}`))
 	f.Fuzz(func(t *testing.T, body []byte) {
-		ParseEmbedRequest(body)
-		PeekResponses(body)
+		_, _ = ParseEmbedRequest(body)
+		_, _ = PeekResponses(body)
 		ParseUsage(body)
-		DecodeChatResponse(body)
-		DecodeEmbedResponse(body)
+		_, _ = DecodeChatResponse(body)
+		_, _ = DecodeEmbedResponse(body)
 		short := ShortenToolCallIDs(body)
 		if !bytes.Equal(short, body) && !json.Valid(short) {
 			t.Fatalf("tool call ids rewritten into invalid JSON: %s", short)
