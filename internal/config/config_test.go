@@ -86,6 +86,77 @@ func TestLoadExpandsVars(t *testing.T) {
 	}
 }
 
+func TestLoadSkipsVarsInCommentLines(t *testing.T) {
+	body := `providers:
+  - name: echo
+    type: echo
+    # api_key: ${UNSET_KEY}
+routes:
+  - match: "*"
+    targets:
+      - provider: echo
+`
+	c, err := Load(writeFile(t, body), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Providers) != 1 || c.Providers[0].Name != "echo" || c.Providers[0].APIKey != "" {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+}
+
+func TestLoadExpandsHashInsideBlockScalar(t *testing.T) {
+	c, err := Load(writeFile(t, "secrets_key: |-\n  #${KEY}\n"), []string{"KEY=abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SecretsKey != "#abc" {
+		t.Fatalf("SecretsKey = %q", c.SecretsKey)
+	}
+	_, err = Load(writeFile(t, "secrets_key: |-\n  #${NEED}\n# ${SKIP}\n"), nil)
+	if err == nil || err.Error() != "config: environment variables not set: NEED" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExpandCommentLines(t *testing.T) {
+	env := map[string]string{"HOST": "h"}
+	tests := []struct {
+		name, in, want, missing string
+	}{
+		{name: "indented comment is copied", in: "  # key: ${UNSET}\nb: ${HOST}", want: "  # key: ${UNSET}\nb: h"},
+		{name: "tab before the hash", in: "\t# ${UNSET}", want: "\t# ${UNSET}"},
+		{name: "a hash after a value is not a comment line", in: "url: http://${HOST}/#${HOST}", want: "url: http://h/#h"},
+		{name: "a missing variable outside comments still fails", in: "# ${UNSET}\nkey: ${ALSO_UNSET}", missing: "ALSO_UNSET"},
+		{name: "a hash line inside a literal block is expanded", in: "key: |\n  # ${HOST}\n  v: ${HOST}", want: "key: |\n  # h\n  v: h"},
+		{name: "a hash line inside a folded block is expanded", in: "key: >-\n  # ${HOST}\n", want: "key: >-\n  # h\n"},
+		{name: "a comment after the block is copied", in: "key: |\n  ${HOST}\n# ${UNSET}\n", want: "key: |\n  h\n# ${UNSET}\n"},
+		{name: "a comment on the block header is copied", in: "key: | # ${UNSET}\n  # ${HOST}\n", want: "key: | # ${UNSET}\n  # h\n"},
+		{name: "a comment glued to the indicator is copied", in: "key: |# ${UNSET}\n  #${HOST}\n", want: "key: |# ${UNSET}\n  #h\n"},
+		{name: "an unset variable inside a block still fails", in: "# ${SKIP}\nkey: |\n  # ${UNSET}\n", missing: "UNSET"},
+		{name: "a pipe inside a plain value is not a block", in: "note: use | to pipe ${HOST}\n# ${UNSET}\n", want: "note: use | to pipe h\n# ${UNSET}\n"},
+		{name: "a blank line does not end the block", in: "key: |\n\n  # ${HOST}\n# ${UNSET}", want: "key: |\n\n  # h\n# ${UNSET}"},
+		{name: "content is indented further than its header", in: "outer:\n  key: |\n    # ${HOST}\n  # ${UNSET}\n  other: ${HOST}", want: "outer:\n  key: |\n    # h\n  # ${UNSET}\n  other: h"},
+		{name: "a sequence block expands a hash line", in: "- |\n  # ${HOST}\n- ${HOST}", want: "- |\n  # h\n- h"},
+		{name: "a sibling of a sequence key is outside the block", in: "- name: |\n    # ${HOST}\n  # ${UNSET}\n  age: ${HOST}", want: "- name: |\n    # h\n  # ${UNSET}\n  age: h"},
+		{name: "a carriage return is preserved", in: "# ${UNSET}\r\nkey: ${HOST}\r\n", want: "# ${UNSET}\r\nkey: h\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := expand(tt.in, env)
+			if tt.missing != "" {
+				if err == nil || err.Error() != "config: environment variables not set: "+tt.missing {
+					t.Fatalf("err = %v, want only %s named", err, tt.missing)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("expand = %q, %v, want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadEnvOverrides(t *testing.T) {
 	p := writeFile(t, "listen_addr: \":8081\"\nstore:\n  sqlite: a.db\n")
 	c, err := Load(p, []string{"TRANSPONDER_LISTEN_ADDR=:9000", "transponder_store__sqlite=/tmp/x.db", "PATH=/bin"})

@@ -239,6 +239,8 @@ routes:
       - provider: local
 ```
 
+`${NAME}` and `$NAME` are replaced from the environment before the file is parsed. A missing variable is an error that names it. A comment line, whose first non-space character is `#`, is left as written, so a commented-out key does not require its variable. A line that starts with `#` inside a `|` or `>` block is part of the value and is still replaced.
+
 ```shell
 transponder --config transponder.yaml
 ```

@@ -456,20 +456,189 @@ func envMap(environ []string) map[string]string {
 	return m
 }
 
+// expand replaces ${VAR} and $VAR from env. Load does this before YAML parsing.
+// A line whose first non-space character is # is a comment and is copied
+// unchanged, so a commented-out key does not require its variable. Inside a
+// literal (|) or folded (>) block that line is part of the value, so it is
+// expanded with the rest of the block. The block runs until a non-empty line
+// is indented no further than its parent: the key, or the "-" or "?" when the
+// block is that entry's whole value.
 func expand(s string, env map[string]string) (string, error) {
 	var missing []string
-	out := os.Expand(s, func(name string) string {
+	mapping := func(name string) string {
 		v, ok := env[name]
 		if !ok {
 			missing = append(missing, name)
 		}
 		return v
-	})
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	blockAt := -1
+	for s != "" {
+		line, rest, more := strings.Cut(s, "\n")
+		body, cr := splitCR(line)
+		if blockAt >= 0 {
+			n, blank := leadingIndent(body)
+			if blank || n > blockAt {
+				if blank {
+					b.WriteString(line)
+				} else {
+					b.WriteString(os.Expand(body, mapping))
+					b.WriteString(cr)
+				}
+				if !writeNL(&b, more) {
+					break
+				}
+				s = rest
+				continue
+			}
+			blockAt = -1
+		}
+		if indent, commentAt, ok := blockHeader(body); ok {
+			blockAt = indent
+			b.WriteString(expandBlockHeader(body, commentAt, mapping))
+			b.WriteString(cr)
+		} else if yamlComment(body) {
+			b.WriteString(line)
+		} else {
+			b.WriteString(os.Expand(body, mapping))
+			b.WriteString(cr)
+		}
+		if !writeNL(&b, more) {
+			break
+		}
+		s = rest
+	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		return "", fmt.Errorf("config: environment variables not set: %s", strings.Join(missing, ", "))
 	}
-	return out, nil
+	return b.String(), nil
+}
+
+func writeNL(b *strings.Builder, more bool) bool {
+	if !more {
+		return false
+	}
+	b.WriteByte('\n')
+	return true
+}
+
+func splitCR(line string) (body, cr string) {
+	if strings.HasSuffix(line, "\r") {
+		return strings.TrimSuffix(line, "\r"), "\r"
+	}
+	return line, ""
+}
+
+func leadingIndent(body string) (n int, blank bool) {
+	i := 0
+	for i < len(body) && (body[i] == ' ' || body[i] == '\t') {
+		i++
+	}
+	return i, i == len(body)
+}
+
+// blockHeader reports whether body opens a literal or folded block scalar.
+// indent is the parent column content must pass: the key's column, or the
+// column of "-" or "?" when the block is that entry's whole value. commentAt
+// is the index of a trailing comment, or -1 when the header has none. A "|"
+// or ">" that is only part of a plain value is not a header.
+func blockHeader(body string) (indent, commentAt int, ok bool) {
+	i := 0
+	for i < len(body) && (body[i] == ' ' || body[i] == '\t') {
+		i++
+	}
+	rest := body[i:]
+	if rest == "" || rest[0] == '#' {
+		return 0, 0, false
+	}
+	if (rest[0] == '-' || rest[0] == '?') && len(rest) > 1 && (rest[1] == ' ' || rest[1] == '\t') {
+		markerCol := i
+		rest = strings.TrimLeft(rest[1:], " \t")
+		if rest == "" {
+			return 0, 0, false
+		}
+		if rel, isBlock := blockIndicator(rest); isBlock {
+			return markerCol, commentIndex(body, rest, rel), true
+		}
+		return keyBlock(body, rest, len(body)-len(rest))
+	}
+	return keyBlock(body, rest, i)
+}
+
+func keyBlock(body, rest string, keyCol int) (indent, commentAt int, ok bool) {
+	if rel, isBlock := blockIndicator(rest); isBlock {
+		return keyCol, commentIndex(body, rest, rel), true
+	}
+	colon := strings.IndexByte(rest, ':')
+	if colon < 0 || colon+1 >= len(rest) || (rest[colon+1] != ' ' && rest[colon+1] != '\t') {
+		return 0, 0, false
+	}
+	val := strings.TrimLeft(rest[colon+1:], " \t")
+	rel, isBlock := blockIndicator(val)
+	if !isBlock {
+		return 0, 0, false
+	}
+	return keyCol, commentIndex(body, val, rel), true
+}
+
+func commentIndex(body, val string, rel int) int {
+	if rel < 0 {
+		return -1
+	}
+	return len(body) - len(val) + rel
+}
+
+// blockIndicator reports whether s is a block scalar indicator, such as "|",
+// "|-", ">+" or "|2". commentAt is the index of a trailing # comment in s, or
+// -1 when there is none. The # may sit against the indicator, as in "|# note".
+func blockIndicator(s string) (commentAt int, ok bool) {
+	if s == "" || (s[0] != '|' && s[0] != '>') {
+		return 0, false
+	}
+	i := 1
+	var chomp, digit bool
+	for i < len(s) {
+		c := s[i]
+		if (c == '-' || c == '+') && !chomp {
+			chomp = true
+			i++
+			continue
+		}
+		if c >= '1' && c <= '9' && !digit {
+			digit = true
+			i++
+			continue
+		}
+		break
+	}
+	j := i
+	for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
+		j++
+	}
+	if j == len(s) {
+		return -1, true
+	}
+	if s[j] == '#' {
+		return j, true
+	}
+	return 0, false
+}
+
+func expandBlockHeader(body string, commentAt int, mapping func(string) string) string {
+	if commentAt < 0 {
+		return os.Expand(body, mapping)
+	}
+	return os.Expand(body[:commentAt], mapping) + body[commentAt:]
+}
+
+// yamlComment reports whether line is a YAML comment. The # has to be the first
+// non-space character. A # later in a value is not a comment to this pass, and
+// expand does not use this for a line inside a | or > block.
+func yamlComment(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " \t\r"), "#")
 }
 
 func applyEnv(tree map[string]any, environ []string) {
