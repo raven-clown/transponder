@@ -31,6 +31,9 @@ func TestDecodeContentParts(t *testing.T) {
 		{"string", `"hi"`, schema.Text("hi")},
 		{"null", `null`, nil},
 		{"empty string", `""`, nil},
+		{"empty list", `[]`, nil},
+		{"one text part", `[{"type":"text","text":"a"}]`, schema.Text("a")},
+		{"text part without text", `[{"type":"text"}]`, nil},
 		{"text parts are joined", `[{"type":"text","text":"a"},{"type":"text","text":"b"}]`, schema.Text("ab")},
 		{"image at a url", `[{"type":"image_url","image_url":{"url":"https://example.com/cat.png","detail":"low"}}]`,
 			[]schema.Part{at("https://example.com/cat.png", "low")}},
@@ -69,6 +72,7 @@ func TestDecodeContentPartErrors(t *testing.T) {
 		name, role, content, code, message string
 	}{
 		{"not a list", "user", `{"type":"text"}`, "unsupported", "string or a list"},
+		{"a number", "user", `42`, "unsupported", "string or a list"},
 		{"image_url as a string", "user", `[{"type":"image_url","image_url":"https://example.com/a.png"}]`, "unsupported", "string or a list"},
 		{"audio", "user", `[{"type":"input_audio","input_audio":{}}]`, "unsupported", "only text and image_url"},
 		{"image in a system message", "system", image("https://example.com/a.png"), "unsupported", "only supported in user messages"},
