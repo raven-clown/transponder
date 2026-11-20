@@ -125,6 +125,33 @@ func DecodeChatResponse(body []byte) (*schema.ChatResponse, error) {
 type ChunkDecoder struct {
 	started bool
 	seen    map[int]bool
+	byID    map[string]int
+	last    int // the call a delta with neither index nor id continues
+	next    int // the index a new call without one gets
+}
+
+// toolIndex places a streamed tool call. Most servers number calls with index; some leave it
+// out, so a new id starts the next call and a delta with neither continues the last one.
+func (d *ChunkDecoder) toolIndex(tc wireToolCall) int {
+	if d.byID == nil {
+		d.byID = map[string]int{}
+	}
+	i := d.last
+	switch {
+	case tc.Index != nil:
+		i = *tc.Index
+	case tc.ID != "":
+		if j, ok := d.byID[tc.ID]; ok {
+			i = j
+		} else {
+			i = d.next
+		}
+	}
+	if _, ok := d.byID[tc.ID]; tc.ID != "" && !ok {
+		d.byID[tc.ID] = i
+	}
+	d.last, d.next = i, max(d.next, i+1)
+	return i
 }
 
 type wireChunkIn struct {
@@ -154,10 +181,7 @@ func (d *ChunkDecoder) Events(data []byte) ([]schema.Event, error) {
 			out = append(out, schema.Event{Type: schema.EventText, Text: *ch.Delta.Content})
 		}
 		for _, tc := range ch.Delta.ToolCalls {
-			i := 0
-			if tc.Index != nil {
-				i = *tc.Index
-			}
+			i := d.toolIndex(tc)
 			if (tc.ID != "" || tc.Function.Name != "") && !d.seen[i] {
 				if d.seen == nil {
 					d.seen = map[int]bool{}

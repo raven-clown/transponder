@@ -5,6 +5,7 @@ package anthropic
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -335,14 +336,14 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			add("user", wireBlock{Type: "tool_result", ToolUseID: m.ToolCallID, Content: content})
+			add("user", wireBlock{Type: "tool_result", ToolUseID: toolUseID(m.ToolCallID), Content: content})
 		case schema.RoleAssistant:
 			var bs []wireBlock
 			if text != "" {
 				bs = append(bs, wireBlock{Type: "text", Text: text})
 			}
 			for _, c := range m.ToolCalls {
-				bs = append(bs, wireBlock{Type: "tool_use", ID: c.ID, Name: c.Name, Input: inputObject(c.Arguments)})
+				bs = append(bs, wireBlock{Type: "tool_use", ID: toolUseID(c.ID), Name: c.Name, Input: inputObject(c.Arguments)})
 			}
 			if len(bs) > 0 {
 				add("assistant", bs...)
@@ -453,7 +454,7 @@ func EncodeResponse(resp *schema.ChatResponse) ([]byte, error) {
 		w.Content = append(w.Content, wireBlock{Type: "text", Text: text})
 	}
 	for _, c := range resp.Message.ToolCalls {
-		w.Content = append(w.Content, wireBlock{Type: "tool_use", ID: c.ID, Name: c.Name, Input: inputObject(c.Arguments)})
+		w.Content = append(w.Content, wireBlock{Type: "tool_use", ID: toolUseID(c.ID), Name: c.Name, Input: inputObject(c.Arguments)})
 	}
 	u := encodeUsage(resp.Usage)
 	w.Usage = &u
@@ -525,4 +526,18 @@ func NewMessageID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return "msg_" + hex.EncodeToString(b)
+}
+
+// toolUseID returns a tool call id Anthropic accepts. Ids made by other providers may hold
+// characters it refuses, such as the dot and colon of functions.get_weather:0; those are
+// replaced by a hash of the id, so a call and its result still match.
+func toolUseID(id string) string {
+	valid := func(r rune) bool {
+		return r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	}
+	if id != "" && !strings.ContainsFunc(id, func(r rune) bool { return !valid(r) }) {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "toolu_" + hex.EncodeToString(sum[:12])
 }
