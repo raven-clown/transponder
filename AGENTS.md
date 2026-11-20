@@ -44,7 +44,7 @@ Tests that need Postgres are skipped unless `TRANSPONDER_TEST_POSTGRES` holds th
 
 ## Layout
 
-Planned in `docs/design.md` section 4. Packages marked (planned) do not exist yet; update this list as packages land.
+Planned in `docs/design.md` section 4. Update this list as packages land, and list only packages that exist.
 
 - `cmd/transponder`: main, flags, bootstrap config, server start
 - `internal/config`: bootstrap YAML, env overrides, and the providers and routes declared in the file
@@ -54,8 +54,8 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/schema`: canonical request, response, stream and usage types
 - `internal/dialect/openai`, `internal/dialect/anthropic`, `internal/dialect/gemini`: each wire format to and from the canonical types, in both directions, with usage parsing
 - `internal/sse`: server-sent event reading and writing shared by the dialects
-- `internal/router`: routes, the plan of targets for a call and the cooldown of failing ones; access per route is planned
-- `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend; `providertest` (planned) is the conformance suite
+- `internal/router`: routes, the plan of targets for a call and the cooldown of failing ones, and in `access.go` the `allow` list of a route and who it lets in
+- `internal/provider`, `internal/provider/<name>`: the Provider interface, the shared `Error` type and one adapter per backend, each tested against an `httptest` server
 - `internal/provider/registry`: every provider type in one list. A new provider is a package under `internal/provider` plus one entry there; config validation, `buildRouter` and the free flag for pricing all read it. `TestReadmeProviderTable` builds every type and fails until the README's provider table has its row, with the dialect, default base URL and capabilities the adapter really has
 - `internal/store`, `internal/store/sqlite`, `internal/store/postgres`: store interfaces, and SQLite and Postgres (through `pgx`) behind them, each with embedded migrations in its own `migrations` directory
 - `internal/store/storetest`: the test suite both stores pass, and the check that migrations follow expand and contract. `internal/store/postgres/pgtest` gives a test an empty Postgres schema
@@ -65,9 +65,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/runtime`: the live config and its reload. Each replica checks `config_version` every 2 seconds and swaps in a new snapshot; a call keeps the snapshot it started with. A write to the runtime config goes through `store.ConfigStore.UpdateConfig`, which raises the version in the same transaction
 - `internal/telemetry`: the JSON logger, the Prometheus registry and gateway metrics served on `/metrics`, and the tracer with its OTLP/HTTP exporter. `internal/server/observe.go` is where requests, attempts and fallbacks are reported to them. Nothing that goes on a span or a label may hold prompt, completion or provider error text
 - `internal/secrets`: provider keys sealed with AES-256-GCM under `secrets_key`, bound to the item they belong to. With SQLite and no `secrets_key`, `transponder.key` next to the database holds a generated one
-- Runtime config in the store: providers, routes, budgets and profiles are rows of `config_items` (kind, id, JSON body, sealed secret, version, source). At start `admin.SyncFile` writes the file's items there as `source: file`, and every reload builds the router and limits from `admin.Runtime`, which reads the store and keeps the file's provider keys out of it. An admin write that would leave a config `Runtime` cannot load is rolled back with 400 `invalid_config`
-- `internal/testutil` (planned): shared fakes
-- `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
+- Runtime config in the store: providers, routes, budgets and profiles are rows of `config_items` (kind, id, JSON body, sealed secret, version, source). At start `admin.SyncFile` writes the file's items there as `source: file`, and every reload builds the router and limits from `admin.Runtime`, which reads the store and keeps the file's provider keys out of it. An admin write that would leave a config `Runtime` cannot load is rolled back with 400 `invalid_config`- `api/openapi.yaml`: the admin API description, embedded by package `api` and served at `/admin/v1/openapi.yaml`
 - `bench/`: the load suite, a fake upstream with fixed latency and body size and a fixed-rate load tool; not part of the gateway. Hot-path Go benchmarks live next to their code in `*_bench_test.go` and use only APIs v0.2.4 has too, so the same files run on the old tag. `cmd/transponder/pprof.go` serves pprof only in a build with `-tags pprof`
 - `docs/`: `design.md` is the approved plan, `architecture.md` the code as built and why, `configuration.md` every config key. `TestConfigReference` in `internal/config` fails when a key, its environment variable or its default is missing from `configuration.md`, and `TestDocsConfigExamples` in `cmd/transponder` loads every YAML example in it with `--config-test`
 - `demo/`: the Docker Compose demo with Prometheus, Grafana and Jaeger. `demo/sim` is its fake provider, key seeder and traffic, and is not part of the gateway. A change to a metric name or label must keep `demo/grafana/dashboards/transponder.json` working; `go test ./demo/...` checks every query names a metric the gateway serves, and the `demo` CI job runs the stack
