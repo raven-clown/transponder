@@ -396,6 +396,7 @@ func startGateway(ctx context.Context, bin, dir, slow, quick string, env []strin
 		for s.Scan() {
 			line := s.Text()
 			g.logs.add(line)
+			_, _ = fmt.Fprintln(logs, line)
 			if next {
 				keys <- strings.TrimSpace(line)
 				next = false
