@@ -454,6 +454,7 @@ Labels: `enhancement`, `help wanted`
 - Sent on every call to that provider, after the provider's own headers. A header the adapter sets itself (`Authorization`, `x-api-key`, `anthropic-version`, `Content-Type`) or a trace header is refused at load with an error naming it, so a config can't break auth by accident.
 - A header name must be a valid HTTP token, and a value may not contain a newline.
 - Headers go over the same connection as `api_key`, so they get the same rule: a `base_url` with plain `http`, common for a local server, sends both in the clear. The docs for `headers` say so next to the one for `api_key`, and a secret header belongs behind `https`.
+- Redirects: no provider client sets `CheckRedirect` today, and Go's default forwards custom headers to any redirect target and allows a move from `https` to `http`. Set `CheckRedirect` on the provider client to refuse a redirect that changes `https` to `http` or goes to another host, so neither `api_key` nor `headers` can leak that way. A refused redirect is a failed attempt like any other. Say so next to the `headers` setting, and test both cases against two `httptest` servers.
 - Through the admin API, header values are sealed with `secrets_key` like `api_key`, since they are often secrets, and reads show only the names and the last four characters.
 
 **Tests:** in `internal/provider`, the headers reach an `httptest` upstream. Config: a refused name, a newline. Admin: create and read back without the values; values survive `transponder secrets rotate`.
