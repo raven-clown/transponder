@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/sse"
@@ -26,6 +27,16 @@ func TestOpeningEvent(t *testing.T) {
 	for _, tt := range tests {
 		if got := OpeningEvent(sse.Event{Data: []byte(tt.data)}); got != tt.want {
 			t.Errorf("OpeningEvent(%s) = %v, want %v", tt.data, got, tt.want)
+		}
+		// Anthropic names every event after its type.
+		var w struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(tt.data), &w) != nil {
+			continue
+		}
+		if got := OpeningEvent(sse.Event{Name: w.Type, Data: []byte(tt.data)}); got != tt.want {
+			t.Errorf("OpeningEvent(%s: %s) = %v, want %v", w.Type, tt.data, got, tt.want)
 		}
 	}
 }

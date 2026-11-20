@@ -206,6 +206,14 @@ func ErrorFrame(errType, message string) []byte {
 // OpeningEvent reports whether a stream event comes before any output: message_start, a ping,
 // or the start of a text block with no text yet.
 func OpeningEvent(ev sse.Event) bool {
+	// Anthropic names each event after its type; only a block start needs its data read.
+	switch ev.Name {
+	case "message_start", "ping":
+		return true
+	case "", "content_block_start":
+	default:
+		return false
+	}
 	var w struct {
 		Type         string `json:"type"`
 		ContentBlock *struct {
