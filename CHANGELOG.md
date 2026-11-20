@@ -42,6 +42,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A stream that fails after events that carry no output yet, such as Anthropic's `overloaded_error` right after `message_start`, an OpenAI role chunk followed by an error, or `response.created` followed by `error`, now falls back to the next target. Those opening events are held back until the first output, so the caller never sees the failed attempt.
 - A stream that stalls after its first output until `request_timeout` now counts against its target for the cooldown, like a stream that breaks. It was treated like a caller who left, so a target that kept stalling stayed first in its routes.
 - The event stream reader no longer reports a cut stream when the last line holds no event, such as a closing comment, so a finished Gemini stream ending that way is not cut off with an error. A byte order mark at the start of a stream is skipped instead of hiding its first line.
+- A `${VARIABLE}` on a YAML comment line no longer has to be set for the config to load. A line that starts with `#` inside a `|` or `>` block is part of the value, so variables there are still expanded.
+- `${VARIABLE}` is now expanded in the parsed file rather than in its text. A secret with ` #` in it was cut off at the `#` without an error, and one with a quote, a leading `*` or a newline broke the file; each is now used whole. A comment after a value, a comment indented less than a block's content, a quoted value over several lines, and a block with an anchor or tag (`key: &a |`) are now each read as YAML reads them. A variable can no longer add keys or list items.
+- An integer setting from the environment, such as `TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=5`, failed to load with `cannot unmarshal !!str`.
 
 ## [0.2.4] - 2026-11-14
 

@@ -239,6 +239,8 @@ routes:
       - provider: local
 ```
 
+`${NAME}` and `$NAME` in a value or a key are replaced from the environment. A missing variable is an error that names it. Comments are left as written, so a commented-out key does not require its variable, while a line that starts with `#` inside a `|` or `>` block or a quoted value is part of the value and is still replaced. The variable's value is used as it is, so a `#`, a quote or a newline in a password stays part of it. A variable fills in part of one value; it cannot add keys or list items.
+
 ```shell
 transponder --config transponder.yaml
 ```

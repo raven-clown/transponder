@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func writeFile(t *testing.T, body string) string {
@@ -84,6 +86,121 @@ func TestLoadExpandsVars(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MISSING") {
 		t.Fatalf("err = %v, want it to name MISSING", err)
 	}
+}
+
+func TestLoadSkipsVarsInCommentLines(t *testing.T) {
+	body := `providers:
+  - name: echo
+    type: echo
+    # api_key: ${UNSET_KEY}
+routes:
+  - match: "*"
+    targets:
+      - provider: echo
+`
+	c, err := Load(writeFile(t, body), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Providers) != 1 || c.Providers[0].Name != "echo" || c.Providers[0].APIKey != "" {
+		t.Fatalf("providers = %+v", c.Providers)
+	}
+}
+
+func TestLoadExpandsHashInsideBlockScalar(t *testing.T) {
+	c, err := Load(writeFile(t, "secrets_key: |-\n  #${KEY}\n"), []string{"KEY=abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SecretsKey != "#abc" {
+		t.Fatalf("SecretsKey = %q", c.SecretsKey)
+	}
+	_, err = Load(writeFile(t, "secrets_key: |-\n  #${NEED}\n# ${SKIP}\n"), nil)
+	if err == nil || err.Error() != "config: environment variables not set: NEED" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestExpandCommentLines(t *testing.T) {
+	env := map[string]string{"HOST": "h"}
+	tests := []struct {
+		name, in, want, missing string
+	}{
+		{name: "indented comment is copied", in: "  # key: ${UNSET}\nb: ${HOST}", want: "  # key: ${UNSET}\nb: h"},
+		{name: "tab before the hash", in: "a: 1\t# ${UNSET}", want: "a: 1"},
+		{name: "a hash after a value is not a comment line", in: "url: http://${HOST}/#${HOST}", want: "url: http://h/#h"},
+		{name: "a missing variable outside comments still fails", in: "# ${UNSET}\nkey: ${ALSO_UNSET}", missing: "ALSO_UNSET"},
+		{name: "a hash line inside a literal block is expanded", in: "key: |\n  # ${HOST}\n  v: ${HOST}", want: "key: |\n  # h\n  v: h"},
+		{name: "a hash line inside a folded block is expanded", in: "key: >-\n  # ${HOST}\n", want: "key: >-\n  # h\n"},
+		{name: "a comment after the block is copied", in: "key: |\n  ${HOST}\n# ${UNSET}\n", want: "key: |\n  h\n# ${UNSET}\n"},
+		{name: "a comment on the block header is copied", in: "key: | # ${UNSET}\n  # ${HOST}\n", want: "key: | # ${UNSET}\n  # h\n"},
+		{name: "a comment glued to the indicator is copied", in: "key: |# ${UNSET}\n  #${HOST}\n", want: "key: |# ${UNSET}\n  #h\n"},
+		{name: "an unset variable inside a block still fails", in: "# ${SKIP}\nkey: |\n  # ${UNSET}\n", missing: "UNSET"},
+		{name: "a pipe inside a plain value is not a block", in: "note: use | to pipe ${HOST}\n# ${UNSET}\n", want: "note: use | to pipe h\n# ${UNSET}\n"},
+		{name: "a blank line does not end the block", in: "key: |\n\n  # ${HOST}\n# ${UNSET}", want: "key: |\n\n  # h\n# ${UNSET}"},
+		{name: "content is indented further than its header", in: "outer:\n  key: |\n    # ${HOST}\n  # ${UNSET}\n  other: ${HOST}", want: "outer:\n  key: |\n    # h\n  # ${UNSET}\n  other: h"},
+		{name: "a sequence block expands a hash line", in: "- |\n  # ${HOST}\n- ${HOST}", want: "- |\n  # h\n- h"},
+		{name: "a sibling of a sequence key is outside the block", in: "- name: |\n    # ${HOST}\n  # ${UNSET}\n  age: ${HOST}", want: "- name: |\n    # h\n  # ${UNSET}\n  age: h"},
+		{name: "a carriage return is preserved", in: "# ${UNSET}\r\nkey: ${HOST}\r\n", want: "# ${UNSET}\r\nkey: h\r\n"},
+		{name: "a key is expanded", in: "${HOST}: 1", want: "h: 1"},
+		{name: "two missing variables are named once each, sorted", in: "a: ${B}${A}\nb: ${A}", missing: "A, B"},
+		{name: "a merge key keeps the expanded anchor", in: "base: &b {x: '${HOST}'}\nuse:\n  <<: *b\n", want: "base: {x: h}\nuse: {x: h}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := expand([]byte(tt.in), env)
+			if tt.missing != "" {
+				if err == nil || err.Error() != "config: environment variables not set: "+tt.missing {
+					t.Fatalf("err = %v, want only %s named", err, tt.missing)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got, want any
+			if err := doc.Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			if err := yaml.Unmarshal([]byte(tt.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("expand = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+// FuzzExpand checks that expansion never panics, and that a file without a $ parses as it would
+// without expansion.
+func FuzzExpand(f *testing.F) {
+	for _, s := range []string{
+		"secrets_key: ${K}\n",
+		"key: |\n  # ${K}\n# ${U}\n",
+		"a: [${K}, $K]\nb: {c: \"${K}\"}\n",
+		"x: &a ${K}\ny: *a\nz:\n  <<: {m: 1}\n",
+		"- ? ${K}\n  : >-\n    #${K}\n",
+		"plain: 1\n",
+	} {
+		f.Add(s)
+	}
+	env := map[string]string{"K": "v #: 'x\"\n"}
+	f.Fuzz(func(t *testing.T, in string) {
+		doc, err := expand([]byte(in), env)
+		if strings.Contains(in, "$") || err != nil {
+			return
+		}
+		var got, want any
+		gotErr := doc.Decode(&got)
+		wantErr := yaml.Unmarshal([]byte(in), &want)
+		if (gotErr == nil) != (wantErr == nil) {
+			t.Fatalf("decode errors differ: %v and %v", gotErr, wantErr)
+		}
+		if gotErr == nil && !reflect.DeepEqual(got, want) {
+			t.Fatalf("expand changed a file without variables: %#v, want %#v", got, want)
+		}
+	})
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
@@ -445,6 +562,110 @@ func TestLoadUpdateCheck(t *testing.T) {
 	c, err = Load("", nil)
 	if err != nil || c.UpdateCheck {
 		t.Fatalf("default must be off: %+v %v", c, err)
+	}
+}
+
+func TestLoadIntEnvOverride(t *testing.T) {
+	c, err := Load("", []string{"TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Settings.CooldownFailures != 5 {
+		t.Fatalf("cooldown_failures = %d", c.Settings.CooldownFailures)
+	}
+	if _, err := Load("", []string{"TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=many"}); err == nil || !strings.Contains(err.Error(), "many") {
+		t.Fatalf("err = %v, want it to name the value", err)
+	}
+}
+
+func TestLoadExpandsEdgeCases(t *testing.T) {
+	env := []string{"HOST=h", "SECRET=a #b: c", "QUOTED=\"x' *y", "LINES=one\ntwo", "N=7", "ON=true", "USD=2.5"}
+	tests := []struct {
+		name string
+		body string
+		want func(*Bootstrap) bool
+	}{
+		{
+			name: "a comment indented less than block content is not content",
+			body: "secrets_key: |-\n    a${HOST}\n  # ${UNSET}\nlog_level: info\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "ah" },
+		},
+		{
+			name: "a quoted scalar over lines with a hash line is expanded",
+			body: "secrets_key: \"a\n  #${HOST}\"\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "a #h" },
+		},
+		{
+			name: "a block header with an anchor is a block",
+			body: "secrets_key: &k |-\n  #${HOST}\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "#h" },
+		},
+		{
+			name: "a block header with a tag is a block",
+			body: "secrets_key: !!str |-\n  #${HOST}\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "#h" },
+		},
+		{
+			name: "a comment after a value is not expanded",
+			body: "secrets_key: ${HOST} # was ${UNSET}\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "h" },
+		},
+		{
+			name: "a value with a hash and a colon is kept whole",
+			body: "secrets_key: ${SECRET}\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "a #b: c" },
+		},
+		{
+			name: "a value with quotes and a star is kept whole",
+			body: "secrets_key: ${QUOTED}\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "\"x' *y" },
+		},
+		{
+			name: "a value over two lines is kept whole",
+			body: "secrets_key: ${LINES}\nlog_level: info\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "one\ntwo" },
+		},
+		{
+			name: "a variable inside a flow list",
+			body: "providers: [{name: e, type: echo}]\nroutes:\n  - {match: '*', allow: [user:${HOST}], targets: [{provider: e}]}\n",
+			want: func(c *Bootstrap) bool {
+				return len(c.Routes) == 1 && reflect.DeepEqual(c.Routes[0].Allow, []string{"user:h"})
+			},
+		},
+		{
+			name: "plain values keep their type",
+			body: "update_check: ${ON}\nsettings:\n  cooldown_failures: ${N}\nbudgets:\n  - {subject: 'user:*', period: daily, limit_usd: ${USD}}\n",
+			want: func(c *Bootstrap) bool {
+				return c.UpdateCheck && c.Settings.CooldownFailures == 7 && len(c.Budgets) == 1 && c.Budgets[0].LimitUSD == 2.5
+			},
+		},
+		{
+			name: "a quoted value stays a string",
+			body: "secrets_key: \"${N}\"\n",
+			want: func(c *Bootstrap) bool { return c.SecretsKey == "7" },
+		},
+		{
+			name: "an alias repeats the expanded value",
+			body: "secrets_key: &k ${HOST}x\nprovider_note: *k\n",
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(writeFile(t, tt.body), env)
+			if tt.want == nil {
+				if err == nil || strings.Contains(err.Error(), "environment") {
+					t.Fatalf("err = %v, want the unknown key refused", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tt.want(c) {
+				t.Fatalf("config = %+v", c)
+			}
+		})
 	}
 }
 
