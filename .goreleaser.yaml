@@ -1,0 +1,38 @@
+version: 2
+
+project_name: transponder
+
+builds:
+  - main: ./cmd/transponder
+    binary: transponder
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
+
+# The release already exists: it is created by hand with gh release create, and
+# the release workflow writes its notes from release.json.
+release:
+  mode: keep-existing

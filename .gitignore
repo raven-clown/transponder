@@ -1,0 +1,7 @@
+cover.out
+/transponder
+/transponder.exe
+*.db
+*.db-*
+transponder.key
+/dist/

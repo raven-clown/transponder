@@ -1,0 +1,409 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590" role="img" aria-label="transponder: three requests step through the gateway. alice's first provider fails with 503 and transponder falls back, then each caller's spend goes up.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef3fa"/></linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9333EA"/><stop offset="1" stop-color="#DB2777"/></linearGradient>
+    <linearGradient id="accentv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9333EA"/><stop offset="1" stop-color="#DB2777"/></linearGradient>
+    <radialGradient id="glow" cx="0.4" cy="0.3" r="0.5"><stop offset="0" stop-color="#DB2777" stop-opacity="0.1"/><stop offset="1" stop-color="#DB2777" stop-opacity="0"/></radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+    <clipPath id="frame"><rect width="1200" height="590" rx="16"/></clipPath>
+    <linearGradient id="p0-g" gradientUnits="userSpaceOnUse" x1="60" y1="60" x2="452" y2="452"><stop offset="0" stop-color="#C084FC"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+    <linearGradient id="p0-f0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p0-f1" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p0-f2" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p0-f3" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <g id="p0-sil"><path d="M104 196 A150 150 0 0 0 322 372 Z" fill-rule="nonzero"/><path d="M206 318 L238 318 L254 420 L190 420 Z" fill-rule="nonzero"/><path d="M156 420 H288 A10 10 0 0 1 298 430 V434 A10 10 0 0 1 288 444 H156 A10 10 0 0 1 146 434 V430 A10 10 0 0 1 156 420 Z" fill-rule="nonzero"/><path d="M222 290 L236 302 L330 176 L316 164 Z" fill-rule="nonzero"/><path d="M314 158 A24 24 0 1 0 362 158 A24 24 0 1 0 314 158 Z" fill-rule="nonzero"/><path d="M346.4 88.5 A70 70 0 0 1 407.9 161.5 L387.9 160.5 A50 50 0 0 0 344 108.4 Z" fill-rule="nonzero"/><path d="M351.3 48.8 A110 110 0 0 1 447.9 163.5 L427.9 162.5 A90 90 0 0 0 348.8 68.7 Z" fill-rule="nonzero"/></g>
+    <clipPath id="p0-c0"><path d="M230 262 L260.4 312.8 L282.7 284.1 Z"/></clipPath>
+    <clipPath id="p0-c1"><path d="M230 262 L228.7 306.3 L260.4 312.8 Z"/></clipPath>
+    <clipPath id="p0-c2"><path d="M230 262 L199.3 303.8 L228.7 306.3 Z"/></clipPath>
+    <clipPath id="p0-c3"><path d="M230 262 L170.1 288.3 L199.3 303.8 Z"/></clipPath>
+    <clipPath id="p0-c4"><path d="M230 262 L164.2 270.7 L170.1 288.3 Z"/></clipPath>
+    <clipPath id="p0-c5"><path d="M230 262 L178.7 228.5 L164.2 270.7 Z"/></clipPath>
+    <clipPath id="p0-c6"><path d="M230 262 L222.8 218.5 L178.7 228.5 Z"/></clipPath>
+    <clipPath id="p0-c7"><path d="M230 262 L240.9 213.3 L222.8 218.5 Z"/></clipPath>
+    <clipPath id="p0-c8"><path d="M230 262 L288.8 221.3 L240.9 213.3 Z"/></clipPath>
+    <clipPath id="p0-c9"><path d="M230 262 L280.1 247.9 L288.8 221.3 Z"/></clipPath>
+    <clipPath id="p0-c10"><path d="M230 262 L282.7 284.1 L280.1 247.9 Z"/></clipPath>
+    <clipPath id="p0-c11"><path d="M282.7 284.1 L260.4 312.8 L291.7 378.4 L356.6 324.4 Z"/></clipPath>
+    <clipPath id="p0-c12"><path d="M260.4 312.8 L228.7 306.3 L210.5 406 L291.7 378.4 Z"/></clipPath>
+    <clipPath id="p0-c13"><path d="M228.7 306.3 L199.3 303.8 L151.4 391 L210.5 406 Z"/></clipPath>
+    <clipPath id="p0-c14"><path d="M199.3 303.8 L170.1 288.3 L105.3 316.6 L151.4 391 Z"/></clipPath>
+    <clipPath id="p0-c15"><path d="M170.1 288.3 L164.2 270.7 L101.2 280.3 L105.3 316.6 Z"/></clipPath>
+    <clipPath id="p0-c16"><path d="M164.2 270.7 L178.7 228.5 L122.6 181.2 L101.2 280.3 Z"/></clipPath>
+    <clipPath id="p0-c17"><path d="M178.7 228.5 L222.8 218.5 L206 138.2 L122.6 181.2 Z"/></clipPath>
+    <clipPath id="p0-c18"><path d="M222.8 218.5 L240.9 213.3 L261.4 130.2 L206 138.2 Z"/></clipPath>
+    <clipPath id="p0-c19"><path d="M240.9 213.3 L288.8 221.3 L347.5 170.6 L261.4 130.2 Z"/></clipPath>
+    <clipPath id="p0-c20"><path d="M288.8 221.3 L280.1 247.9 L357 216.8 L347.5 170.6 Z"/></clipPath>
+    <clipPath id="p0-c21"><path d="M280.1 247.9 L282.7 284.1 L356.6 324.4 L357 216.8 Z"/></clipPath>
+    <clipPath id="p0-c22"><path d="M356.6 324.4 L291.7 378.4 L374.1 465.5 L455.3 349.7 Z"/></clipPath>
+    <clipPath id="p0-c23"><path d="M291.7 378.4 L210.5 406 L201.6 503.3 L374.1 465.5 Z"/></clipPath>
+    <clipPath id="p0-c24"><path d="M210.5 406 L151.4 391 L101.5 443.7 L201.6 503.3 Z"/></clipPath>
+    <clipPath id="p0-c25"><path d="M151.4 391 L105.3 316.6 L12.2 342.7 L101.5 443.7 Z"/></clipPath>
+    <clipPath id="p0-c26"><path d="M105.3 316.6 L101.2 280.3 L10 293.9 L12.2 342.7 Z"/></clipPath>
+    <clipPath id="p0-c27"><path d="M101.2 280.3 L122.6 181.2 L55.5 116.7 L10 293.9 Z"/></clipPath>
+    <clipPath id="p0-c28"><path d="M122.6 181.2 L206 138.2 L189.1 38.2 L55.5 116.7 Z"/></clipPath>
+    <clipPath id="p0-c29"><path d="M206 138.2 L261.4 130.2 L308.6 26.8 L189.1 38.2 Z"/></clipPath>
+    <clipPath id="p0-c30"><path d="M261.4 130.2 L347.5 170.6 L410.3 116.6 L308.6 26.8 Z"/></clipPath>
+    <clipPath id="p0-c31"><path d="M347.5 170.6 L357 216.8 L456.1 191.9 L410.3 116.6 Z"/></clipPath>
+    <clipPath id="p0-c32"><path d="M357 216.8 L356.6 324.4 L455.3 349.7 L456.1 191.9 Z"/></clipPath>
+    <clipPath id="p0-c33"><path d="M455.3 349.7 L374.1 465.5 L505.6 749.5 L750.4 468.8 Z"/></clipPath>
+    <clipPath id="p0-c34"><path d="M374.1 465.5 L201.6 503.3 L168.2 818.6 L505.6 749.5 Z"/></clipPath>
+    <clipPath id="p0-c35"><path d="M201.6 503.3 L101.5 443.7 L-98 715.9 L168.2 818.6 Z"/></clipPath>
+    <clipPath id="p0-c36"><path d="M101.5 443.7 L12.2 342.7 L-278.8 495.8 L-98 715.9 Z"/></clipPath>
+    <clipPath id="p0-c37"><path d="M12.2 342.7 L10 293.9 L-329.9 272.1 L-278.8 495.8 Z"/></clipPath>
+    <clipPath id="p0-c38"><path d="M10 293.9 L55.5 116.7 L-240.5 -41.7 L-329.9 272.1 Z"/></clipPath>
+    <clipPath id="p0-c39"><path d="M55.5 116.7 L189.1 38.2 L97.6 -282.1 L-240.5 -41.7 Z"/></clipPath>
+    <clipPath id="p0-c40"><path d="M189.1 38.2 L308.6 26.8 L382.7 -276.8 L97.6 -282.1 Z"/></clipPath>
+    <clipPath id="p0-c41"><path d="M308.6 26.8 L410.3 116.6 L692.2 -54.1 L382.7 -276.8 Z"/></clipPath>
+    <clipPath id="p0-c42"><path d="M410.3 116.6 L456.1 191.9 L753.8 63.9 L692.2 -54.1 Z"/></clipPath>
+    <clipPath id="p0-c43"><path d="M456.1 191.9 L455.3 349.7 L750.4 468.8 L753.8 63.9 Z"/></clipPath>
+    <linearGradient id="p1-g" gradientUnits="userSpaceOnUse" x1="60" y1="60" x2="452" y2="452"><stop offset="0" stop-color="#C084FC"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+    <linearGradient id="p1-f0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p1-f1" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p1-f2" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p1-f3" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <g id="p1-sil"><path d="M104 196 A150 150 0 0 0 322 372 Z" fill-rule="nonzero"/><path d="M206 318 L238 318 L254 420 L190 420 Z" fill-rule="nonzero"/><path d="M156 420 H288 A10 10 0 0 1 298 430 V434 A10 10 0 0 1 288 444 H156 A10 10 0 0 1 146 434 V430 A10 10 0 0 1 156 420 Z" fill-rule="nonzero"/><path d="M222 290 L236 302 L330 176 L316 164 Z" fill-rule="nonzero"/><path d="M314 158 A24 24 0 1 0 362 158 A24 24 0 1 0 314 158 Z" fill-rule="nonzero"/><path d="M346.4 88.5 A70 70 0 0 1 407.9 161.5 L387.9 160.5 A50 50 0 0 0 344 108.4 Z" fill-rule="nonzero"/><path d="M351.3 48.8 A110 110 0 0 1 447.9 163.5 L427.9 162.5 A90 90 0 0 0 348.8 68.7 Z" fill-rule="nonzero"/></g>
+    <clipPath id="p1-c0"><path d="M230 262 L260.4 312.8 L282.7 284.1 Z"/></clipPath>
+    <clipPath id="p1-c1"><path d="M230 262 L228.7 306.3 L260.4 312.8 Z"/></clipPath>
+    <clipPath id="p1-c2"><path d="M230 262 L199.3 303.8 L228.7 306.3 Z"/></clipPath>
+    <clipPath id="p1-c3"><path d="M230 262 L170.1 288.3 L199.3 303.8 Z"/></clipPath>
+    <clipPath id="p1-c4"><path d="M230 262 L164.2 270.7 L170.1 288.3 Z"/></clipPath>
+    <clipPath id="p1-c5"><path d="M230 262 L178.7 228.5 L164.2 270.7 Z"/></clipPath>
+    <clipPath id="p1-c6"><path d="M230 262 L222.8 218.5 L178.7 228.5 Z"/></clipPath>
+    <clipPath id="p1-c7"><path d="M230 262 L240.9 213.3 L222.8 218.5 Z"/></clipPath>
+    <clipPath id="p1-c8"><path d="M230 262 L288.8 221.3 L240.9 213.3 Z"/></clipPath>
+    <clipPath id="p1-c9"><path d="M230 262 L280.1 247.9 L288.8 221.3 Z"/></clipPath>
+    <clipPath id="p1-c10"><path d="M230 262 L282.7 284.1 L280.1 247.9 Z"/></clipPath>
+    <clipPath id="p1-c11"><path d="M282.7 284.1 L260.4 312.8 L291.7 378.4 L356.6 324.4 Z"/></clipPath>
+    <clipPath id="p1-c12"><path d="M260.4 312.8 L228.7 306.3 L210.5 406 L291.7 378.4 Z"/></clipPath>
+    <clipPath id="p1-c13"><path d="M228.7 306.3 L199.3 303.8 L151.4 391 L210.5 406 Z"/></clipPath>
+    <clipPath id="p1-c14"><path d="M199.3 303.8 L170.1 288.3 L105.3 316.6 L151.4 391 Z"/></clipPath>
+    <clipPath id="p1-c15"><path d="M170.1 288.3 L164.2 270.7 L101.2 280.3 L105.3 316.6 Z"/></clipPath>
+    <clipPath id="p1-c16"><path d="M164.2 270.7 L178.7 228.5 L122.6 181.2 L101.2 280.3 Z"/></clipPath>
+    <clipPath id="p1-c17"><path d="M178.7 228.5 L222.8 218.5 L206 138.2 L122.6 181.2 Z"/></clipPath>
+    <clipPath id="p1-c18"><path d="M222.8 218.5 L240.9 213.3 L261.4 130.2 L206 138.2 Z"/></clipPath>
+    <clipPath id="p1-c19"><path d="M240.9 213.3 L288.8 221.3 L347.5 170.6 L261.4 130.2 Z"/></clipPath>
+    <clipPath id="p1-c20"><path d="M288.8 221.3 L280.1 247.9 L357 216.8 L347.5 170.6 Z"/></clipPath>
+    <clipPath id="p1-c21"><path d="M280.1 247.9 L282.7 284.1 L356.6 324.4 L357 216.8 Z"/></clipPath>
+    <clipPath id="p1-c22"><path d="M356.6 324.4 L291.7 378.4 L374.1 465.5 L455.3 349.7 Z"/></clipPath>
+    <clipPath id="p1-c23"><path d="M291.7 378.4 L210.5 406 L201.6 503.3 L374.1 465.5 Z"/></clipPath>
+    <clipPath id="p1-c24"><path d="M210.5 406 L151.4 391 L101.5 443.7 L201.6 503.3 Z"/></clipPath>
+    <clipPath id="p1-c25"><path d="M151.4 391 L105.3 316.6 L12.2 342.7 L101.5 443.7 Z"/></clipPath>
+    <clipPath id="p1-c26"><path d="M105.3 316.6 L101.2 280.3 L10 293.9 L12.2 342.7 Z"/></clipPath>
+    <clipPath id="p1-c27"><path d="M101.2 280.3 L122.6 181.2 L55.5 116.7 L10 293.9 Z"/></clipPath>
+    <clipPath id="p1-c28"><path d="M122.6 181.2 L206 138.2 L189.1 38.2 L55.5 116.7 Z"/></clipPath>
+    <clipPath id="p1-c29"><path d="M206 138.2 L261.4 130.2 L308.6 26.8 L189.1 38.2 Z"/></clipPath>
+    <clipPath id="p1-c30"><path d="M261.4 130.2 L347.5 170.6 L410.3 116.6 L308.6 26.8 Z"/></clipPath>
+    <clipPath id="p1-c31"><path d="M347.5 170.6 L357 216.8 L456.1 191.9 L410.3 116.6 Z"/></clipPath>
+    <clipPath id="p1-c32"><path d="M357 216.8 L356.6 324.4 L455.3 349.7 L456.1 191.9 Z"/></clipPath>
+    <clipPath id="p1-c33"><path d="M455.3 349.7 L374.1 465.5 L505.6 749.5 L750.4 468.8 Z"/></clipPath>
+    <clipPath id="p1-c34"><path d="M374.1 465.5 L201.6 503.3 L168.2 818.6 L505.6 749.5 Z"/></clipPath>
+    <clipPath id="p1-c35"><path d="M201.6 503.3 L101.5 443.7 L-98 715.9 L168.2 818.6 Z"/></clipPath>
+    <clipPath id="p1-c36"><path d="M101.5 443.7 L12.2 342.7 L-278.8 495.8 L-98 715.9 Z"/></clipPath>
+    <clipPath id="p1-c37"><path d="M12.2 342.7 L10 293.9 L-329.9 272.1 L-278.8 495.8 Z"/></clipPath>
+    <clipPath id="p1-c38"><path d="M10 293.9 L55.5 116.7 L-240.5 -41.7 L-329.9 272.1 Z"/></clipPath>
+    <clipPath id="p1-c39"><path d="M55.5 116.7 L189.1 38.2 L97.6 -282.1 L-240.5 -41.7 Z"/></clipPath>
+    <clipPath id="p1-c40"><path d="M189.1 38.2 L308.6 26.8 L382.7 -276.8 L97.6 -282.1 Z"/></clipPath>
+    <clipPath id="p1-c41"><path d="M308.6 26.8 L410.3 116.6 L692.2 -54.1 L382.7 -276.8 Z"/></clipPath>
+    <clipPath id="p1-c42"><path d="M410.3 116.6 L456.1 191.9 L753.8 63.9 L692.2 -54.1 Z"/></clipPath>
+    <clipPath id="p1-c43"><path d="M456.1 191.9 L455.3 349.7 L750.4 468.8 L753.8 63.9 Z"/></clipPath>
+    <linearGradient id="p2-g" gradientUnits="userSpaceOnUse" x1="60" y1="60" x2="452" y2="452"><stop offset="0" stop-color="#C084FC"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+    <linearGradient id="p2-f0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p2-f1" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p2-f2" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="p2-f3" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <g id="p2-sil"><path d="M104 196 A150 150 0 0 0 322 372 Z" fill-rule="nonzero"/><path d="M206 318 L238 318 L254 420 L190 420 Z" fill-rule="nonzero"/><path d="M156 420 H288 A10 10 0 0 1 298 430 V434 A10 10 0 0 1 288 444 H156 A10 10 0 0 1 146 434 V430 A10 10 0 0 1 156 420 Z" fill-rule="nonzero"/><path d="M222 290 L236 302 L330 176 L316 164 Z" fill-rule="nonzero"/><path d="M314 158 A24 24 0 1 0 362 158 A24 24 0 1 0 314 158 Z" fill-rule="nonzero"/><path d="M346.4 88.5 A70 70 0 0 1 407.9 161.5 L387.9 160.5 A50 50 0 0 0 344 108.4 Z" fill-rule="nonzero"/><path d="M351.3 48.8 A110 110 0 0 1 447.9 163.5 L427.9 162.5 A90 90 0 0 0 348.8 68.7 Z" fill-rule="nonzero"/></g>
+    <clipPath id="p2-c0"><path d="M230 262 L260.4 312.8 L282.7 284.1 Z"/></clipPath>
+    <clipPath id="p2-c1"><path d="M230 262 L228.7 306.3 L260.4 312.8 Z"/></clipPath>
+    <clipPath id="p2-c2"><path d="M230 262 L199.3 303.8 L228.7 306.3 Z"/></clipPath>
+    <clipPath id="p2-c3"><path d="M230 262 L170.1 288.3 L199.3 303.8 Z"/></clipPath>
+    <clipPath id="p2-c4"><path d="M230 262 L164.2 270.7 L170.1 288.3 Z"/></clipPath>
+    <clipPath id="p2-c5"><path d="M230 262 L178.7 228.5 L164.2 270.7 Z"/></clipPath>
+    <clipPath id="p2-c6"><path d="M230 262 L222.8 218.5 L178.7 228.5 Z"/></clipPath>
+    <clipPath id="p2-c7"><path d="M230 262 L240.9 213.3 L222.8 218.5 Z"/></clipPath>
+    <clipPath id="p2-c8"><path d="M230 262 L288.8 221.3 L240.9 213.3 Z"/></clipPath>
+    <clipPath id="p2-c9"><path d="M230 262 L280.1 247.9 L288.8 221.3 Z"/></clipPath>
+    <clipPath id="p2-c10"><path d="M230 262 L282.7 284.1 L280.1 247.9 Z"/></clipPath>
+    <clipPath id="p2-c11"><path d="M282.7 284.1 L260.4 312.8 L291.7 378.4 L356.6 324.4 Z"/></clipPath>
+    <clipPath id="p2-c12"><path d="M260.4 312.8 L228.7 306.3 L210.5 406 L291.7 378.4 Z"/></clipPath>
+    <clipPath id="p2-c13"><path d="M228.7 306.3 L199.3 303.8 L151.4 391 L210.5 406 Z"/></clipPath>
+    <clipPath id="p2-c14"><path d="M199.3 303.8 L170.1 288.3 L105.3 316.6 L151.4 391 Z"/></clipPath>
+    <clipPath id="p2-c15"><path d="M170.1 288.3 L164.2 270.7 L101.2 280.3 L105.3 316.6 Z"/></clipPath>
+    <clipPath id="p2-c16"><path d="M164.2 270.7 L178.7 228.5 L122.6 181.2 L101.2 280.3 Z"/></clipPath>
+    <clipPath id="p2-c17"><path d="M178.7 228.5 L222.8 218.5 L206 138.2 L122.6 181.2 Z"/></clipPath>
+    <clipPath id="p2-c18"><path d="M222.8 218.5 L240.9 213.3 L261.4 130.2 L206 138.2 Z"/></clipPath>
+    <clipPath id="p2-c19"><path d="M240.9 213.3 L288.8 221.3 L347.5 170.6 L261.4 130.2 Z"/></clipPath>
+    <clipPath id="p2-c20"><path d="M288.8 221.3 L280.1 247.9 L357 216.8 L347.5 170.6 Z"/></clipPath>
+    <clipPath id="p2-c21"><path d="M280.1 247.9 L282.7 284.1 L356.6 324.4 L357 216.8 Z"/></clipPath>
+    <clipPath id="p2-c22"><path d="M356.6 324.4 L291.7 378.4 L374.1 465.5 L455.3 349.7 Z"/></clipPath>
+    <clipPath id="p2-c23"><path d="M291.7 378.4 L210.5 406 L201.6 503.3 L374.1 465.5 Z"/></clipPath>
+    <clipPath id="p2-c24"><path d="M210.5 406 L151.4 391 L101.5 443.7 L201.6 503.3 Z"/></clipPath>
+    <clipPath id="p2-c25"><path d="M151.4 391 L105.3 316.6 L12.2 342.7 L101.5 443.7 Z"/></clipPath>
+    <clipPath id="p2-c26"><path d="M105.3 316.6 L101.2 280.3 L10 293.9 L12.2 342.7 Z"/></clipPath>
+    <clipPath id="p2-c27"><path d="M101.2 280.3 L122.6 181.2 L55.5 116.7 L10 293.9 Z"/></clipPath>
+    <clipPath id="p2-c28"><path d="M122.6 181.2 L206 138.2 L189.1 38.2 L55.5 116.7 Z"/></clipPath>
+    <clipPath id="p2-c29"><path d="M206 138.2 L261.4 130.2 L308.6 26.8 L189.1 38.2 Z"/></clipPath>
+    <clipPath id="p2-c30"><path d="M261.4 130.2 L347.5 170.6 L410.3 116.6 L308.6 26.8 Z"/></clipPath>
+    <clipPath id="p2-c31"><path d="M347.5 170.6 L357 216.8 L456.1 191.9 L410.3 116.6 Z"/></clipPath>
+    <clipPath id="p2-c32"><path d="M357 216.8 L356.6 324.4 L455.3 349.7 L456.1 191.9 Z"/></clipPath>
+    <clipPath id="p2-c33"><path d="M455.3 349.7 L374.1 465.5 L505.6 749.5 L750.4 468.8 Z"/></clipPath>
+    <clipPath id="p2-c34"><path d="M374.1 465.5 L201.6 503.3 L168.2 818.6 L505.6 749.5 Z"/></clipPath>
+    <clipPath id="p2-c35"><path d="M201.6 503.3 L101.5 443.7 L-98 715.9 L168.2 818.6 Z"/></clipPath>
+    <clipPath id="p2-c36"><path d="M101.5 443.7 L12.2 342.7 L-278.8 495.8 L-98 715.9 Z"/></clipPath>
+    <clipPath id="p2-c37"><path d="M12.2 342.7 L10 293.9 L-329.9 272.1 L-278.8 495.8 Z"/></clipPath>
+    <clipPath id="p2-c38"><path d="M10 293.9 L55.5 116.7 L-240.5 -41.7 L-329.9 272.1 Z"/></clipPath>
+    <clipPath id="p2-c39"><path d="M55.5 116.7 L189.1 38.2 L97.6 -282.1 L-240.5 -41.7 Z"/></clipPath>
+    <clipPath id="p2-c40"><path d="M189.1 38.2 L308.6 26.8 L382.7 -276.8 L97.6 -282.1 Z"/></clipPath>
+    <clipPath id="p2-c41"><path d="M308.6 26.8 L410.3 116.6 L692.2 -54.1 L382.7 -276.8 Z"/></clipPath>
+    <clipPath id="p2-c42"><path d="M410.3 116.6 L456.1 191.9 L753.8 63.9 L692.2 -54.1 Z"/></clipPath>
+    <clipPath id="p2-c43"><path d="M456.1 191.9 L455.3 349.7 L750.4 468.8 L753.8 63.9 Z"/></clipPath>
+  </defs>
+  <rect width="1200" height="590" rx="16" fill="url(#bg)"/>
+  <g clip-path="url(#frame)">
+  <rect width="1200" height="590" fill="url(#glow)"/>
+  <rect x="40" y="36" width="1120" height="100" rx="14" fill="#ffffff" fill-opacity="0.55" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="64" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1f2328">alice</text>
+  <text x="64" y="104" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#6e7781">key: alice</text>
+  <rect x="230" y="58" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="246" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">request</text>
+  <text x="246" y="100" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">POST /v1/chat</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.000;0.025;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="230" y="58" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <path d="M380 86 H420" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="420" y="58" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <g transform="translate(428 62) scale(0.0938)">
+    <g transform="translate(1.9 1.6)"><g transform="rotate(-0.2 257.7 286.3)"><g clip-path="url(#p0-c0)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.97"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(0.7 2.4)"><g transform="rotate(0.5 239.7 293.7)"><g clip-path="url(#p0-c1)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.74"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(-0.9 2.3)"><g transform="rotate(-0.3 219.3 290.7)"><g clip-path="url(#p0-c2)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.91"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(-2 1.5)"><g transform="rotate(-0.2 199.8 284.7)"><g clip-path="url(#p0-c3)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.80"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-2.4 0.7)"><g transform="rotate(0.1 188.1 273.7)"><g clip-path="url(#p0-c4)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.93"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(-2.4 -0.5)"><g transform="rotate(-0.2 191 253.7)"><g clip-path="url(#p0-c5)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.93"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(-1.5 -2)"><g transform="rotate(-0.1 210.5 236.4)"><g clip-path="url(#p0-c6)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.77"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(0.1 -2.5)"><g transform="rotate(0.3 231.2 231.3)"><g clip-path="url(#p0-c7)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.79"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(1.5 -2)"><g transform="rotate(-0.4 253.2 232.2)"><g clip-path="url(#p0-c8)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.90"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(2.2 -1.1)"><g transform="rotate(0.3 266.3 243.7)"><g clip-path="url(#p0-c9)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.87"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(2.5 0.2)"><g transform="rotate(0.1 264.3 264.7)"><g clip-path="url(#p0-c10)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.83"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(4.2 3.9)"><g transform="rotate(-0.8 297.8 324.9)"><g clip-path="url(#p0-c11)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.94"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(1.1 5.6)"><g transform="rotate(0.9 247.8 350.9)"><g clip-path="url(#p0-c12)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.92"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(-1.9 5.4)"><g transform="rotate(1 197.5 351.8)"><g clip-path="url(#p0-c13)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.91"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(-4.3 3.7)"><g transform="rotate(0.2 156.5 324.9)"><g clip-path="url(#p0-c14)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.79"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(-5.5 1.6)"><g transform="rotate(0.3 135.2 289)"><g clip-path="url(#p0-c15)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.81"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-5.5 -1.4)"><g transform="rotate(0.8 141.7 240.2)"><g clip-path="url(#p0-c16)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.81"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(-3.2 -4.7)"><g transform="rotate(-0.7 182.5 191.6)"><g clip-path="url(#p0-c17)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.91"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(0.2 -5.7)"><g transform="rotate(-0.1 232.8 175.1)"><g clip-path="url(#p0-c18)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.90"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(3.3 -4.7)"><g transform="rotate(0.3 284.7 183.9)"><g clip-path="url(#p0-c19)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.82"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(5 -2.7)"><g transform="rotate(0.1 318.4 214.1)"><g clip-path="url(#p0-c20)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.96"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(5.7 0.4)"><g transform="rotate(-0.9 319.1 268.3)"><g clip-path="url(#p0-c21)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.89"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(6.8 5.7)"><g transform="rotate(-0.9 369.4 379.5)"><g clip-path="url(#p0-c22)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.91"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(1.9 8.7)"><g transform="rotate(0.9 269.5 438.3)"><g clip-path="url(#p0-c23)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.95"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(-3.1 8.4)"><g transform="rotate(0.1 166.3 436)"><g clip-path="url(#p0-c24)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.76"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(-6.9 5.6)"><g transform="rotate(1.2 92.6 373.5)"><g clip-path="url(#p0-c25)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.81"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(-8.6 2.3)"><g transform="rotate(0.6 57.2 308.4)"><g clip-path="url(#p0-c26)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.96"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-8.6 -2.4)"><g transform="rotate(-0.6 72.3 218)"><g clip-path="url(#p0-c27)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.85"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-4.6 -7.6)"><g transform="rotate(-0.4 143.3 118.6)"><g clip-path="url(#p0-c28)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.77"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(0.6 -8.9)"><g transform="rotate(-0.4 241.3 83.3)"><g clip-path="url(#p0-c29)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.80"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(5 -7.4)"><g transform="rotate(-1.2 332 111)"><g clip-path="url(#p0-c30)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.84"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(7.8 -4.2)"><g transform="rotate(0.4 392.7 174)"><g clip-path="url(#p0-c31)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.78"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(8.9 0.4)"><g transform="rotate(-1.2 406.2 270.7)"><g clip-path="url(#p0-c32)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.90"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(9.2 7.8)"><g transform="rotate(0.2 521.3 508.4)"><g clip-path="url(#p0-c33)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.75"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(2.6 11.8)"><g transform="rotate(-0.5 312.4 634.2)"><g clip-path="url(#p0-c34)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.89"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(-4.3 11.3)"><g transform="rotate(-1.1 93.3 620.4)"><g clip-path="url(#p0-c35)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.80"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-9.4 7.6)"><g transform="rotate(-0.3 -65.8 499.5)"><g clip-path="url(#p0-c36)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.77"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(-11.8 2.8)"><g transform="rotate(-0.8 -146.6 351.1)"><g clip-path="url(#p0-c37)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.85"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+    <g transform="translate(-11.6 -3.3)"><g transform="rotate(-0.3 -126.2 160.3)"><g clip-path="url(#p0-c38)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.84"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(-6.8 -10)"><g transform="rotate(-1.4 25.4 -42.2)"><g clip-path="url(#p0-c39)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.86"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(0.5 -12.1)"><g transform="rotate(2 244.5 -123.5)"><g clip-path="url(#p0-c40)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.78"/><use href="#p0-sil" fill="url(#p0-f0)"/></g></g></g>
+    <g transform="translate(7 -9.9)"><g transform="rotate(-1.8 448.5 -46.9)"><g clip-path="url(#p0-c41)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.88"/><use href="#p0-sil" fill="url(#p0-f2)"/></g></g></g>
+    <g transform="translate(10.7 -5.6)"><g transform="rotate(1.8 578.1 79.6)"><g clip-path="url(#p0-c42)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.91"/><use href="#p0-sil" fill="url(#p0-f1)"/></g></g></g>
+    <g transform="translate(12.1 0.2)"><g transform="rotate(0.7 603.9 268.6)"><g clip-path="url(#p0-c43)"><use href="#p0-sil" fill="url(#p0-g)" fill-opacity="0.90"/><use href="#p0-sil" fill="url(#p0-f3)"/></g></g></g>
+  </g>
+  <text x="482" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1f2328">transponder</text>
+  <text x="482" y="100" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#57606a">route</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.050;0.075;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="420" y="58" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M380 86 H420" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="0.25s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="0.25s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M380 86 H420" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="0.25s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="0.25s" repeatCount="indefinite"/></circle>
+  <path d="M570 86 H610" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="610" y="58" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="626" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">OpenAI</text>
+  <text x="626" y="100" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="600" fill="#cf222e">503</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.100;0.125;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="610" y="58" width="150" height="56" rx="12" fill="none" stroke="#cf222e" stroke-width="2"/></g>
+  <circle r="6.5" fill="#cf222e" filter="url(#soft)" opacity="0"><animateMotion path="M570 86 H610" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="0.85s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="0.85s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#cf222e" opacity="0"><animateMotion path="M570 86 H610" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="0.85s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="0.85s" repeatCount="indefinite"/></circle>
+  <path d="M760 86 H800" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="800" y="58" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="816" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">Anthropic</text>
+  <text x="816" y="100" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="600" fill="#1a7f37">200</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.150;0.175;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="800" y="58" width="150" height="56" rx="12" fill="none" stroke="#1a7f37" stroke-width="2"/></g>
+  <circle r="6.5" fill="#1a7f37" filter="url(#soft)" opacity="0"><animateMotion path="M760 86 H800" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="1.4499999999999997s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="1.4499999999999997s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#1a7f37" opacity="0"><animateMotion path="M760 86 H800" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="1.4499999999999997s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="1.4499999999999997s" repeatCount="indefinite"/></circle>
+  <path d="M950 86 H990" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="990" y="58" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="1006" y="82" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">usage</text>
+  <text x="1006" y="100" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">$0.0041</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.200;0.225;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="990" y="58" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M950 86 H990" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="2.05s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="2.05s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M950 86 H990" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="2.05s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="2.05s" repeatCount="indefinite"/></circle>
+  <rect x="40" y="156" width="1120" height="100" rx="14" fill="#ffffff" fill-opacity="0.55" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="64" y="202" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1f2328">bob</text>
+  <text x="64" y="224" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#6e7781">key: bob</text>
+  <rect x="230" y="178" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="246" y="202" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">request</text>
+  <text x="246" y="220" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">POST /v1/chat</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.300;0.325;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="230" y="178" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <path d="M380 206 H426" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="426" y="178" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <g transform="translate(434 182) scale(0.0938)">
+    <g transform="translate(1.9 1.6)"><g transform="rotate(-0.2 257.7 286.3)"><g clip-path="url(#p1-c0)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.97"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(0.7 2.4)"><g transform="rotate(0.5 239.7 293.7)"><g clip-path="url(#p1-c1)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.74"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(-0.9 2.3)"><g transform="rotate(-0.3 219.3 290.7)"><g clip-path="url(#p1-c2)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.91"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(-2 1.5)"><g transform="rotate(-0.2 199.8 284.7)"><g clip-path="url(#p1-c3)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.80"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-2.4 0.7)"><g transform="rotate(0.1 188.1 273.7)"><g clip-path="url(#p1-c4)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.93"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(-2.4 -0.5)"><g transform="rotate(-0.2 191 253.7)"><g clip-path="url(#p1-c5)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.93"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(-1.5 -2)"><g transform="rotate(-0.1 210.5 236.4)"><g clip-path="url(#p1-c6)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.77"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(0.1 -2.5)"><g transform="rotate(0.3 231.2 231.3)"><g clip-path="url(#p1-c7)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.79"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(1.5 -2)"><g transform="rotate(-0.4 253.2 232.2)"><g clip-path="url(#p1-c8)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.90"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(2.2 -1.1)"><g transform="rotate(0.3 266.3 243.7)"><g clip-path="url(#p1-c9)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.87"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(2.5 0.2)"><g transform="rotate(0.1 264.3 264.7)"><g clip-path="url(#p1-c10)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.83"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(4.2 3.9)"><g transform="rotate(-0.8 297.8 324.9)"><g clip-path="url(#p1-c11)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.94"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(1.1 5.6)"><g transform="rotate(0.9 247.8 350.9)"><g clip-path="url(#p1-c12)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.92"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(-1.9 5.4)"><g transform="rotate(1 197.5 351.8)"><g clip-path="url(#p1-c13)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.91"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(-4.3 3.7)"><g transform="rotate(0.2 156.5 324.9)"><g clip-path="url(#p1-c14)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.79"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(-5.5 1.6)"><g transform="rotate(0.3 135.2 289)"><g clip-path="url(#p1-c15)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.81"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-5.5 -1.4)"><g transform="rotate(0.8 141.7 240.2)"><g clip-path="url(#p1-c16)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.81"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(-3.2 -4.7)"><g transform="rotate(-0.7 182.5 191.6)"><g clip-path="url(#p1-c17)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.91"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(0.2 -5.7)"><g transform="rotate(-0.1 232.8 175.1)"><g clip-path="url(#p1-c18)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.90"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(3.3 -4.7)"><g transform="rotate(0.3 284.7 183.9)"><g clip-path="url(#p1-c19)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.82"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(5 -2.7)"><g transform="rotate(0.1 318.4 214.1)"><g clip-path="url(#p1-c20)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.96"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(5.7 0.4)"><g transform="rotate(-0.9 319.1 268.3)"><g clip-path="url(#p1-c21)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.89"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(6.8 5.7)"><g transform="rotate(-0.9 369.4 379.5)"><g clip-path="url(#p1-c22)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.91"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(1.9 8.7)"><g transform="rotate(0.9 269.5 438.3)"><g clip-path="url(#p1-c23)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.95"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(-3.1 8.4)"><g transform="rotate(0.1 166.3 436)"><g clip-path="url(#p1-c24)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.76"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(-6.9 5.6)"><g transform="rotate(1.2 92.6 373.5)"><g clip-path="url(#p1-c25)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.81"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(-8.6 2.3)"><g transform="rotate(0.6 57.2 308.4)"><g clip-path="url(#p1-c26)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.96"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-8.6 -2.4)"><g transform="rotate(-0.6 72.3 218)"><g clip-path="url(#p1-c27)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.85"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-4.6 -7.6)"><g transform="rotate(-0.4 143.3 118.6)"><g clip-path="url(#p1-c28)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.77"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(0.6 -8.9)"><g transform="rotate(-0.4 241.3 83.3)"><g clip-path="url(#p1-c29)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.80"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(5 -7.4)"><g transform="rotate(-1.2 332 111)"><g clip-path="url(#p1-c30)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.84"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(7.8 -4.2)"><g transform="rotate(0.4 392.7 174)"><g clip-path="url(#p1-c31)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.78"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(8.9 0.4)"><g transform="rotate(-1.2 406.2 270.7)"><g clip-path="url(#p1-c32)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.90"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(9.2 7.8)"><g transform="rotate(0.2 521.3 508.4)"><g clip-path="url(#p1-c33)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.75"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(2.6 11.8)"><g transform="rotate(-0.5 312.4 634.2)"><g clip-path="url(#p1-c34)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.89"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(-4.3 11.3)"><g transform="rotate(-1.1 93.3 620.4)"><g clip-path="url(#p1-c35)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.80"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-9.4 7.6)"><g transform="rotate(-0.3 -65.8 499.5)"><g clip-path="url(#p1-c36)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.77"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(-11.8 2.8)"><g transform="rotate(-0.8 -146.6 351.1)"><g clip-path="url(#p1-c37)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.85"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+    <g transform="translate(-11.6 -3.3)"><g transform="rotate(-0.3 -126.2 160.3)"><g clip-path="url(#p1-c38)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.84"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(-6.8 -10)"><g transform="rotate(-1.4 25.4 -42.2)"><g clip-path="url(#p1-c39)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.86"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(0.5 -12.1)"><g transform="rotate(2 244.5 -123.5)"><g clip-path="url(#p1-c40)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.78"/><use href="#p1-sil" fill="url(#p1-f0)"/></g></g></g>
+    <g transform="translate(7 -9.9)"><g transform="rotate(-1.8 448.5 -46.9)"><g clip-path="url(#p1-c41)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.88"/><use href="#p1-sil" fill="url(#p1-f2)"/></g></g></g>
+    <g transform="translate(10.7 -5.6)"><g transform="rotate(1.8 578.1 79.6)"><g clip-path="url(#p1-c42)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.91"/><use href="#p1-sil" fill="url(#p1-f1)"/></g></g></g>
+    <g transform="translate(12.1 0.2)"><g transform="rotate(0.7 603.9 268.6)"><g clip-path="url(#p1-c43)"><use href="#p1-sil" fill="url(#p1-g)" fill-opacity="0.90"/><use href="#p1-sil" fill="url(#p1-f3)"/></g></g></g>
+  </g>
+  <text x="488" y="202" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1f2328">transponder</text>
+  <text x="488" y="220" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#57606a">route</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.350;0.375;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="426" y="178" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M380 206 H426" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="3.85s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="3.85s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M380 206 H426" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="3.85s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="3.85s" repeatCount="indefinite"/></circle>
+  <path d="M576 206 H622" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="622" y="178" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="638" y="202" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">Gemini</text>
+  <text x="638" y="220" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="600" fill="#1a7f37">200</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.400;0.425;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="622" y="178" width="150" height="56" rx="12" fill="none" stroke="#1a7f37" stroke-width="2"/></g>
+  <circle r="6.5" fill="#1a7f37" filter="url(#soft)" opacity="0"><animateMotion path="M576 206 H622" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="4.45s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="4.45s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#1a7f37" opacity="0"><animateMotion path="M576 206 H622" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="4.45s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="4.45s" repeatCount="indefinite"/></circle>
+  <path d="M772 206 H818" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="818" y="178" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="834" y="202" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">usage</text>
+  <text x="834" y="220" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">$0.0012</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.450;0.475;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="818" y="178" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M772 206 H818" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="5.050000000000001s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="5.050000000000001s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M772 206 H818" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="5.050000000000001s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="5.050000000000001s" repeatCount="indefinite"/></circle>
+  <rect x="40" y="276" width="1120" height="100" rx="14" fill="#ffffff" fill-opacity="0.55" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="64" y="322" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1f2328">nightly job</text>
+  <text x="64" y="344" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#6e7781">key: ci</text>
+  <rect x="230" y="298" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="246" y="322" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">request</text>
+  <text x="246" y="340" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">POST /v1/chat</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.600;0.625;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="230" y="298" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <path d="M380 326 H426" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="426" y="298" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <g transform="translate(434 302) scale(0.0938)">
+    <g transform="translate(1.9 1.6)"><g transform="rotate(-0.2 257.7 286.3)"><g clip-path="url(#p2-c0)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.97"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(0.7 2.4)"><g transform="rotate(0.5 239.7 293.7)"><g clip-path="url(#p2-c1)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.74"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(-0.9 2.3)"><g transform="rotate(-0.3 219.3 290.7)"><g clip-path="url(#p2-c2)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.91"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(-2 1.5)"><g transform="rotate(-0.2 199.8 284.7)"><g clip-path="url(#p2-c3)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.80"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-2.4 0.7)"><g transform="rotate(0.1 188.1 273.7)"><g clip-path="url(#p2-c4)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.93"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(-2.4 -0.5)"><g transform="rotate(-0.2 191 253.7)"><g clip-path="url(#p2-c5)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.93"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(-1.5 -2)"><g transform="rotate(-0.1 210.5 236.4)"><g clip-path="url(#p2-c6)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.77"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(0.1 -2.5)"><g transform="rotate(0.3 231.2 231.3)"><g clip-path="url(#p2-c7)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.79"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(1.5 -2)"><g transform="rotate(-0.4 253.2 232.2)"><g clip-path="url(#p2-c8)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.90"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(2.2 -1.1)"><g transform="rotate(0.3 266.3 243.7)"><g clip-path="url(#p2-c9)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.87"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(2.5 0.2)"><g transform="rotate(0.1 264.3 264.7)"><g clip-path="url(#p2-c10)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.83"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(4.2 3.9)"><g transform="rotate(-0.8 297.8 324.9)"><g clip-path="url(#p2-c11)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.94"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(1.1 5.6)"><g transform="rotate(0.9 247.8 350.9)"><g clip-path="url(#p2-c12)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.92"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(-1.9 5.4)"><g transform="rotate(1 197.5 351.8)"><g clip-path="url(#p2-c13)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.91"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(-4.3 3.7)"><g transform="rotate(0.2 156.5 324.9)"><g clip-path="url(#p2-c14)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.79"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(-5.5 1.6)"><g transform="rotate(0.3 135.2 289)"><g clip-path="url(#p2-c15)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.81"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-5.5 -1.4)"><g transform="rotate(0.8 141.7 240.2)"><g clip-path="url(#p2-c16)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.81"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(-3.2 -4.7)"><g transform="rotate(-0.7 182.5 191.6)"><g clip-path="url(#p2-c17)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.91"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(0.2 -5.7)"><g transform="rotate(-0.1 232.8 175.1)"><g clip-path="url(#p2-c18)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.90"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(3.3 -4.7)"><g transform="rotate(0.3 284.7 183.9)"><g clip-path="url(#p2-c19)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.82"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(5 -2.7)"><g transform="rotate(0.1 318.4 214.1)"><g clip-path="url(#p2-c20)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.96"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(5.7 0.4)"><g transform="rotate(-0.9 319.1 268.3)"><g clip-path="url(#p2-c21)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.89"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(6.8 5.7)"><g transform="rotate(-0.9 369.4 379.5)"><g clip-path="url(#p2-c22)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.91"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(1.9 8.7)"><g transform="rotate(0.9 269.5 438.3)"><g clip-path="url(#p2-c23)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.95"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(-3.1 8.4)"><g transform="rotate(0.1 166.3 436)"><g clip-path="url(#p2-c24)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.76"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(-6.9 5.6)"><g transform="rotate(1.2 92.6 373.5)"><g clip-path="url(#p2-c25)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.81"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(-8.6 2.3)"><g transform="rotate(0.6 57.2 308.4)"><g clip-path="url(#p2-c26)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.96"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-8.6 -2.4)"><g transform="rotate(-0.6 72.3 218)"><g clip-path="url(#p2-c27)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.85"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-4.6 -7.6)"><g transform="rotate(-0.4 143.3 118.6)"><g clip-path="url(#p2-c28)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.77"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(0.6 -8.9)"><g transform="rotate(-0.4 241.3 83.3)"><g clip-path="url(#p2-c29)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.80"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(5 -7.4)"><g transform="rotate(-1.2 332 111)"><g clip-path="url(#p2-c30)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.84"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(7.8 -4.2)"><g transform="rotate(0.4 392.7 174)"><g clip-path="url(#p2-c31)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.78"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(8.9 0.4)"><g transform="rotate(-1.2 406.2 270.7)"><g clip-path="url(#p2-c32)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.90"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(9.2 7.8)"><g transform="rotate(0.2 521.3 508.4)"><g clip-path="url(#p2-c33)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.75"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(2.6 11.8)"><g transform="rotate(-0.5 312.4 634.2)"><g clip-path="url(#p2-c34)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.89"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(-4.3 11.3)"><g transform="rotate(-1.1 93.3 620.4)"><g clip-path="url(#p2-c35)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.80"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-9.4 7.6)"><g transform="rotate(-0.3 -65.8 499.5)"><g clip-path="url(#p2-c36)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.77"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(-11.8 2.8)"><g transform="rotate(-0.8 -146.6 351.1)"><g clip-path="url(#p2-c37)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.85"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+    <g transform="translate(-11.6 -3.3)"><g transform="rotate(-0.3 -126.2 160.3)"><g clip-path="url(#p2-c38)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.84"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(-6.8 -10)"><g transform="rotate(-1.4 25.4 -42.2)"><g clip-path="url(#p2-c39)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.86"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(0.5 -12.1)"><g transform="rotate(2 244.5 -123.5)"><g clip-path="url(#p2-c40)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.78"/><use href="#p2-sil" fill="url(#p2-f0)"/></g></g></g>
+    <g transform="translate(7 -9.9)"><g transform="rotate(-1.8 448.5 -46.9)"><g clip-path="url(#p2-c41)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.88"/><use href="#p2-sil" fill="url(#p2-f2)"/></g></g></g>
+    <g transform="translate(10.7 -5.6)"><g transform="rotate(1.8 578.1 79.6)"><g clip-path="url(#p2-c42)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.91"/><use href="#p2-sil" fill="url(#p2-f1)"/></g></g></g>
+    <g transform="translate(12.1 0.2)"><g transform="rotate(0.7 603.9 268.6)"><g clip-path="url(#p2-c43)"><use href="#p2-sil" fill="url(#p2-g)" fill-opacity="0.90"/><use href="#p2-sil" fill="url(#p2-f3)"/></g></g></g>
+  </g>
+  <text x="488" y="322" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1f2328">transponder</text>
+  <text x="488" y="340" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#57606a">route</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.650;0.675;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="426" y="298" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M380 326 H426" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="7.45s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="7.45s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M380 326 H426" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="7.45s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="7.45s" repeatCount="indefinite"/></circle>
+  <path d="M576 326 H622" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="622" y="298" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="638" y="322" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">Ollama</text>
+  <text x="638" y="340" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="600" fill="#1a7f37">200</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.700;0.725;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="622" y="298" width="150" height="56" rx="12" fill="none" stroke="#1a7f37" stroke-width="2"/></g>
+  <circle r="6.5" fill="#1a7f37" filter="url(#soft)" opacity="0"><animateMotion path="M576 326 H622" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="8.05s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="8.05s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#1a7f37" opacity="0"><animateMotion path="M576 326 H622" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="8.05s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="8.05s" repeatCount="indefinite"/></circle>
+  <path d="M772 326 H818" fill="none" stroke="#c5ced9" stroke-width="2"/>
+  <rect x="818" y="298" width="150" height="56" rx="12" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="834" y="322" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1f2328">usage</text>
+  <text x="834" y="340" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="400" fill="#57606a">$0 on your GPU</text>
+  <g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.750;0.775;0.959;0.979;1" dur="12s" repeatCount="indefinite"/><rect x="818" y="298" width="150" height="56" rx="12" fill="none" stroke="#9333EA" stroke-width="2"/></g>
+  <circle r="6.5" fill="#9333EA" filter="url(#soft)" opacity="0"><animateMotion path="M772 326 H818" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="8.65s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="8.65s" repeatCount="indefinite"/></circle>
+  <circle r="4" fill="#9333EA" opacity="0"><animateMotion path="M772 326 H818" keyPoints="0;1;1" keyTimes="0;0.029;1" calcMode="linear" dur="12s" begin="8.65s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.015;0.020;0.029;1" dur="12s" begin="8.65s" repeatCount="indefinite"/></circle>
+  <rect x="40" y="412" width="1120" height="146" rx="14" fill="#ffffff" fill-opacity="0.96" stroke="#d0d7de" stroke-width="1.2"/>
+  <text x="64" y="446" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1f2328">spend this month, per caller</text>
+  <text x="64" y="482" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a">alice</text>
+  <rect x="200" y="472" width="760" height="12" rx="6" fill="#c5ced9"/>
+  <rect x="200" y="472" width="38" height="12" rx="6" fill="url(#accent)"><animate attributeName="width" values="38;38;64;64" keyTimes="0;0.350;0.400;1" dur="12s" repeatCount="indefinite"/></rect>
+  <text x="1136" y="482" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#1f2328">$0.42 of $5</text>
+  <text x="64" y="510" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a">bob</text>
+  <rect x="200" y="500" width="760" height="12" rx="6" fill="#c5ced9"/>
+  <rect x="200" y="500" width="71" height="12" rx="6" fill="url(#accent)"><animate attributeName="width" values="71;71;118;118" keyTimes="0;0.650;0.700;1" dur="12s" repeatCount="indefinite"/></rect>
+  <text x="1136" y="510" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#1f2328">$3.10 of $20</text>
+  <text x="64" y="538" text-anchor="start" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a">nightly job</text>
+  <rect x="200" y="528" width="760" height="12" rx="6" fill="#c5ced9"/>
+  <rect x="200" y="528" width="6" height="12" rx="6" fill="url(#accent)"><animate attributeName="width" values="6;6;8;8" keyTimes="0;0.933;0.983;1" dur="12s" repeatCount="indefinite"/></rect>
+  <text x="1136" y="538" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#1f2328">local, no cost</text>
+  <rect x="0" y="0" width="1200" height="4" fill="url(#accent)"/>
+  </g>
+  <rect x="0.5" y="0.5" width="1199" height="589" rx="16" fill="none" stroke="#d0d7de"/>
+</svg>
