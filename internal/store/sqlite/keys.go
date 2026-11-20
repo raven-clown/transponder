@@ -42,7 +42,11 @@ func (db *DB) CreateKey(ctx context.Context, k store.APIKey) error {
 
 // KeyByHash returns the key whose secret hashes to hash.
 func (db *DB) KeyByHash(ctx context.Context, hash [32]byte) (store.APIKey, error) {
-	return scanKey(db.reader(ctx).QueryRowContext(ctx, `SELECT `+keyColumns+` FROM api_keys WHERE hash = ?`, hash[:]))
+	// A transaction is on the writer, where the statement prepared on the read pool cannot run.
+	if tx, ok := ctx.Value(txKey{db}).(*sql.Tx); ok {
+		return scanKey(tx.QueryRowContext(ctx, `SELECT `+keyColumns+` FROM api_keys WHERE hash = ?`, hash[:]))
+	}
+	return scanKey(db.keyByHash.QueryRowContext(ctx, hash[:]))
 }
 
 // KeyByName returns orgID's key called name.
