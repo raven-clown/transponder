@@ -164,6 +164,19 @@ func TestBudgets(t *testing.T) {
 	}
 }
 
+// A budget of 0 blocks spending; it does not lift the cap, nor the user:* one it replaces.
+func TestZeroBudgetBlocks(t *testing.T) {
+	l := limiter(t, Config{Budgets: []Budget{
+		{Subject: "user:*", Window: Month, LimitNUSD: 1e9},
+		{Subject: "user:alice", Window: Month, LimitNUSD: 0},
+	}})
+	if _, d := l.Admit(ctx, alice, Estimate{CostNUSD: 1e8}); d == nil || d.Code != "budget_exceeded" || d.Subject != "user:alice" {
+		t.Fatalf("a paid call under a zero budget: %+v", d)
+	}
+	bob := Caller{User: "bob"}
+	mustAdmit(t, l, bob, Estimate{CostNUSD: 1e8})
+}
+
 func TestDeniedRollsBack(t *testing.T) {
 	l := limiter(t, Config{
 		DefaultProfile: "p",
