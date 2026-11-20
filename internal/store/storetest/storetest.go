@@ -16,9 +16,10 @@ import (
 
 // Store is what the suite tests.
 type Store interface {
-	store.KeyStore
-	store.UsageStore
+	store.KeyAdminStore
+	store.UsageAdminStore
 	store.ConfigStore
+	store.AuditStore
 	Ping(ctx context.Context) error
 }
 
@@ -44,6 +45,13 @@ func Run(t *testing.T, open Opener) {
 		{"UpdateConfigRollsBack", testUpdateConfigRollsBack},
 		{"UpdateConfigNested", testUpdateConfigNested},
 		{"UpdateConfigConcurrent", testUpdateConfigConcurrent},
+		{"ListAndFindKeys", testListAndFindKeys},
+		{"UpdateKey", testUpdateKey},
+		{"DeleteKey", testDeleteKey},
+		{"KeyWritesJoinUpdateConfig", testKeyWritesJoinUpdateConfig},
+		{"ListUsage", testListUsage},
+		{"Audit", testAudit},
+		{"AuditRollsBackWithConfig", testAuditRollsBackWithConfig},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, open) })
@@ -66,6 +74,9 @@ func Key(name, role string) store.APIKey {
 		Role:      role,
 		Teams:     []string{"platform", "ml"},
 		CreatedAt: time.UnixMilli(1_700_000_000_000),
+		Version:   1,
+		Source:    store.SourceAPI,
+		UpdatedAt: time.UnixMilli(1_700_000_000_000),
 	}
 }
 
