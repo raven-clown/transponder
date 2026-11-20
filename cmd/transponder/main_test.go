@@ -22,6 +22,7 @@ import (
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
+	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/postgres"
@@ -396,6 +397,26 @@ func TestBuildRouter(t *testing.T) {
 				t.Fatalf("resolved %+v", got)
 			}
 		})
+	}
+}
+
+// A setup with providers and no routes, as after the last route is deleted through the admin
+// API, must not quietly answer every model from the free echo provider.
+func TestBuildRouterProvidersWithoutRoutes(t *testing.T) {
+	cfg := &config.Bootstrap{Providers: []config.Provider{{Name: "oa", Type: "openai", APIKey: "k"}}}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.Resolve("gpt-4o"); !errors.Is(err, router.ErrNoRoute) {
+		t.Fatalf("resolved %+v, %v; want no route", got, err)
+	}
+	bare, err := buildRouter(&config.Bootstrap{}, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := bare.Resolve("anything"); err != nil || got.Type != "echo" {
+		t.Fatalf("a bare start resolved %+v, %v; want echo", got, err)
 	}
 }
 

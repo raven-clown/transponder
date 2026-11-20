@@ -38,6 +38,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A `${VARIABLE}` on a YAML comment line no longer has to be set for the config to load. A line that starts with `#` inside a `|` or `>` block is part of the value, so variables there are still expanded.
 - `${VARIABLE}` is now expanded in the parsed file rather than in its text. A secret with ` #` in it was cut off at the `#` without an error, and one with a quote, a leading `*` or a newline broke the file; each is now used whole. A comment after a value, a comment indented less than a block's content, a quoted value over several lines, and a block with an anchor or tag (`key: &a |`) are now each read as YAML reads them. A variable can no longer add keys or list items.
 - An integer setting from the environment, such as `TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=5`, failed to load with `cannot unmarshal !!str`.
+- With Postgres, two admin API writes at the same moment, such as deleting a provider while a route to it is created, could both pass validation and leave a stored config that no replica could load. Config writes now run one at a time.
+- A config file that no longer fits the items made through the admin API, such as one that drops a provider an API route uses, was stored anyway, after which no replica could load the config and every admin write failed with `invalid_config`. Start now refuses such a file with an error naming the conflict and keeps the stored config.
+- Deleting the last route through the admin API made every model answer from the free `echo` provider. With providers and no routes, calls now get 404 `model_not_found`.
+- An admin write whose caller disconnected right after the commit showed `reload_failed` in `/admin/v1/status` and logged an error until the next check.
 
 ## [0.2.4] - 2026-11-14
 

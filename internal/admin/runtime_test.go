@@ -34,7 +34,7 @@ func fileConfig() *config.Bootstrap {
 
 func (e *env) sync(t *testing.T, cfg *config.Bootstrap) {
 	t.Helper()
-	if err := SyncFile(context.Background(), e.db, cfg, func() time.Time { return testNow }, slog.New(slog.NewJSONHandler(e.logs, nil))); err != nil {
+	if err := SyncFile(context.Background(), e.db, cfg, e.box, func() time.Time { return testNow }, slog.New(slog.NewJSONHandler(e.logs, nil))); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -128,16 +128,69 @@ func TestSyncFile(t *testing.T) {
 	}
 }
 
+// A file that no longer fits the items made through the admin API is refused, and the store
+// keeps the config that loads, so replicas keep serving and the API can still fix it.
+func TestSyncFileKeepsTheStoreLoadable(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		api  func(e *env)
+		edit func(c *config.Bootstrap)
+		want string
+	}{
+		{
+			name: "the file drops a provider an API route uses",
+			api: func(e *env) {
+				e.create(t, "/routes", map[string]any{"match": "special", "targets": []map[string]any{{"provider": "oa"}}})
+			},
+			edit: func(c *config.Bootstrap) { c.Providers, c.Routes = c.Providers[1:], c.Routes[1:] },
+			want: `provider "oa"`,
+		},
+		{
+			name: "the file binds a subject an API profile binds",
+			api: func(e *env) {
+				e.create(t, "/profiles", map[string]any{"name": "big", "subjects": []string{"user:ann"}, "limits": map[string]any{"llm.max_output_tokens": 9000}})
+			},
+			edit: func(c *config.Bootstrap) {
+				c.ProfileBindings = append(c.ProfileBindings, config.BindingConfig{Subject: "user:ann", Profile: "std"})
+			},
+			want: "user:ann",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			cfg := fileConfig()
+			e = e.with(e.db, cfg, e.box)
+			e.sync(t, cfg)
+			tt.api(e)
+			before, _ := e.db.ConfigVersion(ctx)
+			next := fileConfig()
+			tt.edit(next)
+			err := SyncFile(ctx, e.db, next, e.box, func() time.Time { return testNow }, slog.New(slog.DiscardHandler))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to name %s", err, tt.want)
+			}
+			if v, _ := e.db.ConfigVersion(ctx); v != before {
+				t.Fatalf("version %d, want %d kept", v, before)
+			}
+			if _, err := Runtime(ctx, e.db, e.box, cfg); err != nil {
+				t.Fatalf("the stored config no longer loads: %v", err)
+			}
+		})
+	}
+}
+
 func TestSyncFileStoreErrors(t *testing.T) {
 	e := newEnv(t)
 	broken := failingItems{failing{Store: e.db, err: errStore}}
-	if err := SyncFile(context.Background(), broken, fileConfig(), time.Now, slog.New(slog.DiscardHandler)); !errors.Is(err, errStore) {
+	if err := SyncFile(context.Background(), broken, fileConfig(), nil, time.Now, slog.New(slog.DiscardHandler)); !errors.Is(err, errStore) {
 		t.Fatalf("err = %v", err)
 	}
 	if _, err := Runtime(context.Background(), broken, nil, nil); !errors.Is(err, errStore) {
 		t.Fatalf("Runtime err = %v", err)
 	}
-	if err := SyncFile(context.Background(), conflicting{e.db}, fileConfig(), time.Now, slog.New(slog.DiscardHandler)); !errors.Is(err, store.ErrConflict) {
+	if err := SyncFile(context.Background(), conflicting{e.db}, fileConfig(), nil, time.Now, slog.New(slog.DiscardHandler)); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("a write that keeps conflicting: err = %v", err)
 	}
 }

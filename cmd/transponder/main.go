@@ -155,7 +155,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
-	if err := admin.SyncFile(ctx, db, cfg, time.Now, logger); err != nil {
+	if err := admin.SyncFile(ctx, db, cfg, box, time.Now, logger); err != nil {
 		return fmt.Errorf("storing the providers, routes, budgets and profiles of the config file: %w", err)
 	}
 
@@ -403,10 +403,11 @@ func buildAuth(cfg *config.Bootstrap, keys store.KeyStore, client *http.Client) 
 	return authn.WithOIDC(oidc), oidc, nil
 }
 
-// buildRouter turns the providers and routes of the file into a router. With no routes,
-// every model goes to a built-in echo provider so a bare start still answers.
+// buildRouter turns the providers and routes of the file into a router. With no providers and
+// no routes, every model goes to a built-in echo provider so a bare start still answers. With
+// providers but no routes, as after the last route is deleted, no model has a route.
 func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, error) {
-	if len(cfg.Routes) == 0 {
+	if len(cfg.Routes) == 0 && len(cfg.Providers) == 0 {
 		return router.New([]router.Route{{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo", Free: true}}}}), nil
 	}
 	providers := map[string]router.Target{}
