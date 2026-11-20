@@ -37,6 +37,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 
+- With SQLite, the usage records of calls that finish together are written in one transaction instead of one each, so calls no longer queue one by one for the single writer. A call still answers only once its record is committed. At max throughput (64 callers, a provider that answers at once) the gateway serves about 8,900 calls a second instead of 4,900, and the p99 latency it adds falls from 55 ms to 18 ms.
+- The API key lookup on SQLite, made on every call, takes a quarter of the time it did (9.7 µs instead of 43.9 µs with many callers at once, and 27.4 µs in v0.2.4): the read pool keeps its connections instead of opening a new one for most calls, and the query is prepared once. Under load the gateway uses about 45% less CPU per call.
 - Under load the gateway no longer runs out of local ports: it keeps up to 512 idle connections to each provider, where Go's default of two made it dial again for almost every call. With 64 streamed calls in flight, up to 15% of calls got a 502 this way on Windows, and once the ports were gone the process could stop with `fatal error: thread exhaustion`, v0.2.4 included.
 - A caller that closes the connection, before the answer or in the middle of a stream, is recorded with status 499 and logged at info level, instead of 502 or 200 and a `provider call failed` or `upstream stream broke` warning, so provider alerts stay quiet (#25).
 - When a provider reports no usage, `/v1/messages` estimates the input like the other endpoints: an inline image counts as 1,000 tokens instead of a quarter token per byte of its base64 data, which billed a 300 KB image as about 100,000 tokens. The answer is counted too.
