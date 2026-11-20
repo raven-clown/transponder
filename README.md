@@ -126,18 +126,16 @@ docker compose up --build -d --wait
 ## How it works
 
 ```mermaid
-flowchart LR
-    callers["Callers<br/>OpenAI and Anthropic SDKs,<br/>Claude Code, Codex CLI"]
+flowchart TB
+    callers["Callers: OpenAI and Anthropic SDKs, Claude Code, Codex CLI"]
     subgraph gw["transponder"]
-        direction TB
-        auth["Sign-in<br/>API key or OIDC token"]
-        router["Router<br/>route, allow list"]
-        limits["Limits<br/>budgets, rates, tokens"]
-        fallback["Fallback<br/>targets in order,<br/>cooldown"]
+        auth["Sign-in: API key or OIDC token"]
+        router["Router: route and allow list"]
+        limits["Limits: budgets, rates, tokens"]
+        fallback["Fallback: targets in order, cooldown"]
         auth --> router --> limits --> fallback
     end
     subgraph providers["Providers"]
-        direction TB
         p1["OpenAI and compatible"]
         p2["Anthropic"]
         p3["Gemini"]
