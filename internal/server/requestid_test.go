@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+// TestRequestIDAllocations keeps the middleware on every call cheap. A header key that is not in
+// Go's canonical form ("X-Request-ID") is copied on every Get and Set.
+func TestRequestIDAllocations(t *testing.T) {
+	h := RequestID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_ = r.Header.Get(requestIDHeader)
+	}))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.Header.Set(requestIDHeader, "caller-id")
+	w := httptest.NewRecorder()
+	// The response header's value, and the context value, its context and the request copy
+	// that carries it.
+	const want = 4
+	if n := testing.AllocsPerRun(100, func() { h.ServeHTTP(w, req) }); n > want {
+		t.Fatalf("RequestID allocates %v times per call, want at most %d", n, want)
+	}
+}
+
 func TestRequestID(t *testing.T) {
 	tests := []struct {
 		name string

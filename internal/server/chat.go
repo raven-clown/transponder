@@ -29,7 +29,8 @@ func (g *gateway) chat(w http.ResponseWriter, r *http.Request) {
 	if !g.resolve(c, peek.Model) {
 		return
 	}
-	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_completion_tokens", "max_tokens"), Choices: requestedMax(c.body, "n")}) {
+	top := topFields(c.body)
+	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: maxField(top, "max_completion_tokens", "max_tokens"), Choices: maxField(top, "n")}) {
 		return
 	}
 	out, _ := c.ticket.Caps()

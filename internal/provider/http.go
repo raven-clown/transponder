@@ -10,8 +10,9 @@ import (
 
 const maxErrorBody = 1 << 20
 
-// TraceHeaders are copied from the caller's request to every upstream call.
-var TraceHeaders = []string{"X-Request-ID", "Traceparent", "Tracestate"}
+// TraceHeaders are copied from the caller's request to every upstream call. They are in Go's
+// canonical form, so Get and Set do not copy the key on every call.
+var TraceHeaders = []string{"X-Request-Id", "Traceparent", "Tracestate"}
 
 // Send posts body to url with the given headers plus the trace headers from from, and returns
 // the response when it is 2xx. Any other answer, and a failed connection, is an *Error.

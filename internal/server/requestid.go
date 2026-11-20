@@ -9,6 +9,10 @@ import (
 
 type requestIDKey struct{}
 
+// requestIDHeader is X-Request-ID in Go's canonical form, which Header.Get and Set use as it is
+// instead of copying the key on every call.
+const requestIDHeader = "X-Request-Id"
+
 // RequestID keeps a caller's X-Request-ID when it is 1 to 128 printable ASCII
 // characters, and generates one otherwise. The id is stored on the request
 // context and set on the response before next runs, so the caller and the
@@ -16,12 +20,12 @@ type requestIDKey struct{}
 // so usage recording and upstream forwarding read the id that was selected.
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get("X-Request-ID")
+		id := r.Header.Get(requestIDHeader)
 		if !validRequestID(id) {
 			id = newRequestID()
-			r.Header.Set("X-Request-ID", id)
+			r.Header.Set(requestIDHeader, id)
 		}
-		w.Header().Set("X-Request-ID", id)
+		w.Header().Set(requestIDHeader, id)
 		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

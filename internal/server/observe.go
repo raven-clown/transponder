@@ -152,7 +152,7 @@ func (o *observed) endSpan(r *http.Request, req telemetry.Request) {
 	s.SetString("http.request.method", r.Method)
 	s.SetInt("http.response.status_code", int64(req.Code))
 	s.SetString("transponder.endpoint", req.Endpoint)
-	s.SetString("transponder.request_id", r.Header.Get("X-Request-ID"))
+	s.SetString("transponder.request_id", r.Header.Get(requestIDHeader))
 	s.SetString("transponder.route", req.Route)
 	s.SetString("transponder.provider", req.Provider)
 	s.SetString("transponder.model", req.Model)

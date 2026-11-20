@@ -73,6 +73,30 @@ func TestChunkUsage(t *testing.T) {
 	}
 }
 
+func TestReadChunk(t *testing.T) {
+	tests := []struct {
+		name, data, text string
+		usage            schema.Usage
+		ok, only         bool
+	}{
+		{"text", `{"choices":[{"delta":{"content":"hi"}}]}`, "hi", schema.Usage{}, false, false},
+		{"two choices", `{"choices":[{"delta":{"content":"a"}},{"index":1,"delta":{"content":"b"}}]}`, "ab", schema.Usage{}, false, false},
+		{"usage only", `{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3}}`, "", schema.Usage{InputTokens: 10, OutputTokens: 3}, true, true},
+		{"text and usage", `{"choices":[{"delta":{"content":"x"}}],"usage":{"prompt_tokens":1}}`, "x", schema.Usage{InputTokens: 1}, true, false},
+		{"null content", `{"choices":[{"delta":{"content":null,"tool_calls":[]}}]}`, "", schema.Usage{}, false, false},
+		{"choices not objects, usage kept", `{"choices":[1],"usage":{"prompt_tokens":4}}`, "", schema.Usage{InputTokens: 4}, true, false},
+		{"not json", `nope`, "", schema.Usage{}, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, u, ok, only := ReadChunk([]byte(tt.data))
+			if text != tt.text || u != tt.usage || ok != tt.ok || only != tt.only {
+				t.Fatalf("ReadChunk = %q %+v %v %v", text, u, ok, only)
+			}
+		})
+	}
+}
+
 func TestEncodeChunk(t *testing.T) {
 	created := time.Unix(1700000000, 0)
 	head := `{"id":"c1","object":"chat.completion.chunk","created":1700000000,"model":"m",`

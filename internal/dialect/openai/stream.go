@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/schema"
@@ -63,6 +64,40 @@ func ChunkUsage(data []byte) (u schema.Usage, ok bool, usageOnly bool) {
 		return schema.Usage{}, false, false
 	}
 	return w.Usage.canonical(), true, len(w.Choices) == 0
+}
+
+// ReadChunk reads in one pass what a stream relay needs from a chunk: the text of its content
+// deltas, for an estimate should the stream end without usage, and its usage as ChunkUsage
+// reports it.
+func ReadChunk(data []byte) (text string, u schema.Usage, ok, usageOnly bool) {
+	var w struct {
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+		Usage *wireUsageIn `json:"usage"`
+	}
+	if json.Unmarshal(data, &w) != nil {
+		// Choices of another shape must not hide the usage.
+		u, ok, usageOnly = ChunkUsage(data)
+		return "", u, ok, usageOnly
+	}
+	switch len(w.Choices) {
+	case 0:
+	case 1:
+		text = w.Choices[0].Delta.Content
+	default:
+		var b strings.Builder
+		for _, ch := range w.Choices {
+			b.WriteString(ch.Delta.Content)
+		}
+		text = b.String()
+	}
+	if w.Usage == nil {
+		return text, schema.Usage{}, false, false
+	}
+	return text, w.Usage.canonical(), true, len(w.Choices) == 0
 }
 
 type wireDelta struct {

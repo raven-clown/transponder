@@ -82,10 +82,21 @@ func (g *gateway) recordCall(ctx context.Context, c *call) {
 // requestedMax reads the largest number among fields, since providers disagree on which of
 // max_tokens and max_completion_tokens wins.
 func requestedMax(body []byte, fields ...string) int64 {
+	return maxField(topFields(body), fields...)
+}
+
+// topFields is the body's top-level object, or nil when the body is not one. Reading it once
+// serves every maxField a call needs.
+func topFields(body []byte) map[string]json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(body, &m) != nil {
-		return 0
+		return nil
 	}
+	return m
+}
+
+// maxField is requestedMax on fields already read.
+func maxField(m map[string]json.RawMessage, fields ...string) int64 {
 	// Keys are matched without regard to case, as servers written in Go read them.
 	var out int64
 	for k, raw := range m {
