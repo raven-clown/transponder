@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
@@ -75,23 +76,30 @@ type healthTable struct {
 type Router struct {
 	routes []Route
 	globs  []*regexp.Regexp
+	// wild says which routes match by * or ?, worked out once instead of on every call.
+	wild []bool
 
-	mu       sync.Mutex
+	// cool is read on every call, so it is swapped whole instead of guarded by a lock.
+	cool   atomic.Pointer[cooldownSettings]
+	health *healthTable
+}
+
+type cooldownSettings struct {
 	failures int
 	cooldown time.Duration
 	now      func() time.Time
-	health   *healthTable
 }
 
 // New returns a router over routes, first match wins. In Match, * stands for any run of
 // characters, slashes included, since model names such as hf.co/user/repo have them.
 func New(routes []Route) *Router {
 	r := &Router{
-		routes: routes, globs: make([]*regexp.Regexp, len(routes)),
-		failures: DefaultCooldownFailures, cooldown: DefaultCooldown, now: time.Now,
+		routes: routes, globs: make([]*regexp.Regexp, len(routes)), wild: make([]bool, len(routes)),
 		health: &healthTable{m: map[targetKey]*health{}},
 	}
+	r.cool.Store(&cooldownSettings{failures: DefaultCooldownFailures, cooldown: DefaultCooldown, now: time.Now})
 	for i, rt := range routes {
+		r.wild[i] = strings.ContainsAny(rt.Match, "*?")
 		re := regexp.QuoteMeta(rt.Match)
 		re = strings.ReplaceAll(re, `\*`, ".*")
 		re = strings.ReplaceAll(re, `\?`, ".")
@@ -102,9 +110,7 @@ func New(routes []Route) *Router {
 
 // SetCooldown changes how many failures in a row put a target last, and for how long.
 func (r *Router) SetCooldown(failures int, d time.Duration, now func() time.Time) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.failures, r.cooldown, r.now = failures, d, now
+	r.cool.Store(&cooldownSettings{failures: failures, cooldown: d, now: now})
 }
 
 // KeepHealth makes r share prev's record of failing targets, so a reload keeps the cooldowns,
@@ -118,9 +124,8 @@ func (r *Router) KeepHealth(prev *Router) {
 }
 
 func (r *Router) settings() (failures int, cooldown time.Duration, now time.Time) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.failures, r.cooldown, r.now()
+	c := r.cool.Load()
+	return c.failures, c.cooldown, c.now()
 }
 
 // Plan returns the targets of the first route matching model. Targets in cooldown come last,
@@ -131,9 +136,9 @@ func (r *Router) Plan(model string) (Plan, error) {
 			continue
 		}
 		p := Plan{Route: rt.Match, Access: rt.Access}
-		wildcard := strings.ContainsAny(rt.Match, "*?")
+		wildcard := r.wild[i]
 		var cooling []Resolved
-		_, _, now := r.settings()
+		now := r.cool.Load().now()
 		r.health.mu.Lock()
 		for _, t := range rt.Targets {
 			up := t.Model

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,6 +121,34 @@ func TestPlan(t *testing.T) {
 	first, _ := r.Resolve("claude-x")
 	if first.Provider.Name() != "a" {
 		t.Fatalf("Resolve = %+v", first)
+	}
+}
+
+// TestSetCooldownWhileServing changes the cooldown while calls plan and report, which the race
+// detector checks now that the settings are read without a lock.
+func TestSetCooldownWhileServing(t *testing.T) {
+	r := New([]Route{{Match: "*", Targets: []Target{{Provider: echo.New("a")}, {Provider: echo.New("b")}}}})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 200 {
+				p, err := r.Plan("m")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				r.Report(p.Targets[0], false)
+			}
+		})
+	}
+	wg.Go(func() {
+		for i := range 200 {
+			r.SetCooldown(1+i%3, time.Duration(i)*time.Millisecond, time.Now)
+		}
+	})
+	wg.Wait()
+	if p, err := r.Plan("m"); err != nil || len(p.Targets) != 2 {
+		t.Fatalf("plan %+v, %v", p, err)
 	}
 }
 
