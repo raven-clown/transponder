@@ -79,7 +79,7 @@ func New(d Deps) http.Handler {
 			d.Admin.ServeHTTP(w, r)
 		}))
 	}
-	h := g.observe(mux)
+	h := noSniff(g.observe(mux))
 	if d.RequestTimeout <= 0 {
 		return RequestID(h)
 	}
