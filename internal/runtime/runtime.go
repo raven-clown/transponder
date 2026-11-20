@@ -96,7 +96,9 @@ func (r *Reloader[T]) Check(ctx context.Context) (bool, error) {
 	defer r.mu.Unlock()
 	v, err := r.versions.ConfigVersion(ctx)
 	if err != nil {
-		r.failed(ctx, r.Current().Version, err)
+		if ctx.Err() == nil {
+			r.failed(ctx, r.Current().Version, err)
+		}
 		return false, err
 	}
 	cur := r.Current()
@@ -106,7 +108,10 @@ func (r *Reloader[T]) Check(ctx context.Context) (bool, error) {
 	}
 	val, err := r.load(ctx, v)
 	if err != nil {
-		r.failed(ctx, v, err)
+		// A caller that gave up says nothing about the config; the next check loads it.
+		if ctx.Err() == nil {
+			r.failed(ctx, v, err)
+		}
 		return false, err
 	}
 	snap := &Snapshot[T]{Version: v, Value: val, LoadedAt: r.now()}

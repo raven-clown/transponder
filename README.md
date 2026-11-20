@@ -459,6 +459,14 @@ openssl rand -base64 32
 - Changing a provider's `type` or `base_url` needs its `api_key` sent again (or `null` to drop it), so a stored key is never sent to a new host by someone who has not seen it.
 - Keys of providers declared in the YAML file stay in the file and are not stored.
 
+To change `secrets_key`, keep the old one readable while the stored keys are sealed again:
+
+1. Set `secrets_key` to the new key and `previous_secrets_key` (`TRANSPONDER_PREVIOUS_SECRETS_KEY`) to the old one on every replica, and restart them. They read keys sealed under either and seal new ones under the new key. With SQLite and a generated key, the old key is the content of `transponder.key`.
+2. Run `transponder secrets rotate --config transponder.yaml` once, with the same settings. It seals every stored provider key again under the new key in one write, with a `rotate` record in the audit log per provider, and every replica reloads.
+3. Remove `previous_secrets_key`.
+
+A replica whose key opens none of the stored provider keys keeps serving the config it has and reports the failed reload in `/admin/v1/status`; at start it exits with an error that names the provider.
+
 ### Limits
 
 Budgets cap what a user, a team or a key spends in USD, per UTC day or month. Profiles, in the same format as the other mothership projects, cap tokens and requests:

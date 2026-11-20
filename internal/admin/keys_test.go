@@ -40,6 +40,10 @@ func TestCreateKey(t *testing.T) {
 	if e.reload.count() != 1 {
 		t.Fatalf("reloads %d, want 1", e.reload.count())
 	}
+	// The write has committed, so its reload must not stop when the caller goes away.
+	if e.reload.cancellable != 0 {
+		t.Fatalf("%d reloads ran on the caller's context", e.reload.cancellable)
+	}
 	recs, err := e.db.ListAudit(ctx, store.AuditQuery{OrgID: store.DefaultOrg, Limit: 10})
 	if err != nil || len(recs) != 1 {
 		t.Fatalf("audit %+v, %v", recs, err)

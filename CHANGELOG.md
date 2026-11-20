@@ -32,6 +32,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `demo/`: `docker compose up` starts transponder in front of a fake provider with calls flowing through it, Prometheus, Jaeger, and a Grafana dashboard of requests, latency, tokens, cost, fallbacks and limits. No provider key is needed and nothing leaves the machine.
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
+- `transponder secrets rotate` and `previous_secrets_key` (`TRANSPONDER_PREVIOUS_SECRETS_KEY`) change `secrets_key` without losing the provider keys stored through the admin API. Before, a new `secrets_key` left them unreadable: the server would not start, and every admin config write failed with `invalid_config`. With both keys set, replicas read keys sealed under either; the command seals them all again under the new key in one write, with an audit record each.
 
 ### Fixed
 
@@ -42,9 +43,23 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A stream that fails after events that carry no output yet, such as Anthropic's `overloaded_error` right after `message_start`, an OpenAI role chunk followed by an error, or `response.created` followed by `error`, now falls back to the next target. Those opening events are held back until the first output, so the caller never sees the failed attempt.
 - A stream that stalls after its first output until `request_timeout` now counts against its target for the cooldown, like a stream that breaks. It was treated like a caller who left, so a target that kept stalling stayed first in its routes.
 - The event stream reader no longer reports a cut stream when the last line holds no event, such as a closing comment, so a finished Gemini stream ending that way is not cut off with an error. A byte order mark at the start of a stream is skipped instead of hiding its first line.
+- Parallel tool calls streamed by an OpenAI-compatible server that leaves out each call's `index` are kept apart. They were merged into one call with both names and arguments run together, which broke tool use for `/v1/messages` callers and every translated stream.
+- An Anthropic tool call with no input reaches an OpenAI caller with `"arguments": "{}"` when streamed, as it does when not streamed, instead of an empty string that does not parse. Input sent whole in `content_block_start` is passed on too.
+- Tool call ids made by other providers, such as `functions.get_weather:0`, are rewritten to ones Anthropic accepts (letters, digits, `_` and `-`) in requests to Anthropic and in answers to `/v1/messages` callers, so a conversation that moves to Anthropic is no longer refused with 400.
 - A `${VARIABLE}` on a YAML comment line no longer has to be set for the config to load. A line that starts with `#` inside a `|` or `>` block is part of the value, so variables there are still expanded.
 - `${VARIABLE}` is now expanded in the parsed file rather than in its text. A secret with ` #` in it was cut off at the `#` without an error, and one with a quote, a leading `*` or a newline broke the file; each is now used whole. A comment after a value, a comment indented less than a block's content, a quoted value over several lines, and a block with an anchor or tag (`key: &a |`) are now each read as YAML reads them. A variable can no longer add keys or list items.
 - An integer setting from the environment, such as `TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=5`, failed to load with `cannot unmarshal !!str`.
+- With Postgres, two admin API writes at the same moment, such as deleting a provider while a route to it is created, could both pass validation and leave a stored config that no replica could load. Config writes now run one at a time.
+- A config file that no longer fits the items made through the admin API, such as one that drops a provider an API route uses, was stored anyway, after which no replica could load the config and every admin write failed with `invalid_config`. Start now refuses such a file with an error naming the conflict and keeps the stored config.
+- Deleting the last route through the admin API made every model answer from the free `echo` provider. With providers and no routes, calls now get 404 `model_not_found`.
+- An admin write whose caller disconnected right after the commit showed `reload_failed` in `/admin/v1/status` and logged an error until the next check.
+- With `limits.on_store_error: local`, a call admitted while Postgres was down and finished after it came back gave its reservation back to the shared counters, so each such call took its estimate off the shared budget and budgets could be overspent across replicas. Each reservation is now settled where it was counted.
+- A budget of `0` USD was treated as no budget, and as an exact `user:<id>` rule it also replaced `user:*` for that period, so a user set to 0 could spend without a cap. It now refuses every paid call.
+- A target in cooldown got traffic again after every config reload, which every admin API write causes. Reloads now keep the record of failing targets.
+- A caller that disconnected while the shared limit counters were asked was taken as a Postgres outage, logging that the counters were unreachable and counting locally.
+- An OIDC token without a `kid`, signed with a key the issuer added since its keys were last read, was refused for up to an hour. Such a token now has the keys read again, at most once every 10 seconds like an unknown `kid`.
+- An OIDC token issued more than `clock_skew` in the future (`iat`), or with an `iat` or `nbf` that is not a number, is now refused. A malformed `nbf` used to be ignored.
+- A caller that gave up while transponder fetched the identity provider's keys got a 500 and an error in the log; it now gets 503 `auth_unavailable`, as when the provider cannot be reached.
 
 ## [0.2.4] - 2026-11-14
 

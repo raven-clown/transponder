@@ -23,9 +23,31 @@ const (
 // ErrNoKey means a secret has to be sealed or opened but no secrets_key is set.
 var ErrNoKey = errors.New("secrets: no secrets_key is set")
 
+// ErrWrongKey means a sealed value does not open with secrets_key, nor with a previous key:
+// it was sealed under another key.
+var ErrWrongKey = errors.New("secrets: the value does not open with this secrets_key")
+
 // Box seals and opens secrets. A nil Box has no key and fails with ErrNoKey.
 type Box struct {
 	aead cipher.AEAD
+	// previous open values sealed before secrets_key changed.
+	previous []cipher.AEAD
+}
+
+// WithPrevious returns a Box that seals with b's key and also opens values sealed under the
+// keys of prev, so a changed secrets_key keeps the stored values readable until they are
+// sealed again with Reseal.
+func (b *Box) WithPrevious(prev ...*Box) *Box {
+	if b == nil {
+		return nil
+	}
+	out := &Box{aead: b.aead, previous: append([]cipher.AEAD(nil), b.previous...)}
+	for _, p := range prev {
+		if p != nil {
+			out.previous = append(out.previous, p.aead)
+		}
+	}
+	return out
 }
 
 // ParseKey reads a 32-byte key written as base64 (standard or URL-safe, padded or not) or as
@@ -104,19 +126,37 @@ func (b *Box) Seal(plaintext, context string) (string, error) {
 	return prefix + base64.RawURLEncoding.EncodeToString(out), nil
 }
 
-// Open decrypts what Seal returned for the same context.
+// Open decrypts what Seal returned for the same context, with the current key or a previous
+// one.
 func (b *Box) Open(sealed, context string) (string, error) {
+	plain, _, err := b.open(sealed, context)
+	return plain, err
+}
+
+// Reseal returns sealed as it should be stored now: unchanged when it opens with the current
+// key, and otherwise opened with a previous key and sealed again with the current one.
+func (b *Box) Reseal(sealed, context string) (string, bool, error) {
+	plain, current, err := b.open(sealed, context)
+	if err != nil || current {
+		return sealed, false, err
+	}
+	out, err := b.Seal(plain, context)
+	return out, err == nil, err
+}
+
+func (b *Box) open(sealed, context string) (plain string, current bool, err error) {
 	if b == nil {
-		return "", ErrNoKey
+		return "", false, ErrNoKey
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(sealed, prefix))
 	if !strings.HasPrefix(sealed, prefix) || err != nil || len(raw) < b.aead.NonceSize() {
-		return "", errors.New("secrets: not a sealed value")
+		return "", false, errors.New("secrets: not a sealed value")
 	}
 	n := b.aead.NonceSize()
-	plain, err := b.aead.Open(nil, raw[:n], raw[n:], []byte(context))
-	if err != nil {
-		return "", errors.New("secrets: the value does not open with this secrets_key")
+	for i, aead := range append([]cipher.AEAD{b.aead}, b.previous...) {
+		if out, err := aead.Open(nil, raw[:n], raw[n:], []byte(context)); err == nil {
+			return string(out), i == 0, nil
+		}
 	}
-	return string(plain), nil
+	return "", false, ErrWrongKey
 }

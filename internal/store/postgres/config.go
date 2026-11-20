@@ -42,8 +42,9 @@ func (db *DB) ConfigVersion(ctx context.Context) (int64, error) {
 }
 
 // UpdateConfig implements store.ConfigStore. Called inside another UpdateConfig it joins that
-// transaction. The row lock the version update takes queues concurrent writers, so no write is
-// lost and each one gets its own version.
+// transaction. The config_version row is locked before fn runs, so config writers run one at a
+// time and each sees what the ones before it committed: a check fn makes, such as that no
+// route uses a provider it deletes, still holds when it commits.
 func (db *DB) UpdateConfig(ctx context.Context, fn func(ctx context.Context) error) (int64, error) {
 	if _, ok := ctx.Value(txKey{db}).(pgx.Tx); ok {
 		if err := fn(ctx); err != nil {
@@ -56,6 +57,9 @@ func (db *DB) UpdateConfig(ctx context.Context, fn func(ctx context.Context) err
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := tx.Exec(ctx, `SELECT version FROM config_version WHERE org_id = $1 FOR UPDATE`, store.DefaultOrg); err != nil {
+		return 0, fmt.Errorf("locking config_version: %w", err)
+	}
 	ctx = context.WithValue(ctx, txKey{db}, tx)
 	if err := fn(ctx); err != nil {
 		return 0, err

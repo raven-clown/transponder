@@ -173,8 +173,11 @@ type SyncStore interface {
 // SyncFile makes the providers, routes, budgets and profiles of the file the store's items of
 // source file: new ones are added, changed ones updated, and ones no longer in the file
 // deleted. A file item takes over an API item of the same name. Each change is in the audit
-// log with the actor file. When nothing changed, the config version stays as it is.
-func SyncFile(ctx context.Context, st SyncStore, cfg *config.Bootstrap, now func() time.Time, logger *slog.Logger) error {
+// log with the actor file. When nothing changed, the config version stays as it is. A file
+// that would leave a config that does not load with the API's items, such as one that drops a
+// provider an API route uses, is refused and nothing is written; box opens the API's provider
+// keys for that check.
+func SyncFile(ctx context.Context, st SyncStore, cfg *config.Bootstrap, box *secrets.Box, now func() time.Time, logger *slog.Logger) error {
 	want, err := fileItems(cfg)
 	if err != nil {
 		return err
@@ -194,6 +197,9 @@ func SyncFile(ctx context.Context, st SyncStore, cfg *config.Bootstrap, now func
 				if err := applyFileChange(ctx, st, c, now(), logger); err != nil {
 					return err
 				}
+			}
+			if _, err := Runtime(ctx, st, box, cfg); err != nil {
+				return fmt.Errorf("with this file the stored config would not load, so it is kept as it was: %w", err)
 			}
 			return nil
 		})
@@ -270,6 +276,9 @@ func Runtime(ctx context.Context, st RuntimeStore, box *secrets.Box, file *confi
 			p.APIKey = fileKeys[it.ID]
 		case it.Secret != "":
 			key, err := box.Open(it.Secret, secretContext(it.ID))
+			if errors.Is(err, secrets.ErrWrongKey) {
+				return nil, fmt.Errorf("provider %q api_key: %w; if secrets_key changed, set previous_secrets_key to the old key and run transponder secrets rotate", it.ID, err)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("provider %q api_key: %w", it.ID, err)
 			}

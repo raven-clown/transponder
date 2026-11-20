@@ -115,7 +115,7 @@ func (o *OIDC) MapsAdmin() bool {
 
 // Ping reports whether the issuer's keys have been fetched, fetching them when they have not.
 func (o *OIDC) Ping(ctx context.Context) error {
-	_, err := o.keys.lookup(ctx, "")
+	_, err := o.keys.lookup(ctx, "", false)
 	return err
 }
 
@@ -135,20 +135,29 @@ func (o *OIDC) Verify(ctx context.Context, token string) (Identity, error) {
 		return Identity{}, rejectf("issuer is %q, want %q", peek.Issuer, o.cfg.Issuer)
 	}
 	header := jws.Signatures[0].Protected
-	keys, err := o.keys.lookup(ctx, header.KeyID)
+	verify := func(keys []jose.JSONWebKey) ([]byte, bool) {
+		for _, k := range keys {
+			if k.Algorithm != "" && k.Algorithm != header.Algorithm {
+				continue
+			}
+			if payload, err := jws.Verify(k.Key); err == nil {
+				return payload, true
+			}
+		}
+		return nil, false
+	}
+	keys, err := o.keys.lookup(ctx, header.KeyID, false)
 	if err != nil {
 		return Identity{}, err
 	}
-	var payload []byte
-	verified := false
-	for _, k := range keys {
-		if k.Algorithm != "" && k.Algorithm != header.Algorithm {
-			continue
+	payload, verified := verify(keys)
+	// A token without kid names no key to look for, so a key the cached set lacks is only
+	// found by reading the set again, as for an unknown kid.
+	if !verified && header.KeyID == "" {
+		if keys, err = o.keys.lookup(ctx, "", true); err != nil {
+			return Identity{}, err
 		}
-		if payload, err = jws.Verify(k.Key); err == nil {
-			verified = true
-			break
-		}
+		payload, verified = verify(keys)
 	}
 	if !verified {
 		return Identity{}, rejectf("no key of the issuer verifies the signature (kid %q)", header.KeyID)
@@ -202,8 +211,22 @@ func (o *OIDC) checkClaims(claims map[string]any) error {
 	if !now.Before(exp.Add(o.cfg.ClockSkew)) {
 		return rejectf("token expired at %s", exp.UTC().Format(time.RFC3339))
 	}
-	if nbf, ok := claimTime(claims["nbf"]); ok && now.Add(o.cfg.ClockSkew).Before(nbf) {
-		return rejectf("token is not valid before %s", nbf.UTC().Format(time.RFC3339))
+	// nbf and iat are optional, but one that is present has to be a time and not ahead of now.
+	for _, name := range []string{"nbf", "iat"} {
+		v, present := claims[name]
+		if !present {
+			continue
+		}
+		at, ok := claimTime(v)
+		if !ok {
+			return rejectf("claim %s is not a time", name)
+		}
+		if now.Add(o.cfg.ClockSkew).Before(at) {
+			if name == "iat" {
+				return rejectf("token is issued in the future, at %s", at.UTC().Format(time.RFC3339))
+			}
+			return rejectf("token is not valid before %s", at.UTC().Format(time.RFC3339))
+		}
 	}
 	return nil
 }

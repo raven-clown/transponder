@@ -384,6 +384,65 @@ func TestOIDCConcurrentCallersShareOneFetch(t *testing.T) {
 	}
 }
 
+// A token without a kid, signed with a key the cached set does not have yet, reads the set
+// again within the refresh interval rather than failing until the cache is an hour old.
+func TestOIDCRotatedKeyWithoutKid(t *testing.T) {
+	p := authtest.NewIDP(t)
+	oldKey := p.NewKey("old")
+	o := verifier(p, nil)
+	ctx := context.Background()
+	if _, err := o.Verify(ctx, authtest.Sign(t, jose.ES256, oldKey, "", p.Claims())); err != nil {
+		t.Fatal(err)
+	}
+	newKey := p.NewKey("new")
+	p.Clock.Advance(jwksRefreshInterval)
+	if _, err := o.Verify(ctx, authtest.Sign(t, jose.ES256, newKey, "", p.Claims())); err != nil {
+		t.Fatalf("a token without kid signed with the new key: %v", err)
+	}
+	// A bad signature without kid reads the set again at most once per interval.
+	stranger := authtest.ECKey(t)
+	for range 5 {
+		if _, err := o.Verify(ctx, authtest.Sign(t, jose.ES256, stranger, "", p.Claims())); !errors.Is(err, ErrUnauthenticated) {
+			t.Fatalf("err = %v", err)
+		}
+	}
+	if got := p.FetchCount(); got != 2 {
+		t.Fatalf("fetches = %d, want 2", got)
+	}
+}
+
+func TestOIDCTimeClaims(t *testing.T) {
+	p := authtest.NewIDP(t)
+	key := p.NewKey("k")
+	o := verifier(p, nil)
+	now := p.Clock.Now()
+	tests := []struct {
+		name string
+		edit func(map[string]any)
+		ok   bool
+	}{
+		{"issued now", func(map[string]any) {}, true},
+		{"issued within the skew ahead", func(c map[string]any) { c["iat"] = now.Add(30 * time.Second).Unix() }, true},
+		{"issued a day ahead", func(c map[string]any) { c["iat"] = now.Add(24 * time.Hour).Unix() }, false},
+		{"iat that is not a number", func(c map[string]any) { c["iat"] = "yesterday" }, false},
+		{"nbf that is not a number", func(c map[string]any) { c["nbf"] = "9999999999" }, false},
+		{"nbf in the past", func(c map[string]any) { c["nbf"] = now.Add(-time.Hour).Unix() }, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := p.Claims()
+			tt.edit(c)
+			_, err := o.Verify(context.Background(), authtest.Sign(t, jose.ES256, key, "k", c))
+			if tt.ok && err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+			if !tt.ok && !errors.Is(err, ErrUnauthenticated) {
+				t.Fatalf("err = %v, want ErrUnauthenticated", err)
+			}
+		})
+	}
+}
+
 func TestOIDCCallerGivesUpDuringFetch(t *testing.T) {
 	p := authtest.NewIDP(t)
 	key := p.NewKey("k")
@@ -400,11 +459,14 @@ func TestOIDCCallerGivesUpDuringFetch(t *testing.T) {
 	}()
 	p.AwaitFetch()
 	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want context.Canceled", err)
-	}
-	// The fetch goes on for the next caller.
+	err := <-done
+	// The fetch goes on for the next caller. The gate is opened before any check can fail,
+	// so the provider's server can close.
 	close(gate)
+	// Unavailable, so the caller is answered 503 like any wait on the provider, not 500.
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable wrapping context.Canceled", err)
+	}
 	if _, err := o.Verify(context.Background(), token); err != nil {
 		t.Fatal(err)
 	}
