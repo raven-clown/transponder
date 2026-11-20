@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/raven-clown/transponder/internal/dialect/openai"
 	"github.com/raven-clown/transponder/internal/limits"
@@ -34,6 +35,8 @@ func (g *gateway) responses(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "unsupported", "background", "background responses are not supported: the gateway cannot fetch the result or its usage later")
 		return
 	}
+	// A server that reads keys without regard to case would take Background for background.
+	c.body = dropVariants(c.body, "background")
 	if !g.resolve(c, peek.Model) {
 		return
 	}
@@ -183,6 +186,30 @@ func (g *gateway) responsesStream(c *call, n provider.Native) error {
 	c.rec.Status = http.StatusOK
 	g.recordCall(ctx, c)
 	return nil
+}
+
+// dropVariants removes the keys that differ from field only by case. A body without one comes
+// back untouched.
+func dropVariants(body []byte, field string) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	found := false
+	for k := range m {
+		if k != field && strings.EqualFold(k, field) {
+			delete(m, k)
+			found = true
+		}
+	}
+	if !found {
+		return body
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return b
 }
 
 // capResponses lowers max_output_tokens of a Responses API request to the caller's cap. The

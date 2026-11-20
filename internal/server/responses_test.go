@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/router"
+	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/tokens"
 )
 
@@ -281,6 +283,36 @@ func TestResponsesFallback(t *testing.T) {
 	}
 }
 
+func TestResponsesAttemptTimeout(t *testing.T) {
+	stream := fixture(t, "stream.sse")
+	release := make(chan struct{})
+	defer close(release)
+	slow := countedUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	})
+	b := countedUpstream(t, replay(200, "text/event-stream", stream))
+	e := setupWith(t, route("*", oaTarget("a", "gpt-5", slow), oaTarget("b", "gpt-4o-mini", b)), time.Minute, 100*time.Millisecond)
+	res := e.responses(t, responsesStream)
+	if res.status != http.StatusOK || string(res.body) != stream || res.header.Get("X-Transponder-Provider") != "b" {
+		t.Fatalf("status %d, headers %v: %s", res.status, res.header, res.body)
+	}
+}
+
+func TestResponsesBodyTooLarge(t *testing.T) {
+	defer server.SetMaxUpstreamBytes(64)()
+	up := countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json")))
+	e := setupRoutes(t, route("*", oaTarget("a", "", up)))
+	res := e.responses(t, responsesPing)
+	if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_too_large" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+}
+
 func TestResponsesSkipsTargetsOfAnotherDialect(t *testing.T) {
 	plain := fixture(t, "plain.json")
 	an := countedUpstream(t, status(200, "{}"))
@@ -417,6 +449,34 @@ func TestResponsesBadRequests(t *testing.T) {
 	}
 }
 
+// A provider written in Go reads Background as background, so the gateway must not let it by.
+func TestResponsesDropsBackgroundInAnotherCase(t *testing.T) {
+	var got map[string]json.RawMessage
+	up := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		replay(200, "application/json", fixture(t, "plain.json"))(w, r)
+	})
+	e := setupRoutes(t, []router.Route{openaiRoute("*", "gpt-5", up)})
+	for _, body := range []string{
+		`{"model":"m","input":"x","Background":true}`,
+		`{"model":"m","input":"x","BACKGROUND":true,"background":false,"stream":false}`,
+	} {
+		got = nil
+		if res := e.responses(t, body); res.status != http.StatusOK {
+			t.Fatalf("status %d: %s", res.status, res.body)
+		}
+		for k := range got {
+			if k != "background" && strings.EqualFold(k, "background") {
+				t.Fatalf("%s reached the provider with %s", body, k)
+			}
+		}
+		if string(got["input"]) != `"x"` || string(got["model"]) != `"gpt-5"` {
+			t.Fatalf("upstream body %v", got)
+		}
+	}
+}
+
 func TestResponsesRouteAccess(t *testing.T) {
 	e, p := setupOIDCRoutes(t, []router.Route{
 		{Match: "fast", Access: allow(t, "team:platform"), Targets: []router.Target{oaTarget("a", "gpt-4o-mini", countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json"))))}},
@@ -515,7 +575,7 @@ func TestResponsesLimits(t *testing.T) {
 
 	t.Run("the request rate", func(t *testing.T) {
 		up := countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json")))
-		r := limits.Rate{N: 1, Per: 60_000_000_000}
+		r := limits.Rate{N: 1, Per: time.Minute}
 		e := setupLimited(t, route("*", oaTarget("a", "", up)), oneProfile(func(p *limits.Profile) { p.RequestRate = &r }))
 		if res := e.responses(t, responsesPing); res.status != http.StatusOK || res.header.Get("RateLimit-Policy") == "" {
 			t.Fatalf("first call %d, headers %v", res.status, res.header)

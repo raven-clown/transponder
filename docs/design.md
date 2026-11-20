@@ -455,7 +455,7 @@ Settled on 2026-11-04, after the spec review:
 - Unpriced models are served at zero cost, logged as `unpriced` and counted in a metric.
 - Budget rejections use 402.
 - Every runtime and usage table has an `org_id` column, `default` in v1, and every query filters by it, as the contract requires. Organisation endpoints and org admins ship in the release after v1.
-- After v1, in this order: the OpenAI Responses API (Codex CLI uses it), organisations, Bedrock and Vertex adapters, exact-match caching, `LISTEN/NOTIFY` reload.
+- After v1, in this order: the OpenAI Responses API (Codex CLI uses it; `POST /v1/responses` shipped in v0.3.0 as a passthrough to OpenAI-dialect targets, with translation still to come), organisations, Bedrock and Vertex adapters, exact-match caching, `LISTEN/NOTIFY` reload.
 
 ## 15. Release plan
 
