@@ -45,6 +45,8 @@ type Deps struct {
 	Live func() (*router.Router, *limits.Limiter)
 	// Ready are the dependencies /readyz pings, by name.
 	Ready map[string]Pinger
+	// Admin, when set, serves every path under /admin/v1/.
+	Admin http.Handler
 }
 
 // New returns the gateway handler.
@@ -60,6 +62,9 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /v1/messages/count_tokens", g.countTokens)
 	mux.Handle("/healthz", Healthz())
 	mux.Handle("/readyz", Readyz(d.Ready))
+	if d.Admin != nil {
+		mux.Handle("/admin/v1/", d.Admin)
+	}
 	if d.RequestTimeout <= 0 {
 		return RequestID(mux)
 	}

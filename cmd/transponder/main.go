@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/admin"
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
@@ -122,6 +123,7 @@ func stopOnContextDone(ctx context.Context, stop context.CancelFunc) {
 }
 
 func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, stderr io.Writer) error {
+	started := time.Now()
 	logger, err := telemetry.NewLogger(stdout, cfg.LogLevel)
 	if err != nil {
 		return err
@@ -184,6 +186,16 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          ready,
+		Admin: admin.New(admin.Deps{
+			Auth:      authn,
+			Store:     db,
+			Reload:    reloader,
+			Logger:    logger,
+			Now:       time.Now,
+			Version:   version,
+			StoreKind: storeKind(cfg.Store),
+			Started:   started,
+		}),
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.
@@ -227,11 +239,15 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 
 // database is what serve needs from a store, whichever database holds it.
 type database interface {
-	store.KeyStore
-	store.UsageStore
-	store.ConfigStore
-	Ping(ctx context.Context) error
+	admin.Store
 	Close() error
+}
+
+func storeKind(cfg config.Store) string {
+	if cfg.Postgres != "" {
+		return "postgres"
+	}
+	return "sqlite"
 }
 
 // openStore opens the database the config names: Postgres when store.postgres is set, which
