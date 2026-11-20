@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"math"
 	"net/http"
 	"regexp"
@@ -219,21 +220,18 @@ func estimateInput(body []byte) int64 {
 	}
 	var b bytes.Buffer
 	var numbers, images int64
-	var walk func(key string, v any, image bool)
-	walk = func(key string, v any, image bool) {
+	var walk func(key string, v any)
+	walk = func(key string, v any) {
 		switch x := v.(type) {
 		case map[string]any:
 			if isImage(x) {
 				images++
-				image = true
+				x = withoutImageData(x)
 			}
 			for k, val := range x {
-				if image && k == "data" && x["type"] == "base64" {
-					continue
-				}
 				b.WriteString(k)
 				b.WriteByte(' ')
-				walk(k, val, image)
+				walk(k, val)
 			}
 		case []any:
 			for _, val := range x {
@@ -241,18 +239,46 @@ func estimateInput(body []byte) int64 {
 					numbers++
 					continue
 				}
-				walk(key, val, image)
+				walk(key, val)
 			}
 		case string:
-			if key == "signature" || (image && base64DataURI.MatchString(x)) {
+			if key == "signature" {
 				return
 			}
 			b.WriteString(x)
 			b.WriteByte(' ')
 		}
 	}
-	walk("", v, false)
+	walk("", v)
 	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
+}
+
+// withoutImageData returns an image part without the fields that hold its inline data: an
+// Anthropic base64 source's data, and a data: URL in image_url or file_data. Anything else
+// in the part still counts.
+func withoutImageData(part map[string]any) map[string]any {
+	out := maps.Clone(part)
+	if src, ok := out["source"].(map[string]any); ok && src["type"] == "base64" {
+		src = maps.Clone(src)
+		delete(src, "data")
+		out["source"] = src
+	}
+	if u, ok := out["image_url"].(map[string]any); ok && isDataURI(u["url"]) {
+		u = maps.Clone(u)
+		delete(u, "url")
+		out["image_url"] = u
+	}
+	for _, k := range []string{"image_url", "file_data"} {
+		if isDataURI(out[k]) {
+			delete(out, k)
+		}
+	}
+	return out
+}
+
+func isDataURI(v any) bool {
+	s, ok := v.(string)
+	return ok && base64DataURI.MatchString(s)
 }
 
 // isImage reports whether a JSON object is an image part, in the form of OpenAI's chat or
