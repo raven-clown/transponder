@@ -22,7 +22,8 @@ type Event struct {
 
 // Reader reads events from a stream.
 type Reader struct {
-	r *bufio.Reader
+	r     *bufio.Reader
+	begun bool
 }
 
 // NewReader reads events from r.
@@ -75,12 +76,22 @@ func (s *Reader) Next() (Event, error) {
 			}
 		}
 		if eof {
-			return ev, io.ErrUnexpectedEOF
+			if started {
+				return ev, io.ErrUnexpectedEOF
+			}
+			return Event{}, io.EOF
 		}
 	}
 }
 
 func (s *Reader) readLine() ([]byte, error) {
+	if !s.begun {
+		// A stream may begin with a UTF-8 byte order mark, which is not part of its first line.
+		s.begun = true
+		if b, err := s.r.Peek(3); err == nil && bytes.Equal(b, []byte("\xEF\xBB\xBF")) {
+			_, _ = s.r.Discard(3)
+		}
+	}
 	var line []byte
 	for {
 		chunk, err := s.r.ReadSlice('\n')
