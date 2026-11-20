@@ -33,12 +33,31 @@ jobs:
     name: coverage
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The store tests run against SQLite everywhere and against this Postgres here.
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:526f86d93c6ea08fd3f1fe5605650cacc781b2c6013169a0ad8f42c7d3d84f32
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TRANSPONDER_TEST_POSTGRES: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: go test -race -coverprofile=cover.out -covermode=atomic ./...
+      - name: the Postgres tests ran
+        run: |
+          go test -count=1 -v -run 'TestStore|TestServeTwoReplicasOnPostgres' ./internal/store/postgres ./cmd/transponder > pg.out
+          if grep -q -e '--- SKIP' pg.out; then cat pg.out; echo "Postgres tests were skipped"; exit 1; fi
       - uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
         with:
           config: ./.testcoverage.yml

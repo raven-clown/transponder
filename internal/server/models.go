@@ -18,7 +18,7 @@ func (g *gateway) models(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	names := g.d.Router.ModelsFor(c.id)
+	names := c.router.ModelsFor(c.id)
 	data := make([]wireModel, len(names))
 	for i, n := range names {
 		data[i] = wireModel{ID: n, Object: "model", OwnedBy: "transponder"}

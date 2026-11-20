@@ -69,3 +69,15 @@ type UsageStore interface {
 	// UsageSince calls fn for each of orgID's records from since on, oldest first.
 	UsageSince(ctx context.Context, orgID string, since time.Time, fn func(UsageRecord) error) error
 }
+
+// ConfigStore versions the runtime config, so every replica can tell when it changed.
+type ConfigStore interface {
+	// ConfigVersion returns the version of the runtime config. It starts at 1 and every
+	// UpdateConfig raises it.
+	ConfigVersion(ctx context.Context) (int64, error)
+	// UpdateConfig runs fn in one transaction and raises the config version in it, so a replica
+	// reloads once the change commits and never sees half of it. Store calls fn makes with the
+	// ctx it is given join the transaction; an error from fn rolls everything back. It returns
+	// the new version.
+	UpdateConfig(ctx context.Context, fn func(ctx context.Context) error) (int64, error)
+}

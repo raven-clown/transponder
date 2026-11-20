@@ -130,7 +130,8 @@ type BudgetConfig struct {
 	LimitUSD float64 `yaml:"limit_usd"`
 }
 
-// LimitsStore says where limit counters are kept.
+// LimitsStore says where limit counters are kept: memory in this process, or sql in the Postgres
+// store so every replica shares them. Empty means sql with store.postgres and memory otherwise.
 type LimitsStore struct {
 	Store        string `yaml:"store"`
 	OnStoreError string `yaml:"on_store_error"`
@@ -322,10 +323,14 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 func (c *Bootstrap) validate() error {
 	switch c.Limits.Store {
 	case "", "memory":
-	case "sql", "valkey":
-		return fmt.Errorf("config: limits.store %q is not supported yet; use memory", c.Limits.Store)
+	case "sql":
+		if c.Store.Postgres == "" {
+			return errors.New("config: limits.store sql keeps the counters in Postgres, so it needs store.postgres")
+		}
+	case "valkey":
+		return errors.New("config: limits.store valkey is not supported yet; use memory or sql")
 	default:
-		return fmt.Errorf("config: limits.store %q must be memory", c.Limits.Store)
+		return fmt.Errorf("config: limits.store %q must be memory or sql", c.Limits.Store)
 	}
 	switch c.Limits.OnStoreError {
 	case "", "local", "deny":
@@ -395,6 +400,11 @@ func (c *Bootstrap) validate() error {
 		}
 	}
 	return nil
+}
+
+// SharedLimits reports whether limit counters are kept in Postgres, shared by every replica.
+func (c *Bootstrap) SharedLimits() bool {
+	return c.Limits.Store == "sql" || (c.Limits.Store == "" && c.Store.Postgres != "")
 }
 
 func envMap(environ []string) map[string]string {

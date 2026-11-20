@@ -2,8 +2,6 @@ package limits
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -49,172 +47,34 @@ func TestWindows(t *testing.T) {
 	}
 }
 
-func TestAddAndAdjust(t *testing.T) {
+func TestMemoryInFlight(t *testing.T) {
 	s := NewMemoryStore()
-	now := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
-	if r, _ := s.Add(ctx, "user:a", 60, 100, Day, now); !r.OK || r.Used != 60 {
-		t.Fatalf("first add %+v", r)
-	}
-	if r, _ := s.Add(ctx, "user:a", 50, 100, Day, now); r.OK || r.Used != 60 || r.Limit != 100 || !r.Reset.Equal(Day.Reset(now)) {
-		t.Fatalf("add over the limit %+v", r)
-	}
-	if err := s.Adjust(ctx, "user:a", -40, Day, now); err != nil {
-		t.Fatal(err)
-	}
-	if r, _ := s.Add(ctx, "user:a", 80, 100, Day, now); !r.OK || r.Used != 100 {
-		t.Fatalf("add after giving back %+v", r)
-	}
-	tomorrow := now.Add(24 * time.Hour)
-	if r, _ := s.Add(ctx, "user:a", 100, 100, Day, tomorrow); !r.OK || r.Used != 100 {
-		t.Fatalf("new day %+v", r)
-	}
-	if err := s.Adjust(ctx, "user:a", -100, Day, now); err != nil {
-		t.Fatal(err)
-	}
-	if r, _ := s.Add(ctx, "user:a", 1, 100, Day, tomorrow); r.OK {
-		t.Fatalf("settling yesterday changed today: %+v", r)
-	}
-	if u, _ := s.Used(ctx, "user:a", Day, tomorrow); u != 100 {
-		t.Fatalf("used %d", u)
-	}
-}
-
-func TestAddRace(t *testing.T) {
-	s := NewMemoryStore()
-	now := time.Now()
-	var ok atomic.Int64
-	var wg sync.WaitGroup
-	for range 100 {
-		wg.Go(func() {
-			if r, _ := s.Add(ctx, "k", 1, 10, Month, now); r.OK {
-				ok.Add(1)
-			}
-		})
-	}
-	wg.Wait()
-	if ok.Load() != 10 {
-		t.Fatalf("%d adds passed a limit of 10", ok.Load())
-	}
-}
-
-func TestTake(t *testing.T) {
-	s := NewMemoryStore()
-	r := Rate{N: 60, Per: time.Minute}
-	now := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
-	for i := range 60 {
-		b, _ := s.Take(ctx, "k", 1, r, now)
-		if !b.OK {
-			t.Fatalf("call %d refused: %+v", i, b)
-		}
-		if i == 0 && b.Remaining != 59 {
-			t.Fatalf("remaining %d", b.Remaining)
-		}
-	}
-	b, _ := s.Take(ctx, "k", 1, r, now)
-	if b.OK || b.RetryAfter != time.Second || b.Remaining != 0 {
-		t.Fatalf("61st call %+v", b)
-	}
-	if b, _ := s.Take(ctx, "k", 1, r, now.Add(time.Second)); !b.OK {
-		t.Fatalf("after a second %+v", b)
-	}
-	if err := s.Settle(ctx, "k", -30, r, now.Add(time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := s.Take(ctx, "k", 30, r, now.Add(time.Second)); !b.OK {
-		t.Fatalf("after giving 30 back %+v", b)
-	}
-	if b, _ := s.Take(ctx, "other", 61, r, now); b.OK {
-		t.Fatalf("a cost over the whole rate passed %+v", b)
-	}
-}
-
-func TestAcquire(t *testing.T) {
-	s := NewMemoryStore()
-	ok1, rel1, _ := s.Acquire(ctx, "k", 2)
-	ok2, rel2, _ := s.Acquire(ctx, "k", 2)
-	ok3, _, _ := s.Acquire(ctx, "k", 2)
-	if !ok1 || !ok2 || ok3 {
-		t.Fatalf("acquire %v %v %v", ok1, ok2, ok3)
-	}
+	_, rel1, _ := s.Acquire(ctx, "k", 2)
+	_, rel2, _ := s.Acquire(ctx, "k", 2)
 	rel1()
 	rel1()
-	if ok, _, _ := s.Acquire(ctx, "k", 2); !ok {
-		t.Fatal("slot not freed")
-	}
-	rel2()
 	if n := s.InFlight("k"); n != 1 {
 		t.Fatalf("in flight %d", n)
 	}
+	rel2()
 }
 
-func TestHugeAndNegativeAmounts(t *testing.T) {
+func TestMemoryEach(t *testing.T) {
 	s := NewMemoryStore()
-	now := time.Now()
-	if r, _ := s.Add(ctx, "k", 5, 10, Day, now); !r.OK {
-		t.Fatal(r)
-	}
-	if r, _ := s.Add(ctx, "k", 1<<62, 10, Day, now); r.OK {
-		t.Fatalf("huge add passed: %+v", r)
-	}
-	if r, _ := s.Add(ctx, "k", -1<<62, 10, Day, now); r.OK || r.Used != 5 {
-		t.Fatalf("negative add changed the counter: %+v", r)
-	}
-	rate := Rate{N: 10, Per: time.Minute}
-	if b, _ := s.Take(ctx, "r", 1<<62, rate, now); b.OK {
-		t.Fatalf("huge take passed: %+v", b)
-	}
-	if b, _ := s.Take(ctx, "r", -1<<62, rate, now); b.OK && b.Remaining > 10 {
-		t.Fatalf("negative take added room: %+v", b)
-	}
-	if err := s.Settle(ctx, "r", 1<<62, rate, now); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := s.Take(ctx, "r", 1, rate, now); b.OK {
-		t.Fatalf("a huge settle did not fill the bucket: %+v", b)
-	}
-	if err := s.Settle(ctx, "r", -1<<62, rate, now); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSettleKeepsDebt(t *testing.T) {
-	s := NewMemoryStore()
-	rate := Rate{N: 1000, Per: time.Minute}
 	now := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
-	if b, _ := s.Take(ctx, "r", 1000, rate, now); !b.OK {
-		t.Fatal(b)
-	}
-	if err := s.Settle(ctx, "r", 31000, rate, now); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := s.Take(ctx, "r", 1, rate, now)
-	if b.OK || b.RetryAfter < 31*time.Minute {
-		t.Fatalf("a call 32 times the rate cost %s of waiting: %+v", b.RetryAfter, b)
-	}
-}
-
-func TestAdjustMovesToANewerWindow(t *testing.T) {
-	s := NewMemoryStore()
-	oct := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
-	nov := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	_ = s.Adjust(ctx, "k", 7, Month, oct)
-	_ = s.Adjust(ctx, "k", 5, Month, nov)
-	if u, _ := s.Used(ctx, "k", Month, nov); u != 5 {
-		t.Fatalf("used %d, want 5", u)
+	_, _ = s.Add(ctx, "a", 3, 10, Day, now)
+	_, _ = s.Add(ctx, "a", 4, 10, Month, now)
+	got := map[Window]int64{}
+	s.Each(func(key string, w Window, start time.Time, n int64) {
+		if key != "a" || !start.Equal(w.Start(now)) {
+			t.Errorf("counter %s %s %v", key, w, start)
+		}
+		got[w] = n
+	})
+	if got[Day] != 3 || got[Month] != 4 || len(got) != 2 {
+		t.Fatalf("counters %v", got)
 	}
 }
-
-func TestAddAtTheLimit(t *testing.T) {
-	s := NewMemoryStore()
-	now := time.Now()
-	if r, _ := s.Add(ctx, "k", 10, 10, Day, now); !r.OK {
-		t.Fatal(r)
-	}
-	if r, _ := s.Add(ctx, "k", 0, 10, Day, now); r.OK {
-		t.Fatalf("a zero amount passed a spent limit: %+v", r)
-	}
-}
-
 func TestParseRateTooFast(t *testing.T) {
 	if _, err := ParseRate("2000000000/s"); err == nil {
 		t.Fatal("a rate faster than one per nanosecond was accepted")
