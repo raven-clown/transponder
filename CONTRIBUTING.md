@@ -39,7 +39,8 @@ Every change comes with tests. A pull request without them is only merged when t
 - Test behavior through the public API. Don't test private helpers unless they hold real logic.
 - Tests must pass with `-race` and must not depend on timing. Use channels or polling with a deadline, never a bare `time.Sleep`.
 - No network calls in unit tests. Use `httptest` servers or the fakes in `internal/testutil`.
-- Tests that need Docker or a real service go behind the `integration` build tag.
+- Tests that need Postgres skip unless `TRANSPONDER_TEST_POSTGRES` holds the URL of a server, so `go test ./...` passes without one. CI runs them. Other tests that need Docker or a real service go behind the `integration` build tag.
+- A store method is tested in `internal/store/storetest`, the suite that runs against both SQLite and Postgres.
 - CI fails if total coverage drops below 80%.
 
 ## Code style

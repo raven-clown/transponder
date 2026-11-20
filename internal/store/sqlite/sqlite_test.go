@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/raven-clown/transponder/internal/store/storetest"
 )
 
 func openTemp(t *testing.T) *DB {
@@ -18,6 +20,19 @@ func openTemp(t *testing.T) *DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+func TestStore(t *testing.T) {
+	storetest.Run(t, func(t *testing.T) storetest.Store { return openTemp(t) })
+}
+
+// 0002 renamed a column before the rule, when only one replica could run.
+func TestMigrationsExpandAndContract(t *testing.T) {
+	sub, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storetest.CheckMigrations(t, sub, "0002_rename_user.sql")
 }
 
 func appliedVersions(t *testing.T, db *DB) []int {

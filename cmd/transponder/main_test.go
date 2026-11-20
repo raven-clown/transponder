@@ -20,6 +20,8 @@ import (
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/store/postgres"
+	"github.com/raven-clown/transponder/internal/store/postgres/pgtest"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 )
 
@@ -111,16 +113,81 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestServeRejectsPostgres(t *testing.T) {
-	cfg := &config.Bootstrap{Store: config.Store{Postgres: "postgres://x"}}
+func TestServeFailsOnUnreachablePostgres(t *testing.T) {
+	dsn := "postgres://u:secret@127.0.0.1:1/db?connect_timeout=2" //nolint:gosec // a made-up password, to check it stays out of the error
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, LogLevel: "info"}
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
 	err = serve(context.Background(), cfg, ln, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "postgres store is not supported yet") {
-		t.Fatalf("err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "opening postgres") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("err = %v, want it to say postgres could not be opened, without the password", err)
+	}
+}
+
+// chat sends one chat call with key and returns the status.
+func chat(t *testing.T, addr, key string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+addr+"/v1/chat/completions",
+		strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"ping"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// Two replicas on one Postgres share the admin key and the usage records.
+func TestServeTwoReplicasOnPostgres(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	listen := func() net.Listener {
+		ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, LogLevel: "info"}
+	first := listen()
+	key, stopFirst := startServe(t, cfg, first)
+	defer stopFirst()
+
+	// The second replica finds the admin key in the database and prints none of its own.
+	second := listen()
+	ctx, cancel := context.WithCancel(context.Background())
+	var stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, second, io.Discard, &stderr) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("the second replica printed %q", stderr.String())
+		}
+	}()
+
+	for _, ln := range []net.Listener{first, second} {
+		if status := chat(t, ln.Addr().String(), key); status != http.StatusOK {
+			t.Fatalf("status %d from %s", status, ln.Addr())
+		}
+	}
+	db, err := postgres.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	recs, err := db.RecentUsage(context.Background(), store.DefaultOrg, 10)
+	if err != nil || len(recs) != 2 {
+		t.Fatalf("usage records = %+v, %v, want one from each replica", recs, err)
 	}
 }
 

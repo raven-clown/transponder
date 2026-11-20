@@ -308,6 +308,21 @@ profile_bindings:
 - `GET /v1/usage` shows the caller each budget and token allowance that applies to them: the limit, what is used (calls in flight count at what they reserved), what is left and when it resets.
 - Counters live in memory and are rebuilt from the usage table at start, so a restart keeps this month's recorded spend. A limit can be passed only by calls already in flight whose real usage turns out larger than their reservation, and by kept reservations lost in a restart. With several replicas each keeps its own counters until the shared store lands.
 
+### Postgres and several replicas
+
+SQLite serves one replica. To run more, point every replica at one Postgres database:
+
+```yaml
+store:
+  postgres: postgres://transponder:${PGPASSWORD}@db.internal:5432/transponder?sslmode=require
+```
+
+`TRANSPONDER_STORE__POSTGRES` sets the same key. The value is a `postgres://` URL or a `key=value` connection string, and takes pool settings such as `pool_max_conns=20`. Set only one of `store.sqlite` and `store.postgres`.
+
+- The schema is created and migrated at start. Replicas that start together take a lock, so each migration runs once.
+- API keys and usage records are shared: a key made on one replica works on all of them, and the first replica to start prints the one-time admin key.
+- Migrations only add tables and columns, and removals come in a later release, so replicas on the old and the new version can run side by side during a rolling update.
+
 ## Roadmap
 
 Each milestone ships as a release when it lands:

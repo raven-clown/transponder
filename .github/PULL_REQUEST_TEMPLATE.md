@@ -61,7 +61,7 @@ Providers this touches: <!-- echo, openai, ollama, anthropic, gemini, or none --
 - [ ] `x-api-key` is still accepted next to `Authorization: Bearer`
 - [ ] A price change in `internal/pricing/prices.yaml` links the provider's price page
 - [ ] No API key, prompt or completion text is written to logs
-- [ ] A schema change adds the next numbered migration in `internal/store/sqlite/migrations`
+- [ ] A schema change adds the next numbered migration in both `internal/store/sqlite/migrations` and `internal/store/postgres/migrations`, and only adds to the schema
 - [ ] A new config key works from YAML and from its `TRANSPONDER_` environment variable
 
 ## Checklist

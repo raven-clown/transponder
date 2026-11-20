@@ -25,6 +25,7 @@ import (
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/store/postgres"
 	"github.com/raven-clown/transponder/internal/store/sqlite"
 	"github.com/raven-clown/transponder/internal/telemetry"
 )
@@ -118,15 +119,12 @@ func stopOnContextDone(ctx context.Context, stop context.CancelFunc) {
 }
 
 func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, stderr io.Writer) error {
-	if cfg.Store.Postgres != "" {
-		return errors.New("postgres store is not supported yet")
-	}
 	logger, err := telemetry.NewLogger(stdout, cfg.LogLevel)
 	if err != nil {
 		return err
 	}
 
-	db, err := sqlite.Open(ctx, cfg.Store.SQLite)
+	db, err := openStore(ctx, cfg.Store)
 	if err != nil {
 		return err
 	}
@@ -194,6 +192,23 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	return nil
+}
+
+// database is what serve needs from a store, whichever database holds it.
+type database interface {
+	store.KeyStore
+	store.UsageStore
+	Ping(ctx context.Context) error
+	Close() error
+}
+
+// openStore opens the database the config names: Postgres when store.postgres is set, which
+// several replicas can share, and otherwise the SQLite file.
+func openStore(ctx context.Context, cfg config.Store) (database, error) {
+	if cfg.Postgres != "" {
+		return postgres.Open(ctx, cfg.Postgres)
+	}
+	return sqlite.Open(ctx, cfg.SQLite)
 }
 
 // buildRouter turns the providers and routes of the file into a router. With no routes,
