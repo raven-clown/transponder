@@ -71,7 +71,22 @@ func TestTwoLimitersShareABudget(t *testing.T) {
 	if spent.Load() > budget {
 		t.Fatalf("spent %d nano-USD over a budget of %d across %d calls", spent.Load(), budget, admitted.Load())
 	}
-	// The last call that fit left room for less than one more reservation.
+	// A call refused while others held their reservations may have left room once they settled
+	// lower, so take calls one at a time until the budget refuses, on alternate replicas.
+	for i := 0; ; i++ {
+		tk, d := replicas[i%2].Admit(context.Background(), limits.Caller{User: "ua", Teams: []string{"ml"}}, limits.Estimate{CostNUSD: reserve, NoOutput: true})
+		if d != nil {
+			break
+		}
+		admitted.Add(1)
+		spent.Add(cost)
+		tk.Settle(1, cost)
+		tk.Release()
+	}
+	if spent.Load() > budget {
+		t.Fatalf("spent %d nano-USD over a budget of %d", spent.Load(), budget)
+	}
+	// Then the budget is used up to less than one reservation.
 	if left := budget - spent.Load(); left >= reserve {
 		t.Fatalf("only %d calls admitted, %d nano-USD left unused", admitted.Load(), left)
 	}
