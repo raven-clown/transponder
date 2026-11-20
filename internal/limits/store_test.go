@@ -47,6 +47,30 @@ func TestWindows(t *testing.T) {
 	}
 }
 
+// A clock that jumps back across midnight, as when NTP corrects it, keeps counting on the later
+// day rather than handing out the earlier day's allowance again. A forward jump starts the new
+// window as the real midnight would.
+func TestMemoryClockJumps(t *testing.T) {
+	s := NewMemoryStore()
+	after := time.Date(2026, 11, 21, 0, 0, 30, 0, time.UTC)
+	before := after.Add(-time.Minute)
+	if r, _ := s.Add(ctx, "k", 8, 10, Day, after); !r.OK {
+		t.Fatal(r)
+	}
+	if r, _ := s.Add(ctx, "k", 5, 10, Day, before); r.OK || r.Used != 8 {
+		t.Fatalf("after a jump back: %+v, want 8 of 10 used and the add refused", r)
+	}
+	if err := s.Adjust(ctx, "k", -8, Day, before); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.Used(ctx, "k", Day, after); u != 8 {
+		t.Fatalf("a settlement dated before the jump changed the later day: used %d", u)
+	}
+	if r, _ := s.Add(ctx, "k", 10, 10, Day, after.Add(24*time.Hour)); !r.OK {
+		t.Fatalf("the next day after a jump forward: %+v", r)
+	}
+}
+
 func TestMemoryInFlight(t *testing.T) {
 	s := NewMemoryStore()
 	_, rel1, _ := s.Acquire(ctx, "k", 2)
