@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -896,7 +898,7 @@ func TestBuildLimiterSeedsFromUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
-	l, err := buildLimiter(ctx, cfg, db, func() time.Time { return now })
+	l, _, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
 	if err != nil || l == nil {
 		t.Fatalf("limiter %v, %v", l, err)
 	}
@@ -906,9 +908,142 @@ func TestBuildLimiterSeedsFromUsage(t *testing.T) {
 	if _, d := l.Admit(ctx, limits.Caller{User: "bob"}, limits.Estimate{CostNUSD: 200_000_000}); d != nil {
 		t.Fatalf("bob denied: %+v", d)
 	}
-	none, err := buildLimiter(ctx, &config.Bootstrap{}, db, time.Now)
+	none, _, err := buildLimiter(ctx, &config.Bootstrap{}, db, slog.New(slog.DiscardHandler), time.Now)
 	if err != nil || none != nil {
 		t.Fatalf("limiter without limits %v, %v", none, err)
+	}
+}
+
+// With shared limits the first replica fills the counters from the usage table and the next
+// one finds them filled, so last month's spend is not counted twice.
+func TestBuildLimiterSharedSeedsOnce(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	ctx := context.Background()
+	db, err := postgres.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	now := time.Now()
+	if err := db.RecordUsage(ctx, store.UsageRecord{OrgID: store.DefaultOrg, Time: now, User: "alice", CostNUSD: 600_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{Store: config.Store{Postgres: dsn}, Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
+	var stops []func()
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+	var replicas []*limits.Limiter
+	for range 2 {
+		l, stop, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
+		if err != nil {
+			t.Fatal(err)
+		}
+		stops = append(stops, stop)
+		replicas = append(replicas, l)
+	}
+	for _, l := range replicas {
+		st := l.Status(ctx, limits.Caller{User: "alice"})
+		if len(st) != 1 || st[0].Used != 600_000_000 {
+			t.Fatalf("status %+v, want this month's spend counted once", st)
+		}
+	}
+	if _, d := replicas[1].Admit(ctx, limits.Caller{User: "alice"}, limits.Estimate{CostNUSD: 500_000_000}); d == nil {
+		t.Fatal("the second replica let alice past her budget")
+	}
+
+	cfg.Limits.Store = "memory"
+	l, stop, err := buildLimiter(ctx, cfg, db, slog.New(slog.DiscardHandler), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	if st := l.Status(ctx, limits.Caller{User: "alice"}); len(st) != 1 || st[0].Used != 600_000_000 {
+		t.Fatalf("memory limits on Postgres: status %+v", st)
+	}
+}
+
+// startReplica runs serve on ln for a replica that finds the admin key already made, and
+// returns a function that stops it.
+func startReplica(t *testing.T, cfg *config.Bootstrap, ln net.Listener) func() {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, ln, io.Discard, io.Discard) }()
+	return func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+	}
+}
+
+// Two transponder replicas on one Postgres take calls for one user at the same time. Each call
+// costs what it reserved, and together they must stay within the user's budget.
+func TestServeTwoReplicasShareABudget(t *testing.T) {
+	dsn := pgtest.DSN(t)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":500}}`)
+	}))
+	defer up.Close()
+	const budgetUSD = 0.05
+	cfg := &config.Bootstrap{
+		Store:     config.Store{Postgres: dsn},
+		LogLevel:  "error",
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: up.URL, APIKey: "sk-test"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+		Budgets:   []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: budgetUSD}},
+	}
+	listen := func() net.Listener {
+		ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	first, second := listen(), listen()
+	key, stopFirst := startServe(t, cfg, first)
+	defer stopFirst()
+	defer startReplica(t, cfg, second)()
+
+	var mu sync.Mutex
+	statuses := map[int]int{}
+	var wg sync.WaitGroup
+	for i := range 40 {
+		addr := []net.Listener{first, second}[i%2].Addr().String()
+		wg.Go(func() {
+			status, _ := postChat(t, addr, key, `{"model":"gpt-5","max_tokens":500,"messages":[{"role":"user","content":"ping"}]}`)
+			mu.Lock()
+			statuses[status]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if statuses[http.StatusOK] == 0 || statuses[http.StatusPaymentRequired] == 0 || statuses[http.StatusOK]+statuses[http.StatusPaymentRequired] != 40 {
+		t.Fatalf("statuses %v, want some calls served and the rest refused for the budget", statuses)
+	}
+
+	db, err := postgres.Open(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	recs, err := db.RecentUsage(context.Background(), store.DefaultOrg, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spent int64
+	var served int
+	for _, r := range recs {
+		if r.Status == http.StatusOK {
+			spent += r.CostNUSD
+			served++
+		}
+	}
+	if served != statuses[http.StatusOK] || spent > int64(budgetUSD*1e9) {
+		t.Fatalf("%d calls spent %d nano-USD of a %v USD budget", served, spent, budgetUSD)
 	}
 }
 

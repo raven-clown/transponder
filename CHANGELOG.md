@@ -7,6 +7,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 
 - `store.postgres` (or `TRANSPONDER_STORE__POSTGRES`) keeps API keys and usage records in Postgres, so several replicas can share them. The schema is migrated at start, and replicas that start together apply each migration once.
+- With `store.postgres`, budgets, token allowances, request rates and concurrency caps are counted in Postgres, so they hold across every replica. Two replicas cannot both spend the last of a budget. `limits.store: memory` keeps per-process counters for a single replica. When Postgres cannot be reached, `limits.on_store_error: local` counts in each replica with its share of each limit, and `deny` answers 503 `overloaded`.
 - `--config-test` flag to validate a configuration file, environment variables, provider routes and settings without starting the server, binding listening ports, or creating a database file (#103).
 - Every response carries `X-Request-ID`: the caller's value when it is 1 to 128 printable ASCII characters, or a new 32-character hex id. The same id is recorded with usage and sent to the provider.
 - Every line the JSON logger writes carries `"service":"transponder"`, so logs from the four projects can be told apart in one place.

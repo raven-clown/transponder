@@ -493,11 +493,36 @@ func TestLoadLimitsRejects(t *testing.T) {
 		"profile without name":    "profiles:\n  - limits: {}\n",
 		"bad budget":              "budgets:\n  - {subject: \"user:*\", period: weekly, limit_usd: 1}\n",
 		"store not supported yet": "limits: {store: valkey}\n",
+		"sql without postgres":    "limits: {store: sql}\n",
+		"unknown store":           "limits: {store: redis}\n",
 		"bad on_store_error":      "limits: {on_store_error: panic}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(writeFile(t, body), nil); err == nil {
 				t.Fatal("accepted")
+			}
+		})
+	}
+}
+
+func TestSharedLimits(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       bool
+	}{
+		{"sqlite", "", false},
+		{"postgres", "store: {postgres: postgres://db/t}\n", true},
+		{"postgres with sql", "store: {postgres: postgres://db/t}\nlimits: {store: sql}\n", true},
+		{"postgres with memory", "store: {postgres: postgres://db/t}\nlimits: {store: memory}\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(writeFile(t, tt.body), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := c.SharedLimits(); got != tt.want {
+				t.Fatalf("SharedLimits = %v, want %v", got, tt.want)
 			}
 		})
 	}

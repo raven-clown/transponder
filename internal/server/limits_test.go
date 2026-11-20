@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,11 @@ import (
 
 func setupLimited(t *testing.T, routes []router.Route, cfg limits.Config) *env {
 	t.Helper()
+	return setupLimitedStore(t, routes, cfg, limits.NewMemoryStore())
+}
+
+func setupLimitedStore(t *testing.T, routes []router.Route, cfg limits.Config, counters limits.Store) *env {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
@@ -45,7 +51,7 @@ func setupLimited(t *testing.T, routes []router.Route, cfg limits.Config) *env {
 		Usage:   db,
 		Logger:  slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		Now:     time.Now,
-		Limiter: limits.New(cfg, limits.NewMemoryStore(), time.Now),
+		Limiter: limits.New(cfg, counters, time.Now),
 	}))
 	t.Cleanup(srv.Close)
 	return &env{srv: srv, db: db, key: plain}
@@ -55,6 +61,48 @@ func oneProfile(edit func(*limits.Profile)) limits.Config {
 	p := limits.Profile{Name: "p"}
 	edit(&p)
 	return limits.Config{Profiles: []limits.Profile{p}, DefaultProfile: "p"}
+}
+
+// downStore is a shared counter store that cannot be reached.
+type downStore struct{}
+
+var errDown = errors.New("connection refused")
+
+func (downStore) Add(context.Context, string, int64, int64, limits.Window, time.Time) (limits.Result, error) {
+	return limits.Result{}, errDown
+}
+func (downStore) Adjust(context.Context, string, int64, limits.Window, time.Time) error {
+	return errDown
+}
+func (downStore) Used(context.Context, string, limits.Window, time.Time) (int64, error) {
+	return 0, errDown
+}
+func (downStore) Take(context.Context, string, int64, limits.Rate, time.Time) (limits.Bucket, error) {
+	return limits.Bucket{}, errDown
+}
+func (downStore) Settle(context.Context, string, int64, limits.Rate, time.Time) error { return errDown }
+func (downStore) Acquire(context.Context, string, int64) (bool, func(), error) {
+	return false, func() {}, errDown
+}
+
+func TestLimitStoreDown(t *testing.T) {
+	cfg := limits.Config{Budgets: []limits.Budget{{Subject: "user:*", Window: limits.Month, LimitNUSD: 1e9}}}
+	routes := echoRoutes(echo.New("echo"))
+
+	deny := setupLimitedStore(t, routes, cfg, &limits.Failover{Shared: downStore{}, Local: limits.NewMemoryStore(), Deny: true})
+	res := deny.post(t, ping)
+	if res.status != http.StatusServiceUnavailable || errorCode(t, res) != "overloaded" || res.header.Get("Retry-After") != "1" {
+		t.Fatalf("deny: status %d, headers %v: %s", res.status, res.header, res.body)
+	}
+	res = deny.messages(t, nil, `{"model":"m","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != http.StatusServiceUnavailable || anthropicErrorType(t, res) != "api_error" {
+		t.Fatalf("deny messages: status %d: %s", res.status, res.body)
+	}
+
+	local := setupLimitedStore(t, routes, cfg, &limits.Failover{Shared: downStore{}, Local: limits.NewMemoryStore()})
+	if res := local.post(t, ping); res.status != http.StatusOK {
+		t.Fatalf("local: status %d: %s", res.status, res.body)
+	}
 }
 
 func TestBudgetDenied(t *testing.T) {

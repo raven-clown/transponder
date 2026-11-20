@@ -45,8 +45,21 @@ func (r Rate) String() string {
 // maxDebt is the longest a settled overrun can hold a rate back.
 const maxDebt = 365 * 24 * time.Hour
 
-// interval is the time one unit takes to come back.
-func (r Rate) interval() time.Duration { return r.Per / time.Duration(r.N) }
+// Interval is the time one unit takes to come back.
+func (r Rate) Interval() time.Duration { return r.Per / time.Duration(r.N) }
+
+// Remaining is how many units are left when the rate is spent ahead of now by ahead.
+func (r Rate) Remaining(ahead time.Duration) int64 {
+	return max(int64((r.Per-ahead)/r.Interval()), 0)
+}
+
+// SettleUnits bounds what a settlement may add to or give back from the rate. Debt carries
+// over, so a call far over the rate waits as long as it used, but it is capped at a year of the
+// rate, which keeps the duration math from overflowing. A give-back is at most the N a
+// reservation can hold.
+func (r Rate) SettleUnits(delta int64) int64 {
+	return min(max(delta, -r.N), int64(maxDebt/r.Interval()))
+}
 
 // Window is a UTC calendar period.
 type Window int
@@ -99,8 +112,8 @@ type Bucket struct {
 // ErrStore wraps failures of a shared store, so callers can apply on_store_error.
 var ErrStore = errors.New("limits: store unavailable")
 
-// Store keeps the counters. The memory store serves one process; SQL and Valkey stores that
-// share counters across replicas can implement the same interface.
+// Store keeps the counters. The memory store serves one process; the Postgres store in
+// internal/store/postgres shares them across replicas behind the same interface.
 type Store interface {
 	// Add adds n to key's counter for the window holding now, unless the total would pass limit.
 	Add(ctx context.Context, key string, n, limit int64, w Window, now time.Time) (Result, error)
@@ -123,25 +136,28 @@ type counter struct {
 	n     int64
 }
 
+type counterKey struct {
+	key    string
+	window Window
+}
+
 // MemoryStore keeps every counter in this process.
 type MemoryStore struct {
 	mu       sync.Mutex
-	counters map[string]*counter
+	counters map[counterKey]*counter
 	tats     map[string]time.Time
 	inflight map[string]int64
 }
 
 // NewMemoryStore returns an empty store.
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{counters: map[string]*counter{}, tats: map[string]time.Time{}, inflight: map[string]int64{}}
+	return &MemoryStore{counters: map[counterKey]*counter{}, tats: map[string]time.Time{}, inflight: map[string]int64{}}
 }
-
-func windowKey(key string, w Window) string { return key + "|" + w.String() }
 
 // current returns the counter for the window holding now, starting it afresh when the stored
 // one belongs to an earlier window.
 func (s *MemoryStore) current(key string, w Window, now time.Time) *counter {
-	k := windowKey(key, w)
+	k := counterKey{key, w}
 	start := w.Start(now)
 	c, ok := s.counters[k]
 	if !ok || c.start.Before(start) {
@@ -170,7 +186,7 @@ func (s *MemoryStore) Add(_ context.Context, key string, n, limit int64, w Windo
 func (s *MemoryStore) Adjust(_ context.Context, key string, delta int64, w Window, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, ok := s.counters[windowKey(key, w)]
+	c, ok := s.counters[counterKey{key, w}]
 	if !ok || c.start.Before(w.Start(at)) {
 		c = s.current(key, w, at)
 	}
@@ -197,39 +213,27 @@ func (s *MemoryStore) Take(_ context.Context, key string, cost int64, r Rate, no
 	cost = max(cost, 0)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	iv := r.interval()
 	tat := s.tats[key]
 	if tat.Before(now) {
 		tat = now
 	}
-	next := tat.Add(time.Duration(cost) * iv)
+	next := tat.Add(time.Duration(cost) * r.Interval())
 	if allowAt := next.Add(-r.Per); allowAt.After(now) {
-		b := Bucket{RetryAfter: allowAt.Sub(now), Reset: tat.Sub(now)}
-		b.Remaining = remaining(r, tat.Sub(now))
-		return b, nil
+		return Bucket{RetryAfter: allowAt.Sub(now), Reset: tat.Sub(now), Remaining: r.Remaining(tat.Sub(now))}, nil
 	}
 	s.tats[key] = next
-	return Bucket{OK: true, Remaining: remaining(r, next.Sub(now)), Reset: next.Sub(now)}, nil
-}
-
-func remaining(r Rate, ahead time.Duration) int64 {
-	return max(int64((r.Per-ahead)/r.interval()), 0)
+	return Bucket{OK: true, Remaining: r.Remaining(next.Sub(now)), Reset: next.Sub(now)}, nil
 }
 
 // Settle implements Store.
 func (s *MemoryStore) Settle(_ context.Context, key string, delta int64, r Rate, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Debt carries over, so a call far over the rate waits as long as it used. It is capped at a
-	// year of the rate, which keeps the duration math from overflowing. A give-back is at most
-	// the N a reservation can hold.
-	iv := r.interval()
-	delta = min(max(delta, -r.N), int64(maxDebt/iv))
 	tat := s.tats[key]
 	if tat.Before(now) {
 		tat = now
 	}
-	tat = tat.Add(time.Duration(delta) * iv)
+	tat = tat.Add(time.Duration(r.SettleUnits(delta)) * r.Interval())
 	if tat.Before(now) {
 		tat = now
 	}
@@ -260,4 +264,14 @@ func (s *MemoryStore) InFlight(key string) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.inflight[key]
+}
+
+// Each calls fn for every window counter the store holds. It is how counters built from the
+// usage table at start are copied into a shared store.
+func (s *MemoryStore) Each(fn func(key string, w Window, start time.Time, n int64)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, c := range s.counters {
+		fn(k.key, k.window, c.start, c.n)
+	}
 }

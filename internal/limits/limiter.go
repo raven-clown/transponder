@@ -165,7 +165,10 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 	}
 	if hasProfile {
 		if p.Concurrency > 0 {
-			ok, release, _ := l.store.Acquire(ctx, "conc|"+subj, p.Concurrency)
+			ok, release, err := l.store.Acquire(ctx, "conc|"+subj, p.Concurrency)
+			if err != nil {
+				return nil, overloaded(subj)
+			}
 			if !ok {
 				return nil, &Denied{Status: http.StatusTooManyRequests, Code: "concurrency_limited", Subject: subj,
 					Message: fmt.Sprintf("%s already has %d requests running; retry when one ends", subj, p.Concurrency)}
@@ -185,7 +188,11 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 		if ch.usd {
 			amount = est.CostNUSD
 		}
-		r, _ := l.store.Add(ctx, ch.key, amount, ch.limit, ch.window, now)
+		r, err := l.store.Add(ctx, ch.key, amount, ch.limit, ch.window, now)
+		if err != nil {
+			t.Release()
+			return nil, overloaded(subj)
+		}
 		if !r.OK {
 			t.Release()
 			if ch.usd {
@@ -206,7 +213,11 @@ func (l *Limiter) Admit(ctx context.Context, c Caller, est Estimate) (*Ticket, *
 }
 
 func (t *Ticket) take(ctx context.Context, name, key string, amount int64, r Rate, settle bool, subj string) *Denied {
-	b, _ := t.l.store.Take(ctx, key, amount, r, t.at)
+	b, err := t.l.store.Take(ctx, key, amount, r, t.at)
+	if err != nil {
+		t.Release()
+		return overloaded(subj)
+	}
 	if !b.OK {
 		t.Release()
 		return &Denied{Status: http.StatusTooManyRequests, Code: "rate_limited", Subject: subj, RetryAfter: b.RetryAfter,
@@ -214,6 +225,12 @@ func (t *Ticket) take(ctx context.Context, name, key string, amount int64, r Rat
 	}
 	t.rates = append(t.rates, rateTaken{name, key, r, amount, b, settle})
 	return nil
+}
+
+// overloaded is the answer when the limits cannot be checked and on_store_error is deny.
+func overloaded(subj string) *Denied {
+	return &Denied{Status: http.StatusServiceUnavailable, Code: "overloaded", Subject: subj, RetryAfter: time.Second,
+		Message: "the limits cannot be checked right now; retry shortly"}
 }
 
 func (l *Limiter) budgetsFor(c Caller) []Budget {

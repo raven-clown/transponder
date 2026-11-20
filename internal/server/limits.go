@@ -45,6 +45,8 @@ func (g *gateway) admit(c *call, est limits.Estimate) bool {
 			errType = "rate_limit_error"
 		case http.StatusPaymentRequired:
 			errType = "insufficient_quota"
+		case http.StatusServiceUnavailable:
+			errType = "server_error"
 		}
 		c.fail(c.w, d.Status, errType, d.Code, "", d.Message)
 		return false

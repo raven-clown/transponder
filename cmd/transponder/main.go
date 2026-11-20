@@ -2,11 +2,13 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -137,10 +139,11 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
-	limiter, err := buildLimiter(ctx, cfg, db, time.Now)
+	limiter, closeLimiter, err := buildLimiter(ctx, cfg, db, logger, time.Now)
 	if err != nil {
 		return err
 	}
+	defer closeLimiter()
 	gw := server.New(server.Deps{
 		Auth:   auth.NewAuthenticator(db, time.Now),
 		Router: rt,
@@ -246,21 +249,58 @@ func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, er
 	return r, nil
 }
 
-// buildLimiter returns the limiter for the profiles and budgets in cfg, with this month's usage
-// added back so a restart does not reset anyone's spend. It returns nil when nothing is limited.
-func buildLimiter(ctx context.Context, cfg *config.Bootstrap, usage store.UsageStore, now func() time.Time) (*limits.Limiter, error) {
+// buildLimiter returns the limiter for the profiles and budgets in cfg, and a function that
+// stops it. It returns nil when nothing is limited.
+//
+// With shared limits the counters live in Postgres, and this month's usage fills them the first
+// time any replica starts there. Otherwise they live in this process and are filled from the
+// usage table at every start, so a restart does not reset anyone's spend.
+func buildLimiter(ctx context.Context, cfg *config.Bootstrap, db database, logger *slog.Logger, now func() time.Time) (*limits.Limiter, func(), error) {
 	lc, err := cfg.LimitsConfig()
 	if err != nil || lc.Empty() {
-		return nil, err
+		return nil, func() {}, err
 	}
-	l := limits.New(lc, limits.NewMemoryStore(), now)
-	err = usage.UsageSince(ctx, store.DefaultOrg, limits.Month.Start(now()), func(r store.UsageRecord) error {
-		tokens := r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens + r.OutputTokens + r.ReasoningTokens
-		l.Seed(ctx, limits.Caller{User: r.User, Teams: r.Teams, Key: r.Key}, r.Time, tokens, r.CostNUSD)
-		return nil
-	})
+	seeded := func() (*limits.MemoryStore, error) {
+		mem := limits.NewMemoryStore()
+		l := limits.New(lc, mem, now)
+		err := db.UsageSince(ctx, store.DefaultOrg, limits.Month.Start(now()), func(r store.UsageRecord) error {
+			tokens := r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens + r.OutputTokens + r.ReasoningTokens
+			l.Seed(ctx, limits.Caller{User: r.User, Teams: r.Teams, Key: r.Key}, r.Time, tokens, r.CostNUSD)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reading this month's usage for the limits: %w", err)
+		}
+		return mem, nil
+	}
+	pg, isPostgres := db.(*postgres.DB)
+	if !cfg.SharedLimits() || !isPostgres {
+		mem, err := seeded()
+		if err != nil {
+			return nil, nil, err
+		}
+		return limits.New(lc, mem, now), func() {}, nil
+	}
+	counters, err := pg.Counters(ctx, logger)
 	if err != nil {
-		return nil, fmt.Errorf("reading this month's usage for the limits: %w", err)
+		return nil, nil, err
 	}
-	return l, nil
+	if _, err := counters.SeedOnce(ctx, seeded); err != nil {
+		_ = counters.Close()
+		return nil, nil, fmt.Errorf("filling the shared limit counters: %w", err)
+	}
+	shared := &limits.Failover{
+		Shared:   counters,
+		Local:    limits.NewMemoryStore(),
+		Deny:     cfg.Limits.OnStoreError == "deny",
+		Replicas: counters.Replicas,
+		OnChange: func(err error) {
+			if err != nil {
+				logger.Warn("the shared limit counters are unreachable", "err", err, "on_store_error", cmp.Or(cfg.Limits.OnStoreError, "local"))
+				return
+			}
+			logger.Info("the shared limit counters answer again")
+		},
+	}
+	return limits.New(lc, shared, now), func() { _ = counters.Close() }, nil
 }

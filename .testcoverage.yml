@@ -5,6 +5,7 @@ exclude:
   paths:
     # The release tool only runs git and the GitHub API; its logic is in internal/update.
     - internal/tools/
-    # Test helpers: the suite both stores run and the Postgres schema a test gets.
+    # Test helpers: the suites every store runs, and the Postgres schema a test gets.
     - internal/store/storetest/
     - internal/store/postgres/pgtest/
+    - internal/limits/limitstest/
