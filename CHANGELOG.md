@@ -18,6 +18,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 
+- Release binaries are built with Go 1.26.11. Up to v0.2.4 they were built with Go 1.26.0, which `govulncheck` reports as affected by 47 standard library vulnerabilities fixed since (HTTP/2 and HTTP/1 server crashes, TLS and X.509 checks among them). The container image moves from Go 1.26.10 to 1.26.11 for the same reason. CI now runs `govulncheck` on every pull request.
 - A `${VARIABLE}` on a YAML comment line no longer has to be set for the config to load. A line that starts with `#` inside a `|` or `>` block is part of the value, so variables there are still expanded.
 
 ## [0.2.4] - 2026-11-14

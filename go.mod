@@ -2,6 +2,8 @@ module github.com/raven-clown/transponder
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	go.yaml.in/yaml/v3 v3.0.6
 	modernc.org/sqlite v1.62.0
