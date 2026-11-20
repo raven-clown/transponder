@@ -119,13 +119,14 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 	}
 	var system []string
 	for _, m := range req.Messages {
+		text := m.Text()
 		switch m.Role {
 		case schema.RoleSystem:
-			system = append(system, m.Content)
+			system = append(system, text)
 		case schema.RoleAssistant:
 			var parts []part
-			if m.Content != "" {
-				parts = append(parts, part{Text: m.Content})
+			if text != "" {
+				parts = append(parts, part{Text: text})
 			}
 			for _, c := range m.ToolCalls {
 				gid, sig := splitID(c.ID)
@@ -140,10 +141,10 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 			}
 		case schema.RoleTool:
 			gid, _ := splitID(m.ToolCallID)
-			add("user", part{FunctionResponse: &functionResponse{ID: gid, Name: names[m.ToolCallID], Response: responseObject(m.Content)}})
+			add("user", part{FunctionResponse: &functionResponse{ID: gid, Name: names[m.ToolCallID], Response: responseObject(text)}})
 		default:
-			if m.Content != "" {
-				add("user", part{Text: m.Content})
+			if text != "" {
+				add("user", part{Text: text})
 			}
 		}
 	}
@@ -273,7 +274,7 @@ func DecodeResponse(body []byte) (*schema.ChatResponse, error) {
 			text.WriteString(p.Text)
 		}
 	}
-	resp.Message.Content = text.String()
+	resp.Message.Content = schema.Text(text.String())
 	resp.FinishReason = finishReason(c.FinishReason, len(resp.Message.ToolCalls) > 0)
 	return resp, nil
 }

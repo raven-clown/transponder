@@ -77,12 +77,12 @@ func TestChat(t *testing.T) {
 	defer srv.Close()
 	temp := 0.7
 	resp, err := New("claude", srv.URL, "k", nil).Chat(context.Background(), &schema.ChatRequest{
-		Model: "claude-x", Temperature: &temp, Messages: []schema.Message{{Role: "system", Content: "terse"}, {Role: "user", Content: "x"}},
+		Model: "claude-x", Temperature: &temp, Messages: []schema.Message{{Role: "system", Content: schema.Text("terse")}, {Role: "user", Content: schema.Text("x")}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Message.Content != "hi" || resp.FinishReason != "stop" || resp.Usage != (schema.Usage{InputTokens: 4, OutputTokens: 1, CacheReadTokens: 2}) {
+	if resp.Message.Text() != "hi" || resp.FinishReason != "stop" || resp.Usage != (schema.Usage{InputTokens: 4, OutputTokens: 1, CacheReadTokens: 2}) {
 		t.Fatalf("resp %+v", resp)
 	}
 	if _, ok := got["temperature"]; ok || string(got["max_tokens"]) != "8192" || string(got["system"]) != `"terse"` {

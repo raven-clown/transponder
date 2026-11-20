@@ -16,7 +16,7 @@ func TestDecodeChatRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Model != "gpt-x" || len(req.Messages) != 2 || !reflect.DeepEqual(req.Messages[1], schema.Message{Role: "user", Content: "hi"}) {
+	if req.Model != "gpt-x" || len(req.Messages) != 2 || !reflect.DeepEqual(req.Messages[1], schema.Message{Role: "user", Content: schema.Text("hi")}) {
 		t.Fatalf("req = %+v", req)
 	}
 	if req.MaxTokens == nil || *req.MaxTokens != 5 || req.Temperature == nil || *req.Temperature != 0.5 || !req.Stream {
@@ -83,7 +83,7 @@ func TestEncodeChatResponse(t *testing.T) {
 	b, err := EncodeChatResponse(&schema.ChatResponse{
 		ID:           "id-1",
 		Model:        "m",
-		Message:      schema.Message{Role: "assistant", Content: "echo: hi"},
+		Message:      schema.Message{Role: "assistant", Content: schema.Text("echo: hi")},
 		FinishReason: "stop",
 		Usage:        schema.Usage{InputTokens: 3, OutputTokens: 4},
 	}, time.Unix(1700000000, 0))

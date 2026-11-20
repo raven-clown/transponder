@@ -41,10 +41,10 @@ func EncodeChatRequestWith(req *schema.ChatRequest, o EncodeOptions) ([]byte, er
 				wm.ToolCalls[i].ID = upstreamID(wm.ToolCalls[i].ID)
 			}
 		}
-		if m.Content == "" && len(m.ToolCalls) > 0 {
+		if text := m.Text(); text == "" && len(m.ToolCalls) > 0 {
 			wm.Content = json.RawMessage("null")
 		} else {
-			content, err := json.Marshal(m.Content)
+			content, err := json.Marshal(text)
 			if err != nil {
 				return nil, err
 			}
@@ -112,7 +112,7 @@ func DecodeChatResponse(body []byte) (*schema.ChatResponse, error) {
 		return nil, err
 	}
 	resp := &schema.ChatResponse{ID: w.ID, Model: w.Model, FinishReason: ch.FinishReason,
-		Message: schema.Message{Role: ch.Message.Role, Content: content}}
+		Message: schema.Message{Role: ch.Message.Role, Content: schema.Text(content)}}
 	if resp.Message.Role == "" {
 		resp.Message.Role = schema.RoleAssistant
 	}

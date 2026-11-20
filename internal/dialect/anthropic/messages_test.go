@@ -41,11 +41,11 @@ func claudeCodeCanonical() *schema.ChatRequest {
 	return &schema.ChatRequest{
 		Model: "claude-sonnet-5-5",
 		Messages: []schema.Message{
-			{Role: schema.RoleSystem, Content: "You are terse.\n\nUse tools."},
-			{Role: schema.RoleUser, Content: "weather in Paris?"},
-			{Role: schema.RoleAssistant, Content: "Checking.", ToolCalls: []schema.ToolCall{{ID: "toolu_1", Name: "weather", Arguments: `{"city": "Paris"}`}}},
-			{Role: schema.RoleTool, ToolCallID: "toolu_1", Content: "sunny"},
-			{Role: schema.RoleUser, Content: "and tomorrow?"},
+			{Role: schema.RoleSystem, Content: schema.Text("You are terse.\n\nUse tools.")},
+			{Role: schema.RoleUser, Content: schema.Text("weather in Paris?")},
+			{Role: schema.RoleAssistant, Content: schema.Text("Checking."), ToolCalls: []schema.ToolCall{{ID: "toolu_1", Name: "weather", Arguments: `{"city": "Paris"}`}}},
+			{Role: schema.RoleTool, ToolCallID: "toolu_1", Content: schema.Text("sunny")},
+			{Role: schema.RoleUser, Content: schema.Text("and tomorrow?")},
 		},
 		MaxTokens:  ptr(1024),
 		Stop:       []string{"END"},
@@ -106,10 +106,10 @@ func TestEncodeRequestShapes(t *testing.T) {
 	req := &schema.ChatRequest{
 		Model: "m",
 		Messages: []schema.Message{
-			{Role: schema.RoleUser, Content: "x"},
+			{Role: schema.RoleUser, Content: schema.Text("x")},
 			{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{{ID: "a", Name: "f", Arguments: "not json"}, {ID: "b", Name: "g", Arguments: ""}}},
-			{Role: schema.RoleTool, ToolCallID: "a", Content: "1"},
-			{Role: schema.RoleTool, ToolCallID: "b", Content: "2"},
+			{Role: schema.RoleTool, ToolCallID: "a", Content: schema.Text("1")},
+			{Role: schema.RoleTool, ToolCallID: "b", Content: schema.Text("2")},
 		},
 		ToolChoice: &schema.ToolChoice{Mode: schema.ToolChoiceTool, Name: "f"},
 	}
@@ -146,7 +146,7 @@ func TestEncodeRequestShapes(t *testing.T) {
 func TestResponseRoundTrip(t *testing.T) {
 	resp := &schema.ChatResponse{
 		ID: "msg_1", Model: "m", FinishReason: schema.FinishToolCalls,
-		Message: schema.Message{Role: schema.RoleAssistant, Content: "Checking.", ToolCalls: []schema.ToolCall{{ID: "toolu_1", Name: "weather", Arguments: `{"city":"Paris"}`}}},
+		Message: schema.Message{Role: schema.RoleAssistant, Content: schema.Text("Checking."), ToolCalls: []schema.ToolCall{{ID: "toolu_1", Name: "weather", Arguments: `{"city":"Paris"}`}}},
 		Usage:   schema.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 3, CacheWriteTokens: 2},
 	}
 	b, err := EncodeResponse(resp)
@@ -210,10 +210,10 @@ func TestWriteError(t *testing.T) {
 
 func TestEncodeRequestSkipsEmptyTurns(t *testing.T) {
 	b, err := EncodeRequest(&schema.ChatRequest{Model: "m", Messages: []schema.Message{
-		{Role: schema.RoleUser, Content: "x"},
-		{Role: schema.RoleAssistant, Content: ""},
-		{Role: schema.RoleUser, Content: ""},
-		{Role: schema.RoleUser, Content: "y"},
+		{Role: schema.RoleUser, Content: schema.Text("x")},
+		{Role: schema.RoleAssistant, Content: schema.Text("")},
+		{Role: schema.RoleUser, Content: schema.Text("")},
+		{Role: schema.RoleUser, Content: schema.Text("y")},
 	}})
 	if err != nil {
 		t.Fatal(err)

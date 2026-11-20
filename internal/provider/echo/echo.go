@@ -31,14 +31,15 @@ func (e *Echo) Name() string { return e.name }
 // Dialect returns "none": echo has no native wire format.
 func (e *Echo) Dialect() string { return "none" }
 
-// Chat replies with "echo: " and the last user message.
+// Chat replies with "echo: " and the text of the last user message. Images are not echoed.
 func (e *Echo) Chat(_ context.Context, req *schema.ChatRequest) (*schema.ChatResponse, error) {
 	var input int64
 	last := ""
 	for _, m := range req.Messages {
-		input += tokens(m.Content)
+		text := m.Text()
+		input += tokens(text)
 		if m.Role == "user" {
-			last = m.Content
+			last = text
 		}
 	}
 	reply := "echo: " + last
@@ -47,7 +48,7 @@ func (e *Echo) Chat(_ context.Context, req *schema.ChatRequest) (*schema.ChatRes
 	return &schema.ChatResponse{
 		ID:           "echo-" + hex.EncodeToString(id),
 		Model:        req.Model,
-		Message:      schema.Message{Role: "assistant", Content: reply},
+		Message:      schema.Message{Role: "assistant", Content: schema.Text(reply)},
 		FinishReason: "stop",
 		Usage:        schema.Usage{InputTokens: input, OutputTokens: tokens(reply)},
 	}, nil
@@ -60,7 +61,7 @@ func (e *Echo) ChatStream(ctx context.Context, req *schema.ChatRequest) (schema.
 		return nil, err
 	}
 	events := []schema.Event{{Type: schema.EventStart}}
-	for _, w := range words(resp.Message.Content) {
+	for _, w := range words(resp.Message.Text()) {
 		events = append(events, schema.Event{Type: schema.EventText, Text: w})
 	}
 	u := resp.Usage

@@ -107,7 +107,7 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 		if err != nil {
 			return nil, err
 		}
-		msg := schema.Message{Role: m.Role, Content: content, ToolCallID: m.ToolCallID}
+		msg := schema.Message{Role: m.Role, Content: schema.Text(content), ToolCallID: m.ToolCallID}
 		for _, tc := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments})
 		}
@@ -298,8 +298,7 @@ func EncodeChatResponse(resp *schema.ChatResponse, created time.Time) ([]byte, e
 	if len(resp.Message.ToolCalls) > 0 {
 		msg.ToolCalls = encodeToolCalls(resp.Message.ToolCalls)
 	}
-	if resp.Message.Content != "" || len(resp.Message.ToolCalls) == 0 {
-		content := resp.Message.Content
+	if content := resp.Message.Text(); content != "" || len(resp.Message.ToolCalls) == 0 {
 		msg.Content = &content
 	}
 	return json.Marshal(wireResponse{

@@ -153,11 +153,11 @@ func TestChat(t *testing.T) {
 	}))
 	defer srv.Close()
 	a := New(Options{Name: "oa", BaseURL: srv.URL, APIKey: "k"})
-	resp, err := a.Chat(context.Background(), &schema.ChatRequest{Model: "gpt-x", Messages: []schema.Message{{Role: "user", Content: "x"}}})
+	resp, err := a.Chat(context.Background(), &schema.ChatRequest{Model: "gpt-x", Messages: []schema.Message{{Role: "user", Content: schema.Text("x")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Message.Content != "hi" || resp.FinishReason != "stop" || resp.Usage.InputTokens != 3 || got["model"] != "gpt-x" {
+	if resp.Message.Text() != "hi" || resp.FinishReason != "stop" || resp.Usage.InputTokens != 3 || got["model"] != "gpt-x" {
 		t.Fatalf("resp %+v, upstream got %v", resp, got)
 	}
 }
@@ -173,7 +173,7 @@ func TestChatStream(t *testing.T) {
 			"data: [DONE]\n\n")
 	}))
 	defer srv.Close()
-	st, err := New(Options{Name: "oa", BaseURL: srv.URL}).ChatStream(context.Background(), &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: "x"}}})
+	st, err := New(Options{Name: "oa", BaseURL: srv.URL}).ChatStream(context.Background(), &schema.ChatRequest{Model: "m", Messages: []schema.Message{{Role: "user", Content: schema.Text("x")}}})
 	if err != nil {
 		t.Fatal(err)
 	}

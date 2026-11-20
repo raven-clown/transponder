@@ -34,10 +34,10 @@ func toolCanonical() *schema.ChatRequest {
 	return &schema.ChatRequest{
 		Model: "m",
 		Messages: []schema.Message{
-			{Role: schema.RoleSystem, Content: "be brief"},
-			{Role: schema.RoleUser, Content: "weather in Paris?"},
+			{Role: schema.RoleSystem, Content: schema.Text("be brief")},
+			{Role: schema.RoleUser, Content: schema.Text("weather in Paris?")},
 			{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{{ID: "call_1", Name: "weather", Arguments: `{"city":"Paris"}`}}},
-			{Role: schema.RoleTool, ToolCallID: "call_1", Content: "sunny"},
+			{Role: schema.RoleTool, ToolCallID: "call_1", Content: schema.Text("sunny")},
 		},
 		Tools:      []schema.Tool{{Name: "weather", Description: "look up weather", Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)}},
 		ToolChoice: &schema.ToolChoice{Mode: schema.ToolChoiceRequired},

@@ -112,7 +112,7 @@ func DecodeRequest(body []byte) (*schema.ChatRequest, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Messages = append(req.Messages, schema.Message{Role: schema.RoleSystem, Content: text})
+		req.Messages = append(req.Messages, schema.Message{Role: schema.RoleSystem, Content: schema.Text(text)})
 	}
 	for _, m := range w.Messages {
 		msgs, err := decodeMessage(m)
@@ -203,13 +203,13 @@ func decodeMessage(m wireMessage) ([]schema.Message, error) {
 					return nil, err
 				}
 			}
-			out = append(out, schema.Message{Role: schema.RoleTool, ToolCallID: b.ToolUseID, Content: content})
+			out = append(out, schema.Message{Role: schema.RoleTool, ToolCallID: b.ToolUseID, Content: schema.Text(content)})
 		default:
 			return nil, unsupported(b.Type, "messages")
 		}
 	}
-	msg.Content = strings.Join(text, "")
-	if msg.Content != "" || len(msg.ToolCalls) > 0 {
+	msg.Content = schema.Text(strings.Join(text, ""))
+	if len(msg.Content) > 0 || len(msg.ToolCalls) > 0 {
 		out = append(out, msg)
 	}
 	return out, nil
@@ -239,19 +239,20 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 		}{role, b})
 	}
 	for _, m := range req.Messages {
+		text := m.Text()
 		switch m.Role {
 		case schema.RoleSystem:
-			system = append(system, m.Content)
+			system = append(system, text)
 		case schema.RoleTool:
-			content, err := json.Marshal(m.Content)
+			content, err := json.Marshal(text)
 			if err != nil {
 				return nil, err
 			}
 			add("user", wireBlock{Type: "tool_result", ToolUseID: m.ToolCallID, Content: content})
 		case schema.RoleAssistant:
 			var bs []wireBlock
-			if m.Content != "" {
-				bs = append(bs, wireBlock{Type: "text", Text: m.Content})
+			if text != "" {
+				bs = append(bs, wireBlock{Type: "text", Text: text})
 			}
 			for _, c := range m.ToolCalls {
 				bs = append(bs, wireBlock{Type: "tool_use", ID: c.ID, Name: c.Name, Input: inputObject(c.Arguments)})
@@ -260,8 +261,8 @@ func EncodeRequest(req *schema.ChatRequest) ([]byte, error) {
 				add("assistant", bs...)
 			}
 		default:
-			if m.Content != "" {
-				add("user", wireBlock{Type: "text", Text: m.Content})
+			if text != "" {
+				add("user", wireBlock{Type: "text", Text: text})
 			}
 		}
 	}
@@ -357,8 +358,8 @@ func EncodeResponse(resp *schema.ChatResponse) ([]byte, error) {
 	if w.ID == "" {
 		w.ID = NewMessageID()
 	}
-	if resp.Message.Content != "" {
-		w.Content = append(w.Content, wireBlock{Type: "text", Text: resp.Message.Content})
+	if text := resp.Message.Text(); text != "" {
+		w.Content = append(w.Content, wireBlock{Type: "text", Text: text})
 	}
 	for _, c := range resp.Message.ToolCalls {
 		w.Content = append(w.Content, wireBlock{Type: "tool_use", ID: c.ID, Name: c.Name, Input: inputObject(c.Arguments)})
@@ -384,7 +385,7 @@ func DecodeResponse(body []byte) (*schema.ChatResponse, error) {
 			resp.Message.ToolCalls = append(resp.Message.ToolCalls, schema.ToolCall{ID: b.ID, Name: b.Name, Arguments: string(inputObject(string(b.Input)))})
 		}
 	}
-	resp.Message.Content = strings.Join(text, "")
+	resp.Message.Content = schema.Text(strings.Join(text, ""))
 	if w.Usage != nil {
 		resp.Usage = w.Usage.canonical()
 	}
