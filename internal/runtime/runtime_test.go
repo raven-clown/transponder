@@ -217,6 +217,37 @@ func TestRun(t *testing.T) {
 }
 
 // Requests read the snapshot while reloads swap it.
+// A Check whose caller gave up says nothing about the config, so it is not a failed reload.
+func TestCheckWithCancelledContext(t *testing.T) {
+	vs := &versions{}
+	vs.v.Store(1)
+	logs := &syncBuffer{}
+	load := func(ctx context.Context, v int64) (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("config %d", v), nil
+	}
+	r, err := New(context.Background(), vs, load, slog.New(slog.NewTextHandler(logs, nil)), func() time.Time { return t0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reloads []bool
+	r.OnReload = func(ok bool) { reloads = append(reloads, ok) }
+	vs.v.Store(2)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := r.Check(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if st := r.Status(); st.Failed || len(reloads) != 0 || strings.Contains(logs.String(), "reload failed") {
+		t.Fatalf("status %+v, reloads %v, logs %s", st, reloads, logs)
+	}
+	if changed, err := r.Check(context.Background()); !changed || err != nil || r.Current().Value != "config 2" {
+		t.Fatalf("the next check: %v, %v, %q", changed, err, r.Current().Value)
+	}
+}
+
 func TestCurrentDuringReloads(t *testing.T) {
 	r, vs, _ := setup(t)
 	ctx := context.Background()

@@ -30,12 +30,17 @@ type fakeReloader struct {
 	checks int
 	err    error
 	status runtime.Status
+	// cancellable counts checks made with a context the caller could cancel.
+	cancellable int
 }
 
-func (f *fakeReloader) Check(context.Context) (bool, error) {
+func (f *fakeReloader) Check(ctx context.Context) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.checks++
+	if ctx.Done() != nil {
+		f.cancellable++
+	}
 	return f.err == nil, f.err
 }
 

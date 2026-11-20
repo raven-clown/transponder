@@ -3,9 +3,11 @@ package admin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/secrets"
@@ -134,6 +136,52 @@ func TestStoredKeyNeedsTheSameSecretsKey(t *testing.T) {
 		http.StatusBadRequest, "invalid_config", "")
 	if _, err := Runtime(context.Background(), e.db, other, nil); err == nil {
 		t.Fatal("a key sealed under another secrets_key opened")
+	}
+}
+
+func TestResealAfterSecretsKeyChange(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	e.create(t, "/providers", map[string]any{"name": "o", "type": "openai", "api_key": "sk-1234567"})
+	e.create(t, "/providers", map[string]any{"name": "local", "type": "ollama"})
+	newBox, _ := secrets.New(bytes.Repeat([]byte{2}, 32))
+	if _, err := Runtime(ctx, e.db, newBox, nil); !errors.Is(err, secrets.ErrWrongKey) {
+		t.Fatalf("Runtime with the new key alone: %v, want ErrWrongKey", err)
+	}
+	both := newBox.WithPrevious(e.box)
+	if rc, err := Runtime(ctx, e.db, both, nil); err != nil || rc.Providers[1].APIKey != "sk-1234567" {
+		t.Fatalf("Runtime with the previous key: %+v, %v", rc, err)
+	}
+	before, _ := e.db.ConfigVersion(ctx)
+	n, err := Reseal(ctx, e.db, both, func() time.Time { return testNow })
+	if err != nil || n != 1 {
+		t.Fatalf("Reseal = %d, %v; want 1", n, err)
+	}
+	if v, _ := e.db.ConfigVersion(ctx); v != before+1 {
+		t.Fatalf("version %d, want %d so every replica reloads", v, before+1)
+	}
+	rc, err := Runtime(ctx, e.db, newBox, nil)
+	if err != nil || rc.Providers[1].APIKey != "sk-1234567" {
+		t.Fatalf("Runtime with the new key alone after Reseal: %+v, %v", rc, err)
+	}
+	recs, _ := e.db.ListAudit(ctx, store.AuditQuery{OrgID: store.DefaultOrg, Actor: ActorCLI, Limit: 10})
+	if len(recs) != 1 || recs[0].Action != actionRotate || recs[0].Kind != kindProviders || recs[0].Resource != "o" || strings.Contains(string(recs[0].Diff), "sk-") {
+		t.Fatalf("audit %+v", recs)
+	}
+	// Running it again changes nothing.
+	if n, err := Reseal(ctx, e.db, both, time.Now); err != nil || n != 0 {
+		t.Fatalf("second Reseal = %d, %v", n, err)
+	}
+	if v, _ := e.db.ConfigVersion(ctx); v != before+1 {
+		t.Fatalf("an empty reseal raised the version to %d", v)
+	}
+	// Without the key the values were sealed under, nothing is written.
+	third, _ := secrets.New(bytes.Repeat([]byte{3}, 32))
+	if _, err := Reseal(ctx, e.db, third, time.Now); !errors.Is(err, secrets.ErrWrongKey) || !strings.Contains(err.Error(), `"o"`) {
+		t.Fatalf("Reseal with an unrelated key: %v", err)
+	}
+	if v, _ := e.db.ConfigVersion(ctx); v != before+1 {
+		t.Fatalf("a failed reseal raised the version to %d", v)
 	}
 }
 

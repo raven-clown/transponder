@@ -51,10 +51,16 @@ type keySet struct {
 // than jwksMaxAge, but never more often than jwksRefreshInterval. A caller waits for the
 // fetch only when it has no key to go on: an old key set stays in use while it is read again
 // and when the provider cannot be reached.
-func (s *keySet) lookup(ctx context.Context, kid string) ([]jose.JSONWebKey, error) {
+//
+// With reread set, the cached keys are taken as not matching, so the set is read again as
+// for an unknown kid: for a token without kid that no cached key verifies.
+func (s *keySet) lookup(ctx context.Context, kid string, reread bool) ([]jose.JSONWebKey, error) {
 	s.mu.Lock()
 	for waited := false; ; waited = true {
 		keys := s.match(kid)
+		if reread && !waited {
+			keys = nil
+		}
 		now := s.now()
 		tooSoon := !s.attempted.IsZero() && now.Sub(s.attempted) < jwksRefreshInterval
 		canFetch := s.inflight == nil && !tooSoon && !waited
@@ -80,7 +86,7 @@ func (s *keySet) lookup(ctx context.Context, kid string) ([]jose.JSONWebKey, err
 		select {
 		case <-done:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("%w: waiting for the issuer's keys: %w", ErrUnavailable, ctx.Err())
 		}
 		s.mu.Lock()
 	}

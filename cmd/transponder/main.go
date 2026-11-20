@@ -74,6 +74,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "secrets" {
+		return runSecrets(args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("transponder", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
@@ -155,7 +158,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	if err != nil {
 		return err
 	}
-	if err := admin.SyncFile(ctx, db, cfg, time.Now, logger); err != nil {
+	if err := admin.SyncFile(ctx, db, cfg, box, time.Now, logger); err != nil {
 		return fmt.Errorf("storing the providers, routes, budgets and profiles of the config file: %w", err)
 	}
 
@@ -305,10 +308,12 @@ func loadLive(cfg *config.Bootstrap, client *http.Client, limiters *limiterSourc
 	if err != nil {
 		return live{}, err
 	}
+	rt.KeepHealth(limiters.router)
 	l := live{router: rt}
 	if l.limiter, err = limiters.limiter(lc); err != nil {
 		return live{}, err
 	}
+	limiters.router = rt
 	return l, nil
 }
 
@@ -329,6 +334,9 @@ type limiterSource struct {
 	build func(lc limits.Config) (*limits.Limiter, func(), error)
 	base  *limits.Limiter
 	stop  func()
+	// router is the last router loaded, whose record of failing targets the next one keeps,
+	// so a reload does not end the cooldowns.
+	router *router.Router
 }
 
 // limiter returns a limiter for lc on the kept counters, or nil when nothing is limited and
@@ -355,8 +363,25 @@ func (s *limiterSource) close() {
 
 // openSecrets returns what seals provider keys: secrets_key when it is set, and with SQLite a
 // key kept in transponder.key next to the database otherwise. With Postgres and no
-// secrets_key it returns nil, and provider keys cannot be stored through the API.
+// secrets_key it returns nil, and provider keys cannot be stored through the API. With
+// previous_secrets_key, values sealed under that key still open.
 func openSecrets(cfg *config.Bootstrap) (*secrets.Box, error) {
+	box, err := currentSecrets(cfg)
+	if err != nil || cfg.PreviousSecretsKey == "" {
+		return box, err
+	}
+	key, err := secrets.ParseKey(cfg.PreviousSecretsKey)
+	if err != nil {
+		return nil, fmt.Errorf("previous_secrets_key: %w", err)
+	}
+	prev, err := secrets.New(key)
+	if err != nil {
+		return nil, err
+	}
+	return box.WithPrevious(prev), nil
+}
+
+func currentSecrets(cfg *config.Bootstrap) (*secrets.Box, error) {
 	if cfg.SecretsKey != "" {
 		key, err := secrets.ParseKey(cfg.SecretsKey)
 		if err != nil {
@@ -403,10 +428,11 @@ func buildAuth(cfg *config.Bootstrap, keys store.KeyStore, client *http.Client) 
 	return authn.WithOIDC(oidc), oidc, nil
 }
 
-// buildRouter turns the providers and routes of the file into a router. With no routes,
-// every model goes to a built-in echo provider so a bare start still answers.
+// buildRouter turns the providers and routes of the file into a router. With no providers and
+// no routes, every model goes to a built-in echo provider so a bare start still answers. With
+// providers but no routes, as after the last route is deleted, no model has a route.
 func buildRouter(cfg *config.Bootstrap, client *http.Client) (*router.Router, error) {
-	if len(cfg.Routes) == 0 {
+	if len(cfg.Routes) == 0 && len(cfg.Providers) == 0 {
 		return router.New([]router.Route{{Match: "*", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo", Free: true}}}}), nil
 	}
 	providers := map[string]router.Target{}
