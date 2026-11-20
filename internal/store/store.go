@@ -63,6 +63,37 @@ type KeyAdminStore interface {
 	DeleteKey(ctx context.Context, orgID, name string, version int64) error
 }
 
+// ConfigItem is one item of the runtime config: a provider, route, budget or profile. Body is
+// the item as JSON, which the admin API reads and validates; the store keeps it as it is.
+type ConfigItem struct {
+	OrgID string
+	Kind  string // providers, routes, budgets or profiles
+	ID    string // the name, or a generated id
+	// Position orders the items of a kind, then ID. Routes are tried in this order.
+	Position int64
+	Body     []byte
+	// Secret is a sealed secret, such as a provider's API key. Empty when there is none.
+	Secret    string
+	Version   int64 // starts at 1; CreateConfigItem ignores it
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// ConfigItemStore keeps the runtime config items.
+type ConfigItemStore interface {
+	// ListConfigItems returns orgID's items of kind, by position and then id.
+	ListConfigItems(ctx context.Context, orgID, kind string) ([]ConfigItem, error)
+	ConfigItem(ctx context.Context, orgID, kind, id string) (ConfigItem, error)
+	CreateConfigItem(ctx context.Context, it ConfigItem) error
+	// UpdateConfigItem stores it's position, body, secret, source and updated time and raises
+	// its version. With version above zero it returns ErrVersionConflict unless the stored
+	// version is that one. It returns the item as stored.
+	UpdateConfigItem(ctx context.Context, it ConfigItem, version int64) (ConfigItem, error)
+	// DeleteConfigItem removes an item, checking version as UpdateConfigItem does.
+	DeleteConfigItem(ctx context.Context, orgID, kind, id string, version int64) error
+}
+
 // AuditRecord is one write through the admin API.
 type AuditRecord struct {
 	ID        int64

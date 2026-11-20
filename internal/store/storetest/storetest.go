@@ -20,6 +20,7 @@ type Store interface {
 	store.UsageAdminStore
 	store.ConfigStore
 	store.AuditStore
+	store.ConfigItemStore
 	Ping(ctx context.Context) error
 }
 
@@ -52,6 +53,9 @@ func Run(t *testing.T, open Opener) {
 		{"ListUsage", testListUsage},
 		{"Audit", testAudit},
 		{"AuditRollsBackWithConfig", testAuditRollsBackWithConfig},
+		{"ConfigItems", testConfigItems},
+		{"UpdateConfigItem", testUpdateConfigItem},
+		{"ConfigItemsJoinUpdateConfig", testConfigItemsJoinUpdateConfig},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, open) })
