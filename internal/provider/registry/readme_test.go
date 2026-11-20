@@ -45,7 +45,7 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // sent reports whether a body holding s went out, and forgets what was sent.
-func (r *recorder) sent(s string) (found, any bool) {
+func (r *recorder) sent(s string) (found, called bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, b := range r.bodies {
@@ -53,9 +53,9 @@ func (r *recorder) sent(s string) (found, any bool) {
 			found = true
 		}
 	}
-	any = len(r.bodies) > 0
+	called = len(r.bodies) > 0
 	r.bodies = nil
-	return found, any
+	return found, called
 }
 
 func yesNo(b bool) string {
