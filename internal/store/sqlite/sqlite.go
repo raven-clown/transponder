@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"runtime"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
@@ -22,6 +24,12 @@ var migrations embed.FS
 type DB struct {
 	sql *sql.DB
 	w   *sql.DB
+	// keyByHash and insertUsage are prepared once, so the lookup and the write every call makes
+	// are not parsed each time.
+	keyByHash    *sql.Stmt
+	insertUsage  *sql.Stmt
+	usage        usageBatch
+	usageBatches atomic.Int64
 }
 
 // Open opens or creates the database at path and applies pending migrations.
@@ -46,7 +54,20 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		_ = w.Close()
 		return nil, fmt.Errorf("opening sqlite: %w", err)
 	}
-	return &DB{sql: r, w: w}, nil
+	// Every call with an API key reads here. With the default of two idle connections the pool
+	// closed most after each read and opened new ones, each parsing the schema again.
+	conns := max(4, runtime.GOMAXPROCS(0))
+	r.SetMaxOpenConns(conns)
+	r.SetMaxIdleConns(conns)
+	kb, err := r.PrepareContext(ctx, `SELECT `+keyColumns+` FROM api_keys WHERE hash = ?`)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("preparing the key lookup: %w", err), r.Close(), w.Close())
+	}
+	iu, err := w.PrepareContext(ctx, insertUsage)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("preparing the usage insert: %w", err), kb.Close(), r.Close(), w.Close())
+	}
+	return &DB{sql: r, w: w, keyByHash: kb, insertUsage: iu}, nil
 }
 
 // Ping checks that the database answers.
@@ -59,5 +80,5 @@ func (db *DB) Ping(ctx context.Context) error {
 
 // Close closes the database.
 func (db *DB) Close() error {
-	return errors.Join(db.sql.Close(), db.w.Close())
+	return errors.Join(db.keyByHash.Close(), db.insertUsage.Close(), db.sql.Close(), db.w.Close())
 }
