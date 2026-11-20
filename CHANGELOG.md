@@ -38,6 +38,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Parallel tool calls streamed by an OpenAI-compatible server that leaves out each call's `index` are kept apart. They were merged into one call with both names and arguments run together, which broke tool use for `/v1/messages` callers and every translated stream.
 - An Anthropic tool call with no input reaches an OpenAI caller with `"arguments": "{}"` when streamed, as it does when not streamed, instead of an empty string that does not parse. Input sent whole in `content_block_start` is passed on too.
 - Tool call ids made by other providers, such as `functions.get_weather:0`, are rewritten to ones Anthropic accepts (letters, digits, `_` and `-`) in requests to Anthropic and in answers to `/v1/messages` callers, so a conversation that moves to Anthropic is no longer refused with 400.
+- A `${VARIABLE}` on a YAML comment line no longer has to be set for the config to load. A line that starts with `#` inside a `|` or `>` block is part of the value, so variables there are still expanded.
+- `${VARIABLE}` is now expanded in the parsed file rather than in its text. A secret with ` #` in it was cut off at the `#` without an error, and one with a quote, a leading `*` or a newline broke the file; each is now used whole. A comment after a value, a comment indented less than a block's content, a quoted value over several lines, and a block with an anchor or tag (`key: &a |`) are now each read as YAML reads them. A variable can no longer add keys or list items.
+- An integer setting from the environment, such as `TRANSPONDER_SETTINGS__COOLDOWN_FAILURES=5`, failed to load with `cannot unmarshal !!str`.
 
 ## [0.2.4] - 2026-11-14
 
