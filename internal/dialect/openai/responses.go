@@ -192,13 +192,18 @@ func (s *ResponseStream) ErrorFrame(code, message string) []byte {
 // OpeningResponseEvent reports whether a Responses API stream event comes before any output:
 // response.queued, response.created or response.in_progress.
 func OpeningResponseEvent(ev sse.Event) bool {
-	var w struct {
-		Type string `json:"type"`
+	// OpenAI names each event after its type, which saves decoding a whole response object.
+	typ := ev.Name
+	if typ == "" {
+		var w struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(ev.Data, &w) != nil {
+			return false
+		}
+		typ = w.Type
 	}
-	if json.Unmarshal(ev.Data, &w) != nil {
-		return false
-	}
-	switch w.Type {
+	switch typ {
 	case "response.queued", "response.created", "response.in_progress":
 		return true
 	}
