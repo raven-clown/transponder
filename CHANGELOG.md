@@ -51,6 +51,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A target in cooldown got traffic again after every config reload, which every admin API write causes. Reloads now keep the record of failing targets.
 - A caller that disconnected while the shared limit counters were asked was taken as a Postgres outage, logging that the counters were unreachable and counting locally.
 
+### Fixed
+
+- An OIDC token without a `kid`, signed with a key the issuer added since its keys were last read, was refused for up to an hour. Such a token now has the keys read again, at most once every 10 seconds like an unknown `kid`.
+- An OIDC token issued more than `clock_skew` in the future (`iat`), or with an `iat` or `nbf` that is not a number, is now refused. A malformed `nbf` used to be ignored.
+- A caller that gave up while transponder fetched the identity provider's keys got a 500 and an error in the log; it now gets 503 `auth_unavailable`, as when the provider cannot be reached.
+
 ## [0.2.4] - 2026-11-14
 
 ### Added
