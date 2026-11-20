@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/url"
 	"runtime"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
@@ -23,8 +24,12 @@ var migrations embed.FS
 type DB struct {
 	sql *sql.DB
 	w   *sql.DB
-	// keyByHash is prepared once, so the lookup every call makes is not parsed each time.
-	keyByHash *sql.Stmt
+	// keyByHash and insertUsage are prepared once, so the lookup and the write every call makes
+	// are not parsed each time.
+	keyByHash    *sql.Stmt
+	insertUsage  *sql.Stmt
+	usage        usageBatch
+	usageBatches atomic.Int64
 }
 
 // Open opens or creates the database at path and applies pending migrations.
@@ -58,7 +63,11 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("preparing the key lookup: %w", err), r.Close(), w.Close())
 	}
-	return &DB{sql: r, w: w, keyByHash: kb}, nil
+	iu, err := w.PrepareContext(ctx, insertUsage)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("preparing the usage insert: %w", err), kb.Close(), r.Close(), w.Close())
+	}
+	return &DB{sql: r, w: w, keyByHash: kb, insertUsage: iu}, nil
 }
 
 // Ping checks that the database answers.
@@ -71,5 +80,5 @@ func (db *DB) Ping(ctx context.Context) error {
 
 // Close closes the database.
 func (db *DB) Close() error {
-	return errors.Join(db.keyByHash.Close(), db.sql.Close(), db.w.Close())
+	return errors.Join(db.keyByHash.Close(), db.insertUsage.Close(), db.sql.Close(), db.w.Close())
 }
