@@ -8,11 +8,18 @@ Thanks for helping out. Bug reports, docs fixes, tests and new features are all 
 - Issues labeled `help wanted` are bigger. Each one describes the proposed API, the behavior and the tests it needs.
 - The milestones group issues by release. Start with the earliest one.
 
-Before you start, leave a comment on the issue so nobody else picks it up. If you go quiet for two weeks, someone else may take it over.
+If you take an issue, leave a comment on it so nobody else picks it up. If you go quiet for two weeks, someone else may take it over.
 
-For a new feature that has no issue yet, open one first, so we can agree on the API before you write the code. Bug fixes and docs can go straight to a pull request.
+## You don't need an issue first
 
-Use the issue forms: a bug report, a feature request, a new adapter or a docs problem. Each one says what to include.
+A pull request without an issue is welcome. How to start depends on the size of the change:
+
+- **Straight to a pull request:** bug fixes, docs, tests, a new provider, a price update, and anything else small enough to review in one sitting. The description says what changes and why, which is all an issue would have said.
+- **A short design comment first:** a new endpoint, a new config key, a change to the store schema, the admin API or the [mothership contract](https://github.com/raven-clown/mothership/blob/main/CONTRACT.md), or a change that touches many packages. Write a few lines on what you want to do and how it looks to a user (the request, the config or the error), either in an issue or at the top of a draft pull request. A maintainer answers before you spend days on the code.
+
+If you are not sure which one your change is, open the draft pull request and ask in it.
+
+The issue forms are there when you want to report something without fixing it: a bug report, a feature request, a new adapter or a docs problem. Each one says what to include.
 
 ## Development setup
 
@@ -55,8 +62,9 @@ Every change comes with tests. A pull request without them is only merged when t
 
 - One change per pull request. A refactor and a feature are two pull requests.
 - The pull request title follows [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(auth): reject expired tokens` or `feat(admin): list audit records`. Pull requests are squash merged, so the title becomes the commit on `main`.
-- The pull request links its issue with `Closes #123`.
+- If there is an issue, link it with `Closes #123`. If there is none, leave that line out.
 - Describe what changed, why, and how you tested it. Say what you didn't test.
+- Fill in the `Endpoints this touches` and `Providers this touches` lines of the template, and add your `CHANGELOG.md` line: the release notes are built from them.
 - Keep the branch up to date with `main` and respond to review. A maintainer aims to give a first review within three days.
 
 ## How a pull request gets merged
