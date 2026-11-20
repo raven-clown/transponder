@@ -96,6 +96,11 @@ func (db *DB) RecordUsage(ctx context.Context, r store.UsageRecord) error {
 func (db *DB) writeUsage(ctx context.Context, batch []*usageWrite) {
 	db.usageBatches.Add(1)
 	err := func() error {
+		if len(batch) == 1 {
+			// Alone, the insert is its own transaction; BEGIN and COMMIT would only add round trips.
+			_, err := db.insertUsage.ExecContext(ctx, batch[0].args...)
+			return err
+		}
 		tx, err := db.w.BeginTx(ctx, nil)
 		if err != nil {
 			return err
