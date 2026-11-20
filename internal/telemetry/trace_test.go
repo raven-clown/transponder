@@ -276,6 +276,44 @@ func TestNilTracerAndSpan(t *testing.T) {
 	}
 }
 
+func TestBoundedState(t *testing.T) {
+	atLimit := "k=" + strings.Repeat("v", maxTraceState-2)
+	for in, want := range map[string]string{
+		"":                        "",
+		"vendor=abc,other=1":      "vendor=abc,other=1",
+		atLimit:                   atLimit,
+		atLimit + "v":             "",
+		"vendor=a\r\nInjected: 1": "",
+		"vendor=café":             "",
+	} {
+		if got := boundedState(in); got != want {
+			t.Errorf("boundedState(%d bytes %q...) = %d bytes, want %d", len(in), in[:min(len(in), 20)], len(got), len(want))
+		}
+	}
+}
+
+// What is logged about the collector must not include a key written into its URL.
+func TestCollectorHost(t *testing.T) {
+	for in, want := range map[string]string{ //nolint:gosec // made-up keys, to check they are not logged
+		"http://collector:4318":                           "collector:4318",
+		"https://user:secret@otlp.example.com/otlp":       "otlp.example.com",
+		"https://otlp.example.com/v1/traces?api_key=s3cr": "otlp.example.com",
+		"://": "",
+	} {
+		if got := CollectorHost(in); got != want {
+			t.Errorf("CollectorHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// An endpoint that is refused is not repeated in the error, since it can hold a key.
+func TestBadEndpointIsNotEchoed(t *testing.T) {
+	_, err := NewTracer(TracerConfig{Endpoint: "grpc://user:hunter2@collector:4317"}) //nolint:gosec // a made-up key
+	if err == nil || strings.Contains(err.Error(), "hunter2") || !strings.Contains(err.Error(), "otel.endpoint") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestNewTracer(t *testing.T) {
 	if tr, err := NewTracer(TracerConfig{}); tr != nil || err != nil {
 		t.Fatalf("with no endpoint: %v, %v; want no tracer and no error", tr, err)

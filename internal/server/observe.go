@@ -136,7 +136,9 @@ func (o *observed) request(code int, d time.Duration) telemetry.Request {
 // names, counts and the status, and nothing of the prompt or the answer.
 func (o *observed) endSpan(r *http.Request, req telemetry.Request) {
 	s := o.span
-	if s == nil {
+	// Only a call from a known caller is exported. Someone with no key must not be able to
+	// fill the collector, least of all by sending a traceparent that says to sample.
+	if s == nil || o.c == nil {
 		return
 	}
 	// The pattern is the method and the path as registered, so the name does not vary

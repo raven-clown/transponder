@@ -270,7 +270,8 @@ func (o OTel) validate() error {
 		return nil
 	}
 	if u, err := url.Parse(o.Endpoint); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("config: otel.endpoint %q must be an http or https URL of an OTLP/HTTP collector, usually port 4318; OTLP over gRPC is not supported", o.Endpoint)
+		// The value is not repeated: it can hold a collector's key.
+		return errors.New("config: otel.endpoint must be an http or https URL of an OTLP/HTTP collector, usually port 4318; OTLP over gRPC is not supported")
 	}
 	if o.SampleRatio < 0 || o.SampleRatio > 1 {
 		return fmt.Errorf("config: otel.sample_ratio %v must be between 0 and 1", o.SampleRatio)

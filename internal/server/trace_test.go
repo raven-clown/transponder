@@ -310,42 +310,36 @@ func TestTraceOfRequestsThatReachNoProvider(t *testing.T) {
 	down := upstreamSeeingTrace(t, 503, "down")
 	e := setupTraced(t, route("fast", oaTarget("a", "gpt-5", down.counted)))
 
-	if rec := e.call(http.MethodPost, "/v1/chat/completions", "", zebraPrompt); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no key: status %d", rec.Code)
-	}
-	if rec := e.call(http.MethodGet, "/nowhere", "", ""); rec.Code != http.StatusNotFound {
-		t.Fatalf("unknown path: status %d", rec.Code)
-	}
-	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
-		e.call(http.MethodGet, path, e.keys[auth.RoleViewer], "")
+	if rec := e.send("/v1/chat/completions", `{"model":"no-such-model","messages":[]}`, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown model: status %d", rec.Code)
 	}
 	if rec := e.send("/v1/chat/completions", zebraPrompt, nil); rec.Code != http.StatusBadGateway {
 		t.Fatalf("provider down: status %d", rec.Code)
 	}
 	spans := e.finish()
-	// 401, the unknown path, and the failed call with its one attempt. Probes are not traced.
-	if len(spans) != 4 {
-		t.Fatalf("%d spans, want 4: %+v", len(spans), spans)
+	// The 404 on its own, and the failed call with its one attempt.
+	if len(spans) != 3 {
+		t.Fatalf("%d spans, want 3: %+v", len(spans), spans)
 	}
 	var refused, failed telemetry.SpanData
 	for _, s := range spans {
 		if s.Name != "POST /v1/chat/completions" {
 			continue
 		}
-		if a, _ := s.Attr("http.response.status_code"); a.Int == http.StatusUnauthorized {
+		if a, _ := s.Attr("http.response.status_code"); a.Int == http.StatusNotFound {
 			refused = s
 		} else {
 			failed = s
 		}
 	}
-	// A refusal is the caller's mistake, not an error of the gateway.
+	// A 404 is the caller's mistake, not an error of the gateway.
 	if refused.Failed {
-		t.Error("the 401 is marked as an error")
+		t.Error("the 404 is marked as an error")
 	}
-	wantAttrs(t, refused, map[string]any{"transponder.endpoint": "chat.completions", "http.response.status_code": int64(401)})
+	wantAttrs(t, refused, map[string]any{"transponder.endpoint": "chat.completions", "http.response.status_code": int64(404)})
 	for _, key := range []string{"transponder.provider", "transponder.route", "gen_ai.usage.input_tokens"} {
 		if _, has := refused.Attr(key); has {
-			t.Errorf("the 401 span has %s", key)
+			t.Errorf("the 404 span has %s", key)
 		}
 	}
 	if !failed.Failed {
@@ -354,10 +348,64 @@ func TestTraceOfRequestsThatReachNoProvider(t *testing.T) {
 	wantAttrs(t, failed, map[string]any{"http.response.status_code": int64(502), "error.type": "502", "transponder.provider": "a"})
 	attempt := spanNamed(t, spans, "chat gpt-5")
 	wantAttrs(t, attempt, map[string]any{"error.type": "server_error", "http.response.status_code": int64(503)})
-	other := spanNamed(t, spans, "GET")
-	wantAttrs(t, other, map[string]any{"http.response.status_code": int64(404), "transponder.endpoint": "other"})
-	if _, has := other.Attr("http.route"); has {
-		t.Error("a request that matched no route has http.route")
+}
+
+// Someone with no key cannot make the gateway export spans, even by sending a traceparent
+// that says to sample. Probes and scrapes are not traced either.
+func TestOnlyKnownCallersAreTraced(t *testing.T) {
+	e := setupTraced(t, echoRoutes(echo.New("echo")))
+	sampled := "00-" + callerTrace + "-" + callerSpan + "-01"
+	for _, tt := range []struct {
+		method, path, key string
+		want              int
+	}{
+		{http.MethodPost, "/v1/chat/completions", "", http.StatusUnauthorized},
+		{http.MethodPost, "/v1/chat/completions", "tp_not_a_key", http.StatusUnauthorized},
+		{http.MethodGet, "/nowhere", "", http.StatusNotFound},
+		{http.MethodGet, "/healthz", "", http.StatusOK},
+		{http.MethodGet, "/readyz", "", http.StatusOK},
+		{http.MethodGet, "/metrics", e.keys[auth.RoleViewer], http.StatusOK},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, strings.NewReader(ping))
+		req.Header.Set("Traceparent", sampled)
+		if tt.key != "" {
+			req.Header.Set("Authorization", "Bearer "+tt.key)
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != tt.want {
+			t.Fatalf("%s %s: status %d, want %d", tt.method, tt.path, rec.Code, tt.want)
+		}
+	}
+	if spans := e.finish(); len(spans) != 0 {
+		t.Fatalf("%d spans exported: %+v", len(spans), spans)
+	}
+}
+
+// A tracestate longer than the standard allows is not copied onto the spans, where it
+// would be queued once per span. The provider still gets the header as the caller sent it.
+func TestOversizedTracestateStaysOffTheSpans(t *testing.T) {
+	up := upstreamSeeingTrace(t, 200, okChat)
+	e := setupTraced(t, route("fast", oaTarget("a", "gpt-4o-mini", up.counted)))
+	huge := "vendor=" + strings.Repeat("x", 4000)
+	rec := e.send("/v1/chat/completions", zebraPrompt, map[string]string{
+		"Traceparent": "00-" + callerTrace + "-" + callerSpan + "-01",
+		"Tracestate":  huge,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	spans := e.finish()
+	if len(spans) != 2 {
+		t.Fatalf("%d spans, want 2", len(spans))
+	}
+	for _, s := range spans {
+		if s.TraceState != "" || id16(s.TraceID) != callerTrace {
+			t.Errorf("span %q: tracestate of %d bytes, trace %s", s.Name, len(s.TraceState), id16(s.TraceID))
+		}
+	}
+	if _, tracestate := up.headers(); tracestate != huge {
+		t.Errorf("the provider got a tracestate of %d bytes, want the caller's %d", len(tracestate), len(huge))
 	}
 }
 

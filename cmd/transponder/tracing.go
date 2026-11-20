@@ -29,7 +29,7 @@ func startTracing(cfg config.OTel, m *telemetry.Metrics, logger *slog.Logger) (*
 	if err != nil || tracer == nil {
 		return nil, func() {}, err
 	}
-	logger.Info("tracing", "endpoint", cfg.Endpoint)
+	logger.Info("tracing", "collector", telemetry.CollectorHost(cfg.Endpoint))
 	return tracer, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), spanFlushTimeout)
 		defer cancel()

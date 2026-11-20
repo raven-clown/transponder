@@ -231,12 +231,23 @@ func NewTracer(cfg TracerConfig) (*Tracer, error) {
 func tracesURL(endpoint string) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("otel.endpoint %q must be an http or https URL of an OTLP/HTTP collector, usually port 4318; OTLP over gRPC is not supported", endpoint)
+		// The value is not repeated: it can hold a collector's key.
+		return "", errors.New("otel.endpoint must be an http or https URL of an OTLP/HTTP collector, usually port 4318; OTLP over gRPC is not supported")
 	}
 	if !strings.HasSuffix(u.Path, "/v1/traces") {
 		u.Path = strings.TrimSuffix(u.Path, "/") + "/v1/traces"
 	}
 	return u.String(), nil
+}
+
+// CollectorHost returns the host of a collector URL, which is all of it that is safe to log:
+// the user part and the query can hold a key.
+func CollectorHost(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 // run exports the queue in batches: when a batch is full, on every tick, and once more when
@@ -321,7 +332,7 @@ func (t *Tracer) Start(name string, kind SpanKind, traceparent, tracestate strin
 	}
 	s := &Span{t: t}
 	if parent, ok := ParseTraceparent(traceparent); ok {
-		s.data.TraceID, s.data.ParentID, s.data.TraceState = parent.TraceID, parent.SpanID, tracestate
+		s.data.TraceID, s.data.ParentID, s.data.TraceState = parent.TraceID, parent.SpanID, boundedState(tracestate)
 		s.recording = parent.Sampled
 	} else {
 		binary.BigEndian.PutUint64(s.data.TraceID[:8], rand.Uint64()) //nolint:gosec // an id has to be unique, not secret
@@ -329,6 +340,24 @@ func (t *Tracer) Start(name string, kind SpanKind, traceparent, tracestate strin
 		s.recording = t.ratio >= 1 || rand.Float64() < t.ratio //nolint:gosec // sampling is no secret
 	}
 	s.begin(name, kind)
+	return s
+}
+
+// maxTraceState is the longest tracestate W3C Trace Context asks a service to carry.
+const maxTraceState = 512
+
+// boundedState returns a caller's tracestate for the spans, or "" when it is longer than
+// the standard allows or holds anything but printable ASCII. The header comes from outside
+// and is copied onto every span of the call, so its size must not be the caller's choice.
+func boundedState(s string) string {
+	if len(s) > maxTraceState {
+		return ""
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < ' ' || s[i] > '~' {
+			return ""
+		}
+	}
 	return s
 }
 
