@@ -40,6 +40,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A PDF or other file sent inline (an Anthropic `document` block, a chat `file` part) now counts by the size of its data in the estimate used for limits and for usage when a provider reports none. It counted as nothing, so a large document could pass an input limit and cost nothing on a provider that reports no usage.
 - A translated answer or stream that carries no usage (an Anthropic-compatible server without `usage`, an OpenAI-compatible one without `usage` behind `/v1/messages`) is now estimated and marked so, instead of being recorded as 0 tokens and 0 cost.
 - A stream that fails after events that carry no output yet, such as Anthropic's `overloaded_error` right after `message_start`, an OpenAI role chunk followed by an error, or `response.created` followed by `error`, now falls back to the next target. Those opening events are held back until the first output, so the caller never sees the failed attempt.
+- A stream that stalls after its first output until `request_timeout` now counts against its target for the cooldown, like a stream that breaks. It was treated like a caller who left, so a target that kept stalling stayed first in its routes.
 
 ## [0.2.4] - 2026-11-14
 

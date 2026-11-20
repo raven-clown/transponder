@@ -69,11 +69,12 @@ func (g *gateway) run(c *call, attempt func() error) {
 		if err == nil {
 			try.answered()
 			// A stream that broke after its first byte cannot fall back, but it still counts
-			// against the target, unless it broke because the caller left.
+			// against the target, unless it broke because the caller left. One that stalled
+			// until the request timeout counts.
 			switch {
 			case !c.cut:
 				c.router.Report(t, true)
-			case ctx.Err() == nil:
+			case !callerGone(c):
 				c.router.Report(t, false)
 			}
 			return
