@@ -37,7 +37,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 
-- Under load the gateway no longer answers 502 because it ran out of local ports: it keeps up to 512 idle connections to each provider, where Go's default of two made it dial again for almost every call. With 64 streamed calls in flight, up to 15% of calls failed this way on Windows.
+- Under load the gateway no longer runs out of local ports: it keeps up to 512 idle connections to each provider, where Go's default of two made it dial again for almost every call. With 64 streamed calls in flight, up to 15% of calls got a 502 this way on Windows, and once the ports were gone the process could stop with `fatal error: thread exhaustion`, v0.2.4 included.
 - A caller that closes the connection, before the answer or in the middle of a stream, is recorded with status 499 and logged at info level, instead of 502 or 200 and a `provider call failed` or `upstream stream broke` warning, so provider alerts stay quiet (#25).
 - When a provider reports no usage, `/v1/messages` estimates the input like the other endpoints: an inline image counts as 1,000 tokens instead of a quarter token per byte of its base64 data, which billed a 300 KB image as about 100,000 tokens. The answer is counted too.
 - A PDF or other file sent inline (an Anthropic `document` block, a chat `file` part) now counts by the size of its data in the estimate used for limits and for usage when a provider reports none. It counted as nothing, so a large document could pass an input limit and cost nothing on a provider that reports no usage.
