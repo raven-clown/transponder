@@ -78,6 +78,7 @@ func scenarios(rate float64, concurrency int, up upstreamConfig) []scenario {
 }
 
 // row is one scenario's numbers. Latencies are what the gateway added, in milliseconds.
+// MemoryMiB is the gateway's working set after the scenario, PeakMiB the highest since it started.
 type row struct {
 	Scenario   string         `json:"scenario"`
 	TargetRate float64        `json:"target_rate"`
@@ -87,8 +88,6 @@ type row struct {
 	P50        float64        `json:"p50_ms"`
 	P95        float64        `json:"p95_ms"`
 	P99        float64        `json:"p99_ms"`
-	// MemoryMiB is the gateway's working set after the scenario, PeakMiB the highest since it
-	// started.
 	MemoryMiB  float64        `json:"memory_mib"`
 	PeakMiB    float64        `json:"peak_mib"`
 	Failures   map[string]int `json:"failures,omitempty"`
