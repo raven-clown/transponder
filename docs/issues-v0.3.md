@@ -102,7 +102,7 @@ Labels: `enhancement`, `good first issue`
 
 **Why:** Auth0 and some other providers put `https://tenant.auth0.com/` with a trailing slash in `iss`. If the config has the URL without it, every token is refused. The check is an exact compare (`internal/auth/oidc.go:134`), and the reason is logged at debug level only (`internal/server/observe.go:310`), so at the default `info` level the operator sees a wall of 401s and nothing in the log.
 
-**Change:** when the two issuers are equal after trimming one trailing `/`, keep refusing the token, since the issuer must match exactly, but make the reason say so: `issuer is "https://x/", want "https://x": set auth.oidc.issuer to the token's value, trailing slash included`. Log this case once per process at warn level, through a `sync.Once` or similar, so the hint is seen at the default level without flooding.
+**Change:** when the two issuers are equal after trimming one trailing `/`, keep refusing the token, since the issuer must match exactly, but make the reason say so and quote the token's exact value, so the hint is right whichever side has the slash: `issuer is "https://x/", want "https://x": the two differ only by a trailing slash; set auth.oidc.issuer to "https://x/"`. Log this case once per process at warn level, through a `sync.Once` or similar, so the hint is seen at the default level without flooding.
 
 **Tests:** in `internal/auth/oidc_test.go`, a table with the slash on either side: the token is refused and the reason contains `trailing slash`. A plainly different issuer keeps the old message. In `internal/server`, the warn line appears once for two such calls.
 
@@ -300,14 +300,15 @@ Labels: `enhancement`, `help wanted`
 **Behavior:**
 
 - Inside the same `UpdateConfig` transaction as the write, after applying it, count the usable admin keys of the org (enabled, not expired). If there are none, roll back and answer 409. The count belongs in the transaction so two admins removing each other's keys at once cannot both pass.
-- When `auth.oidc.role_mapping` maps some value to `admin`, the check is skipped, since someone can sign in as admin. The handler needs to know this from its dependencies.
+- Only a write that takes the count from one or more down to zero is refused. A setup that never had an admin key, such as one that signs admins in with OIDC, is not affected.
+- When `auth.oidc.role_mapping` maps some value to `admin`, the check is skipped, since someone is expected to sign in as admin. The handler needs to know this from its dependencies. transponder can't see whether anyone holds that value, so the API reference and the README say plainly: with an admin role mapping, deleting the last admin key leaves only the identity provider. If nobody holds the mapped value, a restart does not help, because start prints no key when `role_mapping` names an admin. The way back is to fix the group in the identity provider, or to make a key with `transponder keys create` (#187).
 - Rotating a key is not affected.
 
 **Tests:** in `internal/admin/keys_test.go`: delete, disable, past expiry and demotion of the only admin key are each 409 and change nothing, and no audit record is written; the same with a second admin key succeeds; with an admin role mapping it succeeds. A store-level helper for the count goes in both stores and `internal/store/storetest`.
 
 **Where:** `internal/admin/keys.go`, both stores and the suite, `api/openapi.yaml` (the 409 on those operations), `CHANGELOG.md`.
 
-**Done when:** no single API write can lock every admin out.
+**Done when:** without an admin role mapping, no single API write can lock every admin out, and the case with one is documented with its way back.
 
 If transponder is useful to you, a star on the repo helps other people find it.
 
@@ -452,6 +453,7 @@ Labels: `enhancement`, `help wanted`
 
 - Sent on every call to that provider, after the provider's own headers. A header the adapter sets itself (`Authorization`, `x-api-key`, `anthropic-version`, `Content-Type`) or a trace header is refused at load with an error naming it, so a config can't break auth by accident.
 - A header name must be a valid HTTP token, and a value may not contain a newline.
+- Headers go over the same connection as `api_key`, so they get the same rule: a `base_url` with plain `http`, common for a local server, sends both in the clear. The docs for `headers` say so next to the one for `api_key`, and a secret header belongs behind `https`.
 - Through the admin API, header values are sealed with `secrets_key` like `api_key`, since they are often secrets, and reads show only the names and the last four characters.
 
 **Tests:** in `internal/provider`, the headers reach an `httptest` upstream. Config: a refused name, a newline. Admin: create and read back without the values; values survive `transponder secrets rotate`.
