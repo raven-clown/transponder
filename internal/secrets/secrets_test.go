@@ -72,6 +72,48 @@ func TestSealOpen(t *testing.T) {
 	}
 }
 
+func TestPreviousKey(t *testing.T) {
+	oldBox, _ := New(testKey())
+	newBox, _ := New(bytes.Repeat([]byte{8}, keySize))
+	sealed, err := oldBox.Seal("sk-old", "providers/oa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newBox.Open(sealed, "providers/oa"); !errors.Is(err, ErrWrongKey) {
+		t.Fatalf("Open with another key: %v, want ErrWrongKey", err)
+	}
+	if _, err := newBox.Open("plain", "providers/oa"); err == nil || errors.Is(err, ErrWrongKey) {
+		t.Fatalf("Open of a value that was never sealed: %v", err)
+	}
+
+	both := newBox.WithPrevious(oldBox)
+	if got, err := both.Open(sealed, "providers/oa"); err != nil || got != "sk-old" {
+		t.Fatalf("Open with the previous key: %q, %v", got, err)
+	}
+	fresh, _ := both.Seal("sk-new", "providers/oa")
+	if got, err := newBox.Open(fresh, "providers/oa"); err != nil || got != "sk-new" {
+		t.Fatalf("Seal did not use the current key: %q, %v", got, err)
+	}
+
+	moved, changed, err := both.Reseal(sealed, "providers/oa")
+	if err != nil || !changed {
+		t.Fatalf("Reseal = %v, %v", changed, err)
+	}
+	if got, err := newBox.Open(moved, "providers/oa"); err != nil || got != "sk-old" {
+		t.Fatalf("the resealed value does not open with the current key alone: %q, %v", got, err)
+	}
+	same, changed, err := both.Reseal(moved, "providers/oa")
+	if err != nil || changed || same != moved {
+		t.Fatalf("Reseal of a current value = %q, %v, %v", same, changed, err)
+	}
+	if _, _, err := newBox.Reseal(sealed, "providers/oa"); !errors.Is(err, ErrWrongKey) {
+		t.Fatalf("Reseal without the previous key: %v", err)
+	}
+	if b := (*Box)(nil).WithPrevious(oldBox); b != nil {
+		t.Fatal("a box with no current key could open values")
+	}
+}
+
 func TestNilBox(t *testing.T) {
 	var b *Box
 	if _, err := b.Seal("x", "c"); !errors.Is(err, ErrNoKey) {

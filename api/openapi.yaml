@@ -1123,7 +1123,7 @@ components:
       properties:
         id: { type: integer }
         time: { type: string, format: date-time }
-        actor: { type: string, description: "`key:<name>` or `user:<id>`, or `file` for a change the config file made at start." }
+        actor: { type: string, description: "`key:<name>` or `user:<id>`, `file` for a change the config file made at start, or `cli` for one a command made, such as `transponder secrets rotate`." }
         action: { type: string, enum: [create, update, delete, rotate] }
         kind: { type: string, description: The resource kind, such as keys. }
         resource: { type: string, description: The resource name or id. }

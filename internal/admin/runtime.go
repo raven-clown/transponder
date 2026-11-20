@@ -270,6 +270,9 @@ func Runtime(ctx context.Context, st RuntimeStore, box *secrets.Box, file *confi
 			p.APIKey = fileKeys[it.ID]
 		case it.Secret != "":
 			key, err := box.Open(it.Secret, secretContext(it.ID))
+			if errors.Is(err, secrets.ErrWrongKey) {
+				return nil, fmt.Errorf("provider %q api_key: %w; if secrets_key changed, set previous_secrets_key to the old key and run transponder secrets rotate", it.ID, err)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("provider %q api_key: %w", it.ID, err)
 			}

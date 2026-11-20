@@ -32,6 +32,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - `demo/`: `docker compose up` starts transponder in front of a fake provider with calls flowing through it, Prometheus, Jaeger, and a Grafana dashboard of requests, latency, tokens, cost, fallbacks and limits. No provider key is needed and nothing leaves the machine.
 - `ops_listen_addr` (`TRANSPONDER_OPS_LISTEN_ADDR`) serves `/healthz`, `/readyz` and `/metrics` on a second port, where `/metrics` needs no key, for a Prometheus inside your network.
 - Access per route: `allow` on a route lists who may call it, as `user:<id>`, `team:<name>`, `key:<name>` or `role:<role>` (that role and the ones above it). Anyone else gets 403 `route_forbidden` naming the route, with nothing recorded, and `/v1/models` lists only the routes the caller may use. Routes without `allow` stay open to every authenticated caller.
+- `transponder secrets rotate` and `previous_secrets_key` (`TRANSPONDER_PREVIOUS_SECRETS_KEY`) change `secrets_key` without losing the provider keys stored through the admin API. Before, a new `secrets_key` left them unreadable: the server would not start, and every admin config write failed with `invalid_config`. With both keys set, replicas read keys sealed under either; the command seals them all again under the new key in one write, with an audit record each.
 
 ## [0.2.4] - 2026-11-14
 

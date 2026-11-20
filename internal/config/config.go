@@ -29,8 +29,11 @@ type Bootstrap struct {
 	ListenAddr string `yaml:"listen_addr"`
 	Store      Store  `yaml:"store"`
 	SecretsKey string `yaml:"secrets_key"`
-	OTel       OTel   `yaml:"otel"`
-	LogLevel   string `yaml:"log_level"`
+	// PreviousSecretsKey still opens provider keys sealed before secrets_key changed, until
+	// transponder secrets rotate seals them again under secrets_key.
+	PreviousSecretsKey string `yaml:"previous_secrets_key"`
+	OTel               OTel   `yaml:"otel"`
+	LogLevel           string `yaml:"log_level"`
 	// UpdateCheck logs a line at start and once a day when a newer release is out.
 	UpdateCheck bool `yaml:"update_check"`
 	// OpsListenAddr serves /healthz, /readyz and /metrics on a port of their own, where
@@ -372,6 +375,9 @@ func (c *Bootstrap) validate() error {
 	}
 	if c.Store.SQLite != "" && c.Store.Postgres != "" {
 		return errors.New("config: set only one of store.sqlite and store.postgres")
+	}
+	if c.PreviousSecretsKey != "" && c.SecretsKey == "" && c.Store.Postgres != "" {
+		return errors.New("config: previous_secrets_key needs secrets_key, the key provider keys are sealed with from now on")
 	}
 	switch strings.ToLower(c.LogLevel) {
 	case "debug", "info", "warn", "error":

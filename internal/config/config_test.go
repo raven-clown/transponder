@@ -107,6 +107,7 @@ func TestLoadRejects(t *testing.T) {
 	}{
 		{name: "unknown file key", body: "listen_adr: x\n"},
 		{name: "both stores", body: "store:\n  sqlite: a.db\n  postgres: postgres://x\n"},
+		{name: "previous secrets key alone with Postgres", body: "store:\n  postgres: postgres://x\nprevious_secrets_key: abc\n", want: "previous_secrets_key needs secrets_key"},
 		{name: "bad log level", body: "log_level: loud\n"},
 		{name: "missing file", path: filepath.Join(t.TempDir(), "nope.yaml")},
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
