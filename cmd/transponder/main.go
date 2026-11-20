@@ -74,6 +74,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "secrets" {
+		return runSecrets(args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("transponder", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print the version and exit")
@@ -355,8 +358,25 @@ func (s *limiterSource) close() {
 
 // openSecrets returns what seals provider keys: secrets_key when it is set, and with SQLite a
 // key kept in transponder.key next to the database otherwise. With Postgres and no
-// secrets_key it returns nil, and provider keys cannot be stored through the API.
+// secrets_key it returns nil, and provider keys cannot be stored through the API. With
+// previous_secrets_key, values sealed under that key still open.
 func openSecrets(cfg *config.Bootstrap) (*secrets.Box, error) {
+	box, err := currentSecrets(cfg)
+	if err != nil || cfg.PreviousSecretsKey == "" {
+		return box, err
+	}
+	key, err := secrets.ParseKey(cfg.PreviousSecretsKey)
+	if err != nil {
+		return nil, fmt.Errorf("previous_secrets_key: %w", err)
+	}
+	prev, err := secrets.New(key)
+	if err != nil {
+		return nil, err
+	}
+	return box.WithPrevious(prev), nil
+}
+
+func currentSecrets(cfg *config.Bootstrap) (*secrets.Box, error) {
 	if cfg.SecretsKey != "" {
 		key, err := secrets.ParseKey(cfg.SecretsKey)
 		if err != nil {
