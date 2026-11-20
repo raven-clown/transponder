@@ -48,6 +48,8 @@ func fakeGateway(args []string) int {
 	}
 	_, _ = fmt.Fprint(os.Stderr, "transponder: created an admin API key. It is shown once, so save it now:\ntp-fake\n")
 	mux := http.NewServeMux()
+	// Should the free port the test picked for pprof be handed to the gateway too, it is here.
+	mux.Handle("GET /debug/pprof/", http.DefaultServeMux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") })
 	mux.HandleFunc("POST /", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tp-fake" {
@@ -441,6 +443,17 @@ func TestRunSuite(t *testing.T) {
 	if n := strings.Count(table.String(), "\n"); n != 9 {
 		t.Fatalf("compare printed %d lines:\n%s", n, table.String())
 	}
+	merged := filepath.Join(dir, "merged.json")
+	if code := run(t.Context(), append([]string{"merge", merged}, outs...), io.Discard, io.Discard); code != 0 {
+		t.Fatal("merge failed")
+	}
+	rep, err := readReport(merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Count != 4 || len(rep.Rows) != 7 || rep.Rows[0].Scenario != "direct chat (floor)" {
+		t.Fatalf("merged %+v", rep)
+	}
 }
 
 func TestRunSuiteRejects(t *testing.T) {
@@ -451,6 +464,8 @@ func TestRunSuiteRejects(t *testing.T) {
 		{"run", "-bin", missing, "-duration", "1ms"},
 		{"compare", "one"},
 		{"compare", missing, missing},
+		{"merge", "out.json", "one.json"},
+		{"merge", filepath.Join(t.TempDir(), "out.json"), missing, missing},
 	} {
 		if code := run(t.Context(), args, io.Discard, io.Discard); code != 1 {
 			t.Errorf("run %v = %d, want 1", args, code)
