@@ -18,6 +18,10 @@ HOW TO WRITE THE DESCRIPTION
 - Use bullets for separate items, not for one thought cut into pieces.
 - Keep it as short as the change allows. A one-line fix can have a three-line description.
 
+NO ISSUE NEEDED
+A pull request without an issue is welcome. Small fixes, docs, tests and new providers go straight here. For a new endpoint, config key, schema change or anything that touches many packages, open this as a draft and start the description with a few lines on the design, so a maintainer can answer before you write all the code.
+If there is an issue, put `Closes #123` on the first line. If there is none, delete that line.
+
 CHECKS
 Workflows from a fork start once a maintainer approves them, so the checks can show as waiting for a while. That's expected.
 -->
@@ -51,8 +55,8 @@ Anything you ran by hand, with the command and the part of the output that matte
 
 <!-- Tick what applies and delete the rest. -->
 
-Endpoints this touches: <!-- /v1/chat/completions, /v1/embeddings, /v1/messages, /admin/v1, or none -->
-Providers this touches: <!-- echo, openai, ollama, anthropic, gemini, or none -->
+Endpoints this touches: <!-- /v1/chat/completions, /v1/responses, /v1/embeddings, /v1/messages, /v1/models, /v1/usage, /admin/v1, /metrics, or none -->
+Providers this touches: <!-- provider types from internal/provider/registry, such as openai, anthropic, gemini, ollama, or none -->
 
 - [ ] Both the streamed and the non-streamed response were tested for each endpoint touched
 - [ ] `X-Usage-Input-Tokens`, `X-Usage-Output-Tokens` and `X-Usage-Cost-USD` are still sent on success and on errors, and as trailers on a stream
