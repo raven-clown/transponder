@@ -1,0 +1,9 @@
+# Scrapes the gateway's ops port, where /metrics needs no key.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: transponder
+    static_configs:
+      - targets: ["transponder:9464"]

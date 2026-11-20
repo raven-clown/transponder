@@ -1,0 +1,44 @@
+# The gateway of the demo. Both providers are the fake one in demo/sim, so no real key is
+# needed and no call leaves your machine.
+
+listen_addr: ":8080"
+# /healthz, /readyz and /metrics on a second port, where Prometheus scrapes without a key.
+ops_listen_addr: ":9464"
+
+store:
+  sqlite: /data/transponder.db
+
+# Every call is traced and sent to Jaeger.
+otel:
+  endpoint: http://jaeger:4318
+
+providers:
+  - {name: steady, type: openai, base_url: "http://upstream:9000/v1", api_key: demo}
+  # Answers 503 about a third of the time.
+  - {name: flaky, type: openai, base_url: "http://flaky:9000/v1", api_key: demo}
+
+routes:
+  - match: fast
+    targets:
+      - {provider: steady, model: gpt-4o-mini}
+  # The first target fails often, so calls fall back to the second.
+  - match: smart
+    targets:
+      - {provider: flaky, model: gpt-5}
+      - {provider: steady, model: gpt-4o}
+  - match: embed
+    targets:
+      - {provider: steady, model: text-embedding-3-small}
+
+# The key "batch" may make 20 calls a minute. The demo sends more, so some get 429.
+profiles:
+  - name: batch
+    limits:
+      requests: {rate: 20/m}
+profile_bindings:
+  - {subject: "key:batch", profile: batch}
+
+# The key "trial" may spend half a cent a day. It is spent within a few minutes, and the
+# calls after that get 402.
+budgets:
+  - {subject: "key:trial", period: daily, limit_usd: 0.005}

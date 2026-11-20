@@ -118,6 +118,19 @@ On success it prints `transponder: config ok` and exits 0. On failure it prints 
 
 ## Try it
 
+To see it work before you set anything up, run the demo. It starts transponder in front of a fake provider, sends calls through it, and opens a Grafana dashboard with requests, latency, tokens, cost, fallbacks and limits, plus the traces in Jaeger. It needs Docker and no provider key:
+
+```shell
+git clone https://github.com/raven-clown/transponder.git
+cd transponder/demo
+docker compose up --build -d --wait
+# then open http://localhost:3000
+```
+
+[demo/README.md](demo/README.md) says what runs and what each panel shows.
+
+To run the binary yourself:
+
 ```shell
 transponder
 # first start: SQLite in the working directory, and a one-time admin key on stderr

@@ -1,0 +1,106 @@
+# The transponder demo: the gateway in front of a fake provider, calls flowing through it,
+# and Prometheus, Grafana and Jaeger to watch them. See README.md in this folder.
+#
+#   docker compose up --build
+#
+# Every port is bound to localhost only. The API keys in this demo are public.
+# If a port is taken, pick another: DEMO_GATEWAY_PORT (8080), DEMO_GRAFANA_PORT (3000),
+# DEMO_PROMETHEUS_PORT (9090) and DEMO_JAEGER_PORT (16686).
+
+name: transponder-demo
+
+x-demo: &demo
+  image: transponder-demo
+  build:
+    context: ..
+    dockerfile: demo/Dockerfile
+
+services:
+  # Puts the demo's API keys in the store before the gateway opens it.
+  seed:
+    <<: *demo
+    command: ["/sim", "seed", "-db", "/data/transponder.db"]
+    volumes:
+      - data:/data
+
+  # The provider behind the gateway: chat and embeddings with made-up answers.
+  upstream:
+    <<: *demo
+    command: ["/sim", "upstream", "-addr", ":9000"]
+    healthcheck: &upstream-health
+      test: ["CMD", "/sim", "probe", "http://localhost:9000/healthz"]
+      interval: 3s
+      timeout: 4s
+      retries: 10
+
+  # The same provider, failing a third of its calls, so there are fallbacks to see.
+  flaky:
+    <<: *demo
+    command: ["/sim", "upstream", "-addr", ":9000", "-fail", "0.35"]
+    healthcheck: *upstream-health
+
+  transponder:
+    <<: *demo
+    command: ["/transponder", "--config", "/etc/transponder/transponder.yaml"]
+    volumes:
+      - data:/data
+      - ./transponder.yaml:/etc/transponder/transponder.yaml:ro
+    ports:
+      - "127.0.0.1:${DEMO_GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      upstream:
+        condition: service_healthy
+      flaky:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/sim", "probe", "http://localhost:9464/readyz"]
+      interval: 3s
+      timeout: 4s
+      retries: 10
+
+  # Sends about four calls a second: chat, streams, embeddings, and a few that are refused.
+  traffic:
+    <<: *demo
+    command: ["/sim", "traffic", "-url", "http://transponder:8080", "-rate", "4"]
+    depends_on:
+      transponder:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:${DEMO_PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      transponder:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+    environment:
+      # Anyone on this machine can look; signing in as admin / admin lets you edit.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/transponder.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${DEMO_GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  # Takes the traces over OTLP and shows them.
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
+    ports:
+      - "127.0.0.1:${DEMO_JAEGER_PORT:-16686}:16686"
+
+volumes:
+  data:

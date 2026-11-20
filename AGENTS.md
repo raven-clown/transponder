@@ -24,6 +24,13 @@ go run ./cmd/transponder
 go run ./cmd/transponder --config transponder.yaml
 ```
 
+Run the demo and check it (Docker with Compose v2):
+
+```shell
+cd demo && docker compose up --build -d --wait && ./check.sh
+docker compose down -v
+```
+
 On Windows without gcc, `-race` is not available: run `go test ./...` locally and let CI run the race detector.
 
 Tests that need Postgres are skipped unless `TRANSPONDER_TEST_POSTGRES` holds the URL of a server, such as `postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable`. Each test works in a schema of its own and drops it. CI sets the variable in the coverage job.
@@ -53,6 +60,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/secrets` (planned): sealed secrets
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
+- `demo/`: the Docker Compose demo with Prometheus, Grafana and Jaeger. `demo/sim` is its fake provider, key seeder and traffic, and is not part of the gateway. A change to a metric name or label must keep `demo/grafana/dashboards/transponder.json` working; `go test ./demo/...` checks every query names a metric the gateway serves, and the `demo` CI job runs the stack
 
 ## Rules
 
