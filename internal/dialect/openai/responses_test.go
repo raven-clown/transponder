@@ -151,7 +151,7 @@ func FuzzResponseStream(f *testing.F) {
 	f.Add([]byte(`{"type":"response.output_text.delta","sequence_number":4,"delta":"Hi"}`))
 	f.Add([]byte(`{"type":"response.failed","response":{"usage":null}}`))
 	f.Add([]byte(`{"type":"error","code":"server_error","message":"x"}`))
-	f.Add([]byte(`{"error":{"message":"gone","param":"previous_response_id","code":"previous_response_not_found"}}`))
+	f.Add([]byte(`{"model":"m","previous_response_id":"resp_1","input":[{"type":"item_reference","id":"msg_1"},{"role":"user","content":[{"type":"input_file","file_id":"file-1"}]}]}`))
 	f.Add([]byte(`[DONE]`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var s ResponseStream
@@ -166,7 +166,11 @@ func FuzzResponseStream(f *testing.F) {
 		}
 		ParseResponseUsage(data)
 		ResponseText(data)
-		UnknownResponse(data)
+		// A body that names stored state must never be read as one that does not.
+		r := ReadResponsesRefs(data)
+		if (r.Stateful() == "") != (!r.PreviousResponse && !r.Conversation && !r.ItemReference) || r.Files < 0 {
+			t.Fatalf("refs %+v", r)
+		}
 	})
 }
 
@@ -191,27 +195,46 @@ func TestIsResponseStreamError(t *testing.T) {
 	}
 }
 
-func TestUnknownResponse(t *testing.T) {
+func TestReadResponsesRefs(t *testing.T) {
+	message := func(parts string) string {
+		return `{"model":"m","input":[{"role":"user","content":[` + parts + `]}]}`
+	}
 	tests := []struct {
 		name, body string
-		wantMsg    string
-		wantOK     bool
+		want       ResponsesRefs
+		stateful   string
 	}{
-		{name: "OpenAI's code", wantOK: true, wantMsg: "Previous response with id 'resp_1' not found.",
-			body: `{"error":{"message":"Previous response with id 'resp_1' not found.","type":"invalid_request_error","param":"previous_response_id","code":"previous_response_not_found"}}`},
-		{name: "the code alone", wantOK: true, wantMsg: "gone",
-			body: `{"error":{"message":"gone","code":"previous_response_not_found"}}`},
-		{name: "the field is not taken", wantOK: true, wantMsg: "previous_response_id is not supported",
-			body: `{"error":{"message":"previous_response_id is not supported","param":"previous_response_id","code":null}}`},
-		{name: "another bad field", body: `{"error":{"message":"bad","param":"reasoning.effort","code":"invalid_value"}}`},
-		{name: "no error object", body: `{"detail":"Not Found"}`},
-		{name: "not JSON", body: `oops`},
+		{name: "text only", body: `{"model":"m","input":"hi","store":true}`},
+		{name: "items without references", body: message(`{"type":"input_text","text":"hi"},{"type":"input_image","image_url":"https://example.com/a.png"}`)},
+		{name: "previous response", body: `{"model":"m","input":"and then?","previous_response_id":"resp_1"}`,
+			want: ResponsesRefs{PreviousResponse: true}, stateful: "previous_response_id"},
+		{name: "previous response in another case", body: `{"model":"m","Previous_Response_Id":"resp_1"}`,
+			want: ResponsesRefs{PreviousResponse: true}, stateful: "previous_response_id"},
+		{name: "null is no reference", body: `{"model":"m","previous_response_id":null,"conversation":null,"prompt":null}`},
+		{name: "conversation by id", body: `{"model":"m","conversation":"conv_1"}`,
+			want: ResponsesRefs{Conversation: true}, stateful: "conversation"},
+		{name: "conversation as an object", body: `{"model":"m","conversation":{"id":"conv_1"}}`,
+			want: ResponsesRefs{Conversation: true}, stateful: "conversation"},
+		{name: "item reference", body: `{"model":"m","input":[{"type":"item_reference","id":"msg_1"},{"role":"user","content":"x"}]}`,
+			want: ResponsesRefs{ItemReference: true}, stateful: "input"},
+		{name: "item reference in another key case", body: `{"model":"m","Input":[{"TYPE":"item_reference","id":"msg_1"}]}`,
+			want: ResponsesRefs{ItemReference: true}, stateful: "input"},
+		{name: "stored prompt", body: `{"model":"m","prompt":{"id":"pmpt_1","version":"2"}}`, want: ResponsesRefs{Prompt: true}},
+		{name: "files by id, URL and inline", body: message(`{"type":"input_file","file_id":"file-1"},{"type":"input_file","file_url":"https://example.com/a.pdf"},{"type":"input_file","filename":"a.pdf","file_data":"data:application/pdf;base64,QUJD"}`),
+			want: ResponsesRefs{Files: 3}},
+		{name: "a file in a tool's output", body: `{"model":"m","input":[{"type":"function_call_output","call_id":"c","output":[{"type":"input_file","file_id":"file-1"}]}]}`,
+			want: ResponsesRefs{Files: 1}},
+		// A server keeps the last of two keys that differ by case, so either may be the one it reads.
+		{name: "a part typed twice", body: message(`{"type":"input_text","TYPE":"input_file","text":"x","file_id":"file-1"}`), want: ResponsesRefs{Files: 1}},
+		{name: "every reference", body: `{"model":"m","previous_response_id":"r","conversation":"c","prompt":{"id":"p"},"input":[{"type":"item_reference","id":"i"},{"type":"input_file","file_id":"f"}]}`,
+			want: ResponsesRefs{PreviousResponse: true, Conversation: true, ItemReference: true, Prompt: true, Files: 1}, stateful: "previous_response_id"},
+		{name: "not JSON", body: `{"model":`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg, ok := UnknownResponse([]byte(tt.body))
-			if ok != tt.wantOK || msg != tt.wantMsg {
-				t.Fatalf("got %q, %v", msg, ok)
+			got := ReadResponsesRefs([]byte(tt.body))
+			if got != tt.want || got.Stateful() != tt.stateful {
+				t.Fatalf("got %+v (stateful %q), want %+v (%q)", got, got.Stateful(), tt.want, tt.stateful)
 			}
 		})
 	}

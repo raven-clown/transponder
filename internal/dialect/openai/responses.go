@@ -199,22 +199,87 @@ func IsResponseStreamError(ev sse.Event) bool {
 	return json.Unmarshal(ev.Data, &w) == nil && w.Type == responseError
 }
 
-// UnknownResponse reports whether an error body says the provider does not hold the response
-// that previous_response_id names, or does not take that field. The message is the provider's.
-func UnknownResponse(body []byte) (message string, ok bool) {
-	var w wireError
-	if json.Unmarshal(body, &w) != nil {
-		return "", false
+// ResponsesRefs is what a Responses API request takes from outside its own body: state the
+// provider stored earlier, and content the gateway cannot count before the call.
+type ResponsesRefs struct {
+	PreviousResponse bool // previous_response_id is set
+	Conversation     bool // conversation is set
+	ItemReference    bool // input has an item_reference, an item the provider stored
+	Prompt           bool // prompt names a prompt stored with the provider
+	Files            int  // input_file parts in input, by id, by URL or inline
+}
+
+// Stateful reports the first field that continues stored state, or "" when there is none.
+func (r ResponsesRefs) Stateful() string {
+	switch {
+	case r.PreviousResponse:
+		return "previous_response_id"
+	case r.Conversation:
+		return "conversation"
+	case r.ItemReference:
+		return "input"
 	}
-	code, param := "", ""
-	if w.Error.Code != nil {
-		code = *w.Error.Code
+	return ""
+}
+
+// ReadResponsesRefs lists the references of a Responses API request. Keys are matched without
+// regard to case, as a server written in Go reads them, and a null value is no reference. A
+// body that cannot be read has none; PeekResponses refuses it first.
+func ReadResponsesRefs(body []byte) ResponsesRefs {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil {
+		return ResponsesRefs{}
 	}
-	if w.Error.Param != nil {
-		param = *w.Error.Param
+	var r ResponsesRefs
+	r.PreviousResponse = hasField(m, "previous_response_id")
+	r.Conversation = hasField(m, "conversation")
+	r.Prompt = hasField(m, "prompt")
+	for k, raw := range m {
+		if !strings.EqualFold(k, "input") {
+			continue
+		}
+		var v any
+		if json.Unmarshal(raw, &v) == nil {
+			walkTypes(v, func(typ string) {
+				switch typ {
+				case "item_reference":
+					r.ItemReference = true
+				case "input_file":
+					r.Files++
+				}
+			})
+		}
 	}
-	if code == "previous_response_not_found" || param == "previous_response_id" {
-		return w.Error.Message, true
+	return r
+}
+
+// hasField reports whether any key that matches name without regard to case has a value other
+// than null.
+func hasField(m map[string]json.RawMessage, name string) bool {
+	for k, raw := range m {
+		if strings.EqualFold(k, name) && !isNull(raw) {
+			return true
+		}
 	}
-	return "", false
+	return false
+}
+
+// walkTypes calls seen once for each object in v, with every distinct value of its type keys.
+// A part may carry type in two cases, and a server may read either.
+func walkTypes(v any, seen func(typ string)) {
+	switch x := v.(type) {
+	case map[string]any:
+		found := map[string]bool{}
+		for k, val := range x {
+			if s, ok := val.(string); ok && strings.EqualFold(k, "type") && !found[s] {
+				found[s] = true
+				seen(s)
+			}
+			walkTypes(val, seen)
+		}
+	case []any:
+		for _, val := range x {
+			walkTypes(val, seen)
+		}
+	}
 }

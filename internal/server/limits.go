@@ -253,10 +253,11 @@ func estimateInput(body []byte) int64 {
 }
 
 // isImage reports whether a JSON object is an image part, in the form of OpenAI's chat or
-// Responses API or of Anthropic.
+// Responses API or of Anthropic. A Responses API file counts as one image too: its size cannot
+// be read before the call, and callers with an input limit may not send one.
 func isImage(part map[string]any) bool {
 	switch part["type"] {
-	case "input_image":
+	case "input_image", "input_file":
 		return true
 	case "image_url":
 		return part["image_url"] != nil

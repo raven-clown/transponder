@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"io"
@@ -10,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raven-clown/transponder/internal/auth"
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/router"
 	"github.com/raven-clown/transponder/internal/server"
+	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/tokens"
 )
 
@@ -65,7 +68,7 @@ func TestResponsesPassthrough(t *testing.T) {
 		replay(http.StatusOK, "application/json", plain)(w, r)
 	})
 	e := setupRoutes(t, []router.Route{openaiRoute("fast", "gpt-4o-mini", up)})
-	res := e.responses(t, `{"model":"fast","instructions":"Be brief.","input":[{"role":"user","content":[{"type":"input_text","text":"Tell me a story."}]}],"store":false,"previous_response_id":"resp_1","reasoning":{"effort":"low"},"tools":[{"type":"web_search"}],"include":["reasoning.encrypted_content"]}`)
+	res := e.responses(t, `{"model":"fast","instructions":"Be brief.","input":[{"role":"user","content":[{"type":"input_text","text":"Tell me a story."}]}],"previous_response_id":null,"reasoning":{"effort":"low"},"tools":[{"type":"web_search"}],"include":["reasoning.encrypted_content"]}`)
 
 	if res.status != http.StatusOK {
 		t.Fatalf("status %d: %s", res.status, res.body)
@@ -73,8 +76,9 @@ func TestResponsesPassthrough(t *testing.T) {
 	if string(res.body) != plain {
 		t.Fatalf("the caller's body is not the provider's: %s", res.body)
 	}
-	if got["model"] != "gpt-4o-mini" || got["store"] != false || got["previous_response_id"] != "resp_1" || got["instructions"] != "Be brief." ||
-		got["input"] == nil || got["reasoning"] == nil || got["tools"] == nil || got["include"] == nil || len(got) != 8 {
+	// Only the model changes, and store is set to false, which the caller left out.
+	if got["model"] != "gpt-4o-mini" || got["store"] != false || got["instructions"] != "Be brief." || got["input"] == nil ||
+		got["reasoning"] == nil || got["tools"] == nil || got["include"] == nil || len(got) != 8 {
 		t.Fatalf("upstream body %v", got)
 	}
 	h := res.header
@@ -107,10 +111,10 @@ func TestResponsesUsage(t *testing.T) {
 			in: 252, cacheRead: 2048, out: 20, reasoning: 320, nus: 3_971_000},
 		{name: "no usage is an estimate", request: responsesPing, contentType: "application/json",
 			body: `{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"12345678"}]}],"usage":null}`,
-			in:   5, out: 2, nus: 26_250, estimated: true},
+			in:   7, out: 2, nus: 28_750, estimated: true},
 		{name: "a stream that ends without usage is an estimate", request: responsesStream, contentType: "text/event-stream",
 			body: "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"12345678\"}\n\nevent: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"usage\":null}}\n\n",
-			in:   7, out: 2, nus: 28_750, estimated: true},
+			in:   8, out: 2, nus: 30_000, estimated: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,7 +162,8 @@ func TestResponsesStream(t *testing.T) {
 	if string(res.body) != stream {
 		t.Fatalf("the caller's stream is not the provider's:\n%s", res.body)
 	}
-	if got["model"] != "gpt-4o-mini" || got["stream"] != true || got["store"] != true || len(got) != 4 {
+	// The caller asked for store, and the provider is told not to.
+	if got["model"] != "gpt-4o-mini" || got["stream"] != true || got["store"] != false || len(got) != 4 {
 		t.Fatalf("upstream body %v", got)
 	}
 	checkTrailers(t, res, "37", "11", "0.000012")
@@ -254,14 +259,13 @@ func TestResponsesFallback(t *testing.T) {
 		first   http.HandlerFunc
 		second  http.HandlerFunc
 	}{
-		"server error":             {responsesPing, status(500, "oops"), replay(200, "application/json", plain)},
-		"rate limited":             {responsesPing, status(429, "{}"), replay(200, "application/json", plain)},
-		"stream, error status":     {responsesStream, status(503, "x"), replay(200, "text/event-stream", stream)},
-		"stream, empty":            {responsesStream, replay(200, "text/event-stream", ""), replay(200, "text/event-stream", stream)},
-		"stream, error event":      {responsesStream, replay(200, "text/event-stream", "event: error\ndata: {\"type\":\"error\",\"message\":\"x\"}\n\n"), replay(200, "text/event-stream", stream)},
-		"no Responses API, 404":    {responsesPing, status(404, "404 page not found"), replay(200, "application/json", plain)},
-		"no Responses API, 405":    {responsesStream, status(405, ""), replay(200, "text/event-stream", stream)},
-		"unknown earlier response": {`{"model":"m","input":"and then?","previous_response_id":"resp_1"}`, replay(400, "application/json", fixture(t, "previous_not_found.json")), replay(200, "application/json", plain)},
+		"server error":          {responsesPing, status(500, "oops"), replay(200, "application/json", plain)},
+		"rate limited":          {responsesPing, status(429, "{}"), replay(200, "application/json", plain)},
+		"stream, error status":  {responsesStream, status(503, "x"), replay(200, "text/event-stream", stream)},
+		"stream, empty":         {responsesStream, replay(200, "text/event-stream", ""), replay(200, "text/event-stream", stream)},
+		"stream, error event":   {responsesStream, replay(200, "text/event-stream", "event: error\ndata: {\"type\":\"error\",\"message\":\"x\"}\n\n"), replay(200, "text/event-stream", stream)},
+		"no Responses API, 404": {responsesPing, status(404, "404 page not found"), replay(200, "application/json", plain)},
+		"no Responses API, 405": {responsesStream, status(405, ""), replay(200, "text/event-stream", stream)},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -372,53 +376,72 @@ func TestResponsesWithoutTheEndpoint(t *testing.T) {
 	}
 }
 
-func TestResponsesPreviousResponse(t *testing.T) {
-	notFound := replay(400, "application/json", fixture(t, "previous_not_found.json"))
-	// A server that rejects the field without OpenAI's code still names it.
-	noState := replay(422, "application/json", `{"error":{"message":"previous_response_id is not supported","type":"invalid_request_error","param":"previous_response_id","code":null}}`)
-	chained := `{"model":"m","input":"and then?","previous_response_id":"resp_68af3f0b8f4c8193a5f2b1b0d6c2b0a905438e46b5f69a3b"}`
+// addKey stores another member key and returns its secret.
+func (e *env) addKey(t *testing.T, name string) string {
+	t.Helper()
+	plain, hash, last4, err := auth.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.CreateKey(context.Background(), store.APIKey{OrgID: store.DefaultOrg, Name: name, Hash: hash, Last4: last4, Role: string(auth.RoleMember), CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	return plain
+}
+
+type wireParamError struct {
+	Error struct {
+		Code    string `json:"code"`
+		Param   string `json:"param"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// Every caller of a route shares the provider account, so a response one caller made must not
+// be continued by another. The gateway stores nothing and refuses stored state from anyone.
+func TestResponsesStoredStateRefused(t *testing.T) {
+	up := countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json")))
+	e := setupRoutes(t, route("*", oaTarget("a", "gpt-4o-mini", up)))
+	bob := e.addKey(t, "bob")
+
+	first := e.responses(t, `{"model":"m","input":"Tell me a story.","store":true}`)
+	var made struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(first.body, &made); err != nil || first.status != http.StatusOK || made.ID == "" {
+		t.Fatalf("first call %d: %s", first.status, first.body)
+	}
+	chained := `{"model":"m","input":"and then?","previous_response_id":"` + made.ID + `"}`
+
 	tests := map[string]struct {
-		first, second http.HandlerFunc
-		anthropicLast bool
-		wantStatus    int
-		wantCode      string
-		wantProvider  string
-		wantRecords   int
+		key, body, wantParam string
 	}{
-		"the holder is down, so the outage is the answer": {first: status(503, "x"), second: notFound, wantStatus: 502, wantCode: "upstream_error", wantProvider: "a", wantRecords: 1},
-		"no target holds it":                              {first: notFound, second: noState, wantStatus: 400, wantCode: "previous_response_not_found", wantProvider: "b"},
-		"not found, then a target that is skipped":        {first: notFound, anthropicLast: true, wantStatus: 400, wantCode: "previous_response_not_found", wantProvider: "claude"},
+		"another caller continues the response": {bob, chained, "previous_response_id"},
+		"the caller who made it, too":           {e.key, chained, "previous_response_id"},
+		"the field in another case":             {bob, `{"model":"m","input":"x","Previous_Response_Id":"` + made.ID + `"}`, "previous_response_id"},
+		"a conversation by id":                  {bob, `{"model":"m","input":"x","conversation":"conv_689667905b048191b4740501625afd940c7533ace33a2dab"}`, "conversation"},
+		"a conversation as an object":           {bob, `{"model":"m","input":"x","conversation":{"id":"conv_1"}}`, "conversation"},
+		"an item the provider stored":           {bob, `{"model":"m","input":[{"type":"item_reference","id":"msg_67ccd2bf17f0819081ff3bb2cf6508e60bb6a6b452d3795b"}]}`, "input"},
+		"stored state on a stream":              {bob, `{"model":"m","input":"x","stream":true,"previous_response_id":"` + made.ID + `"}`, "previous_response_id"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			a := countedUpstream(t, tt.first)
-			targets := []router.Target{oaTarget("a", "gpt-5", a)}
-			if tt.anthropicLast {
-				targets = append(targets, anTarget("claude-test", countedUpstream(t, status(200, "{}"))))
-			} else {
-				targets = append(targets, oaTarget("b", "gpt-5", countedUpstream(t, tt.second)))
+			res, err := e.doPath(http.MethodPost, "/v1/responses", map[string]string{"Authorization": "Bearer " + tt.key}, tt.body)
+			if err != nil {
+				t.Fatal(err)
 			}
-			e := setupRoutes(t, route("*", targets...))
-			res := e.responses(t, chained)
-			if res.status != tt.wantStatus || errorCode(t, res) != tt.wantCode || res.header.Get("X-Transponder-Provider") != tt.wantProvider {
-				t.Fatalf("status %d, headers %v: %s", res.status, res.header, res.body)
+			var we wireParamError
+			_ = json.Unmarshal(res.body, &we)
+			if res.status != http.StatusBadRequest || we.Error.Code != "unsupported" || we.Error.Param != tt.wantParam || !strings.Contains(we.Error.Message, "send the whole conversation in input") {
+				t.Fatalf("status %d: %s", res.status, res.body)
 			}
-			if tt.wantCode == "previous_response_not_found" {
-				var we struct {
-					Error struct {
-						Param   string `json:"param"`
-						Message string `json:"message"`
-					} `json:"error"`
-				}
-				_ = json.Unmarshal(res.body, &we)
-				if we.Error.Param != "previous_response_id" || we.Error.Message == "" {
-					t.Fatalf("body %s", res.body)
-				}
-			}
-			if n := len(e.usage(t)); n != tt.wantRecords {
-				t.Fatalf("%d records, want %d", n, tt.wantRecords)
+			if res.header.Get("X-Usage-Cost-USD") != "0.000000" {
+				t.Fatalf("headers %v", res.header)
 			}
 		})
+	}
+	if up.calls.Load() != 1 || len(e.usage(t)) != 1 {
+		t.Fatalf("upstream called %d times, %d records; only the first call should have gone through", up.calls.Load(), len(e.usage(t)))
 	}
 }
 
@@ -449,8 +472,9 @@ func TestResponsesBadRequests(t *testing.T) {
 	}
 }
 
-// A provider written in Go reads Background as background, so the gateway must not let it by.
-func TestResponsesDropsBackgroundInAnotherCase(t *testing.T) {
+// A provider written in Go reads Background as background and Store as store, so the gateway
+// must not let either by.
+func TestResponsesCaseVariants(t *testing.T) {
 	var got map[string]json.RawMessage
 	up := upstream(t, func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
@@ -461,17 +485,21 @@ func TestResponsesDropsBackgroundInAnotherCase(t *testing.T) {
 	for _, body := range []string{
 		`{"model":"m","input":"x","Background":true}`,
 		`{"model":"m","input":"x","BACKGROUND":true,"background":false,"stream":false}`,
+		`{"model":"m","input":"x","Store":true}`,
+		`{"model":"m","input":"x","store":false,"STORE":true}`,
 	} {
 		got = nil
 		if res := e.responses(t, body); res.status != http.StatusOK {
 			t.Fatalf("status %d: %s", res.status, res.body)
 		}
 		for k := range got {
-			if k != "background" && strings.EqualFold(k, "background") {
-				t.Fatalf("%s reached the provider with %s", body, k)
+			for _, field := range []string{"background", "store"} {
+				if k != field && strings.EqualFold(k, field) {
+					t.Fatalf("%s reached the provider with %s", body, k)
+				}
 			}
 		}
-		if string(got["input"]) != `"x"` || string(got["model"]) != `"gpt-5"` {
+		if string(got["input"]) != `"x"` || string(got["model"]) != `"gpt-5"` || string(got["store"]) != "false" {
 			t.Fatalf("upstream body %v", got)
 		}
 	}
@@ -601,7 +629,7 @@ func TestResponsesLimits(t *testing.T) {
 			responsesPing: "100",
 		} {
 			e.responses(t, body)
-			if string(got["max_output_tokens"]) != want || len(got) != 3 {
+			if string(got["max_output_tokens"]) != want || string(got["store"]) != "false" || len(got) != 4 {
 				t.Fatalf("%s reached the provider as %v", body, got)
 			}
 		}
@@ -619,6 +647,53 @@ func TestResponsesLimits(t *testing.T) {
 		}
 		if res := e.responses(t, request(image, image, image)); res.status != http.StatusBadRequest || errorCode(t, res) != "input_too_large" {
 			t.Fatalf("three images: %d: %s", res.status, res.body)
+		}
+	})
+
+	t.Run("the input limit refuses what it cannot count", func(t *testing.T) {
+		up := countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json")))
+		e := setupLimited(t, route("*", oaTarget("a", "", up)), oneProfile(func(p *limits.Profile) { p.MaxInputTokens = 100_000 }))
+		message := func(part string) string {
+			return `{"model":"m","input":[{"role":"user","content":[{"type":"input_text","text":"Summarise this."},` + part + `]}]}`
+		}
+		tests := map[string]struct{ body, wantParam string }{
+			"a stored prompt":       {`{"model":"m","prompt":{"id":"pmpt_68af1f8b2c5c8190a2e4b1d0f3c9e7a60d1b2c3e4f5a6b7c","version":"3"},"input":"hi"}`, "prompt"},
+			"a file by id":          {message(`{"type":"input_file","file_id":"file-6F2ksmvXxt4VdoqmHRw6kL"}`), "input"},
+			"a file at a URL":       {message(`{"type":"input_file","file_url":"https://example.com/report.pdf"}`), "input"},
+			"an inline file":        {message(`{"type":"input_file","filename":"report.pdf","file_data":"data:application/pdf;base64,` + strings.Repeat("QUJD", 1000) + `"}`), "input"},
+			"a file in tool output": {`{"model":"m","input":[{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_file","file_id":"file-1"}]}]}`, "input"},
+			"a part typed twice":    {message(`{"type":"input_text","TYPE":"input_file","text":"x","file_id":"file-1"}`), "input"},
+		}
+		for name, tt := range tests {
+			t.Run(name, func(t *testing.T) {
+				res := e.responses(t, tt.body)
+				var we wireParamError
+				_ = json.Unmarshal(res.body, &we)
+				if res.status != http.StatusBadRequest || we.Error.Code != "input_not_countable" || we.Error.Param != tt.wantParam || !strings.Contains(we.Error.Message, "100000") {
+					t.Fatalf("status %d: %s", res.status, res.body)
+				}
+			})
+		}
+		if up.calls.Load() != 0 || len(e.usage(t)) != 0 {
+			t.Fatalf("upstream called %d times, %d records", up.calls.Load(), len(e.usage(t)))
+		}
+	})
+
+	t.Run("without an input limit, a file is reserved like an image", func(t *testing.T) {
+		up := countedUpstream(t, replay(200, "application/json", fixture(t, "plain.json")))
+		e := setupLimited(t, route("*", oaTarget("a", "", up)), oneProfile(func(p *limits.Profile) { p.TokensPerDay = 2*tokens.Image + 100 }))
+		file := `{"type":"input_file","filename":"a.pdf","file_data":"data:application/pdf;base64,QUJD"}`
+		request := func(parts ...string) string {
+			return `{"model":"m","max_output_tokens":1,"input":[{"role":"user","content":[` + strings.Join(parts, ",") + `]}]}`
+		}
+		if res := e.responses(t, request(file, file, file)); res.status != http.StatusPaymentRequired || errorCode(t, res) != "quota_exceeded" {
+			t.Fatalf("three files: %d: %s", res.status, res.body)
+		}
+		if res := e.responses(t, request(file, file)); res.status != http.StatusOK {
+			t.Fatalf("two files: %d: %s", res.status, res.body)
+		}
+		if res := e.responses(t, `{"model":"m","max_output_tokens":1,"prompt":{"id":"pmpt_1"}}`); res.status != http.StatusOK {
+			t.Fatalf("a stored prompt: %d: %s", res.status, res.body)
 		}
 	})
 }
