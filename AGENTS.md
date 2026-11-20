@@ -48,7 +48,9 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 - `internal/pricing`: the embedded price table in `prices.yaml` and cost math in nano-USD
 - `internal/limits`: profiles, budgets and the limiter (reserve, then settle), with counters behind a `Store` interface: `MemoryStore` in one process, `Failover` for `on_store_error`, and the shared one in `internal/store/postgres/counters.go`. `internal/limits/limitstest` is the suite every counter store passes
 - `internal/tokens`: the token estimate used when a provider reports no usage
-- `internal/runtime`, `internal/secrets`, `internal/telemetry` (planned): live config, sealed secrets, logs and metrics
+- `internal/runtime`: the live config and its reload. Each replica checks `config_version` every 2 seconds and swaps in a new snapshot; a call keeps the snapshot it started with. A write to the runtime config goes through `store.ConfigStore.UpdateConfig`, which raises the version in the same transaction
+- `internal/telemetry`: the JSON logger
+- `internal/secrets` (planned): sealed secrets
 - `internal/testutil` (planned): shared fakes
 - `api/openapi.yaml` (planned): the admin API description
 

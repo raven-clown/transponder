@@ -7,6 +7,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 
 - `store.postgres` (or `TRANSPONDER_STORE__POSTGRES`) keeps API keys and usage records in Postgres, so several replicas can share them. The schema is migrated at start, and replicas that start together apply each migration once.
+- Every replica checks the `config_version` row in the store every 2 seconds and, when it changed, loads and validates the whole runtime config and swaps it in. A config that fails to load leaves the old one serving and is logged once. Calls already running finish on the config they started with. The admin API will raise the version with each write.
 - With `store.postgres`, budgets, token allowances, request rates and concurrency caps are counted in Postgres, so they hold across every replica. Two replicas cannot both spend the last of a budget. `limits.store: memory` keeps per-process counters for a single replica. When Postgres cannot be reached, `limits.on_store_error: local` counts in each replica with its share of each limit, and `deny` answers 503 `overloaded`.
 - `--config-test` flag to validate a configuration file, environment variables, provider routes and settings without starting the server, binding listening ports, or creating a database file (#103).
 - Every response carries `X-Request-ID`: the caller's value when it is 1 to 128 printable ASCII characters, or a new 32-character hex id. The same id is recorded with usage and sent to the provider.

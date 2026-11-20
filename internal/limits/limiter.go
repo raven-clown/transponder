@@ -71,6 +71,10 @@ func New(cfg Config, store Store, now func() time.Time) *Limiter {
 	return l
 }
 
+// WithConfig returns a limiter that enforces cfg on the same counters and clock, so a config
+// reload keeps what every caller has used.
+func (l *Limiter) WithConfig(cfg Config) *Limiter { return New(cfg, l.store, l.now) }
+
 // Profile returns the caller's profile: a binding on the key, then the user, then a team,
 // then the default.
 func (l *Limiter) Profile(c Caller) (Profile, bool) {

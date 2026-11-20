@@ -25,6 +25,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/echo"
 	"github.com/raven-clown/transponder/internal/provider/registry"
 	"github.com/raven-clown/transponder/internal/router"
+	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/server"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/postgres"
@@ -135,18 +136,35 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 
-	rt, err := buildRouter(cfg, &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()})
-	if err != nil {
-		return err
-	}
+	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	limiter, closeLimiter, err := buildLimiter(ctx, cfg, db, logger, time.Now)
 	if err != nil {
 		return err
 	}
 	defer closeLimiter()
+	reloader, err := runtime.New(ctx, db, func(context.Context, int64) (live, error) {
+		return loadLive(cfg, client, limiter)
+	}, logger, time.Now)
+	if err != nil {
+		return err
+	}
+	reloadCtx, stopReloads := context.WithCancel(ctx)
+	reloadsDone := make(chan struct{})
+	go func() {
+		defer close(reloadsDone)
+		reloader.Run(reloadCtx, reloadInterval)
+	}()
+	// The loop reads the store, so it stops before the deferred Close.
+	defer func() {
+		stopReloads()
+		<-reloadsDone
+	}()
 	gw := server.New(server.Deps{
-		Auth:   auth.NewAuthenticator(db, time.Now),
-		Router: rt,
+		Auth: auth.NewAuthenticator(db, time.Now),
+		Live: func() (*router.Router, *limits.Limiter) {
+			c := reloader.Current().Value
+			return c.router, c.limiter
+		},
 		Prices: pricing.Default(),
 		Usage:  db,
 		Logger: logger,
@@ -155,7 +173,6 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
 		Ready:          map[string]server.Pinger{"store": db},
-		Limiter:        limiter,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
 	// and the handlers are counted so their usage is written before the store closes.
@@ -201,6 +218,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 type database interface {
 	store.KeyStore
 	store.UsageStore
+	store.ConfigStore
 	Ping(ctx context.Context) error
 	Close() error
 }
@@ -212,6 +230,36 @@ func openStore(ctx context.Context, cfg config.Store) (database, error) {
 		return postgres.Open(ctx, cfg.Postgres)
 	}
 	return sqlite.Open(ctx, cfg.SQLite)
+}
+
+// reloadInterval is how often serve checks config_version; tests shorten it.
+var reloadInterval = runtime.DefaultInterval
+
+// live is the runtime config a reload swaps: what a call reads when it starts.
+type live struct {
+	router  *router.Router
+	limiter *limits.Limiter
+}
+
+// loadLive loads and validates the whole runtime config. The limiter keeps base's counters, so a
+// reload changes the rules and never resets what callers have used.
+//
+// The providers, routes and limits come from the file for now. The admin API will keep them in
+// the store, and read them here, so every replica picks up its writes.
+func loadLive(cfg *config.Bootstrap, client *http.Client, base *limits.Limiter) (live, error) {
+	rt, err := buildRouter(cfg, client)
+	if err != nil {
+		return live{}, err
+	}
+	l := live{router: rt}
+	if base != nil {
+		lc, err := cfg.LimitsConfig()
+		if err != nil {
+			return live{}, err
+		}
+		l.limiter = base.WithConfig(lc)
+	}
+	return l, nil
 }
 
 // buildRouter turns the providers and routes of the file into a router. With no routes,

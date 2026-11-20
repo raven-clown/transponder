@@ -68,9 +68,9 @@ func (g *gateway) run(c *call, attempt func() error) {
 			// against the target, unless it broke because the caller left.
 			switch {
 			case !c.cut:
-				g.d.Router.Report(t, true)
+				c.router.Report(t, true)
 			case ctx.Err() == nil:
-				g.d.Router.Report(t, false)
+				c.router.Report(t, false)
 			}
 			return
 		}
@@ -86,7 +86,7 @@ func (g *gateway) run(c *call, attempt func() error) {
 		if ctx.Err() != nil || !retryable(ae.err) {
 			break
 		}
-		g.d.Router.Report(t, false)
+		c.router.Report(t, false)
 		if i < len(c.plan.Targets)-1 {
 			g.d.Logger.WarnContext(ctx, "falling back", "route", c.plan.Route, "provider", c.rec.Provider, "model", t.Model, "err", ae.err)
 		}

@@ -39,6 +39,9 @@ type Deps struct {
 	RequestTimeout time.Duration
 	// Limiter enforces budgets, token limits and request limits. Nil means none.
 	Limiter *limits.Limiter
+	// Live, when set, returns the router and limiter to use in place of Router and Limiter. It
+	// is read once when a call starts, so a config reload never changes a call halfway.
+	Live func() (*router.Router, *limits.Limiter)
 	// Ready are the dependencies /readyz pings, by name.
 	Ready map[string]Pinger
 }
@@ -81,6 +84,8 @@ type call struct {
 	fail     errorFunc
 	caller   limits.Caller
 	ticket   *limits.Ticket
+	router   *router.Router  // the config the call started on
+	limiter  *limits.Limiter // nil when nothing is limited
 }
 
 // errorFunc writes an error in the caller's dialect.
@@ -119,7 +124,8 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		}
 		return nil
 	}
-	return &call{w: w, r: r, body: body, fail: writeError, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
+	rt, limiter := g.live()
+	return &call{w: w, r: r, body: body, fail: writeError, router: rt, limiter: limiter, caller: limits.Caller{User: id.User, Teams: id.Teams, Key: id.Key}, rec: store.UsageRecord{
 		OrgID:     id.OrgID,
 		Time:      start,
 		RequestID: r.Header.Get("X-Request-ID"),
@@ -131,9 +137,17 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	}}
 }
 
+// live returns the router and limiter a new call uses.
+func (g *gateway) live() (*router.Router, *limits.Limiter) {
+	if g.d.Live != nil {
+		return g.d.Live()
+	}
+	return g.d.Router, g.d.Limiter
+}
+
 // resolve finds the targets for model, or writes 404 and records nothing.
 func (g *gateway) resolve(c *call, model string) bool {
-	plan, err := g.d.Router.Plan(model)
+	plan, err := c.router.Plan(model)
 	if err != nil {
 		c.fail(c.w, http.StatusNotFound, "invalid_request_error", "model_not_found", "model", "no route serves model "+model)
 		return false

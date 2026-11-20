@@ -14,10 +14,11 @@ type wireModel struct {
 
 // models lists the route names a caller can use, without asking any provider.
 func (g *gateway) models(w http.ResponseWriter, r *http.Request) {
-	if c := g.begin(w, r, "models"); c == nil {
+	c := g.begin(w, r, "models")
+	if c == nil {
 		return
 	}
-	names := g.d.Router.Models()
+	names := c.router.Models()
 	data := make([]wireModel, len(names))
 	for i, n := range names {
 		data[i] = wireModel{ID: n, Object: "model", OwnedBy: "transponder"}

@@ -324,6 +324,7 @@ store:
 - API keys and usage records are shared: a key made on one replica works on all of them, and the first replica to start prints the one-time admin key.
 - Migrations only add tables and columns, and removals come in a later release, so replicas on the old and the new version can run side by side during a rolling update.
 - Budgets, token allowances, rates and concurrency caps are counted in Postgres, shared by every replica. Each reservation is one atomic statement, so two replicas cannot both take the last of a budget. The first replica to start fills the counters from this month's usage once. This adds a few short queries to each limited call; `limits.store: memory` keeps the counters in each process instead, for a single replica.
+- A change to the runtime config reaches every replica within 2 seconds, without a restart: each replica checks a version number in the database every 2 seconds and, when it moved, loads the whole config again and swaps it in. If the new config does not load, the old one keeps serving and the error is logged. Calls already running finish on the config they started with.
 - A concurrency slot belongs to the replica that took it. If that replica dies, its slots free themselves within 30 seconds.
 - If Postgres cannot be reached, `limits.on_store_error: local` (the default) counts in each replica with its share of every limit, the limit divided by the number of replicas seen in the last 30 seconds. `deny` answers 503 `overloaded` with `Retry-After: 1` instead.
 

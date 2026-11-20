@@ -21,6 +21,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/config"
 	"github.com/raven-clown/transponder/internal/limits"
+	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/store"
 	"github.com/raven-clown/transponder/internal/store/postgres"
 	"github.com/raven-clown/transponder/internal/store/postgres/pgtest"
@@ -1044,6 +1045,130 @@ func TestServeTwoReplicasShareABudget(t *testing.T) {
 	}
 	if served != statuses[http.StatusOK] || spent > int64(budgetUSD*1e9) {
 		t.Fatalf("%d calls spent %d nano-USD of a %v USD budget", served, spent, budgetUSD)
+	}
+}
+
+// lockedBuffer collects what serve logs while the test reads it.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
+// serveLogged runs serve on a fresh port and returns its log and a function that stops it.
+func serveLogged(t *testing.T, cfg *config.Bootstrap) (*lockedBuffer, func()) {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &lockedBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, cfg, ln, logs, io.Discard) }()
+	return logs, func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve returned %v", err)
+		}
+	}
+}
+
+// waitFor polls until every log contains want, or fails after within.
+func waitFor(t *testing.T, within time.Duration, want string, logs ...*lockedBuffer) {
+	t.Helper()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(within)
+	for _, l := range logs {
+		for !strings.Contains(l.String(), want) {
+			select {
+			case <-tick.C:
+			case <-deadline:
+				t.Fatalf("no %q within %s in:\n%s", want, within, l)
+			}
+		}
+	}
+}
+
+// A write that raises config_version reaches every replica within the reload interval.
+func TestReloadReachesEveryReplica(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name     string
+		replicas int
+		cfg      func(t *testing.T) *config.Bootstrap
+		open     func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore
+	}{
+		{"sqlite", 1, func(t *testing.T) *config.Bootstrap {
+			return &config.Bootstrap{Store: config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")}, LogLevel: "info"}
+		}, func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore {
+			db, err := sqlite.Open(ctx, cfg.Store.SQLite)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			return db
+		}},
+		{"postgres", 2, func(t *testing.T) *config.Bootstrap {
+			return &config.Bootstrap{Store: config.Store{Postgres: pgtest.DSN(t)}, LogLevel: "info"}
+		}, func(t *testing.T, cfg *config.Bootstrap) store.ConfigStore {
+			db, err := postgres.Open(ctx, cfg.Store.Postgres)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			return db
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg(t)
+			var logs []*lockedBuffer
+			for range tt.replicas {
+				l, stop := serveLogged(t, cfg)
+				defer stop()
+				logs = append(logs, l)
+			}
+			waitFor(t, 10*time.Second, `"msg":"listening"`, logs...)
+			db := tt.open(t, cfg)
+			v, err := db.UpdateConfig(ctx, func(context.Context) error { return nil })
+			if err != nil || v != 2 {
+				t.Fatalf("UpdateConfig = %d, %v", v, err)
+			}
+			waitFor(t, runtime.DefaultInterval+time.Second, `"from_version":1,"version":2`, logs...)
+		})
+	}
+}
+
+func TestLoadLive(t *testing.T) {
+	base := limits.New(limits.Config{}, limits.NewMemoryStore(), time.Now)
+	cfg := &config.Bootstrap{Budgets: []config.BudgetConfig{{Subject: "user:*", Period: "monthly", LimitUSD: 1}}}
+	l, err := loadLive(cfg, http.DefaultClient, base)
+	if err != nil || l.router == nil || l.limiter == nil || len(l.limiter.Status(context.Background(), limits.Caller{User: "a"})) != 1 {
+		t.Fatalf("live %+v, %v", l, err)
+	}
+	if l, err := loadLive(&config.Bootstrap{}, http.DefaultClient, nil); err != nil || l.limiter != nil {
+		t.Fatalf("live without limits %+v, %v", l, err)
+	}
+	bad := &config.Bootstrap{Providers: []config.Provider{{Name: "p", Type: "nope"}}, Routes: []config.Route{{Match: "*", Targets: []config.Target{{Provider: "p"}}}}}
+	if _, err := loadLive(bad, http.DefaultClient, nil); err == nil {
+		t.Fatal("a config with an unknown provider type loaded")
+	}
+	badLimits := &config.Bootstrap{DefaultProfile: "gone"}
+	if _, err := loadLive(badLimits, http.DefaultClient, base); err == nil {
+		t.Fatal("a config with an unknown default profile loaded")
 	}
 }
 

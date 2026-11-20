@@ -18,6 +18,7 @@ import (
 type Store interface {
 	store.KeyStore
 	store.UsageStore
+	store.ConfigStore
 	Ping(ctx context.Context) error
 }
 
@@ -38,6 +39,11 @@ func Run(t *testing.T, open Opener) {
 		{"RecordAndRecentUsage", testRecordAndRecentUsage},
 		{"RecordUsageUnderLoad", testRecordUsageUnderLoad},
 		{"UsageSince", testUsageSince},
+		{"ConfigVersionStartsAtOne", testConfigVersionStartsAtOne},
+		{"UpdateConfigCommits", testUpdateConfigCommits},
+		{"UpdateConfigRollsBack", testUpdateConfigRollsBack},
+		{"UpdateConfigNested", testUpdateConfigNested},
+		{"UpdateConfigConcurrent", testUpdateConfigConcurrent},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) { tt.fn(t, open) })
@@ -261,5 +267,132 @@ func testUsageSince(t *testing.T, open Opener) {
 	stop := errors.New("stop")
 	if err := db.UsageSince(ctx, store.DefaultOrg, time.Time{}, func(store.UsageRecord) error { return stop }); !errors.Is(err, stop) {
 		t.Fatalf("err = %v, want the callback's error", err)
+	}
+}
+
+func testConfigVersionStartsAtOne(t *testing.T, open Opener) {
+	if v, err := open(t).ConfigVersion(context.Background()); err != nil || v != 1 {
+		t.Fatalf("version %d, %v; want 1", v, err)
+	}
+}
+
+func testUpdateConfigCommits(t *testing.T, open Opener) {
+	db := open(t)
+	ctx := context.Background()
+	k := Key("written", "member")
+	v, err := db.UpdateConfig(ctx, func(ctx context.Context) error {
+		if err := db.CreateKey(ctx, k); err != nil {
+			return err
+		}
+		// A read inside the transaction sees its own write.
+		if _, err := db.KeyByHash(ctx, k.Hash); err != nil {
+			return err
+		}
+		if v, err := db.ConfigVersion(ctx); err != nil || v != 1 {
+			t.Errorf("version inside the transaction %d, %v; want 1 until the bump", v, err)
+		}
+		return nil
+	})
+	if err != nil || v != 2 {
+		t.Fatalf("UpdateConfig = %d, %v; want 2", v, err)
+	}
+	if got, err := db.ConfigVersion(ctx); err != nil || got != 2 {
+		t.Fatalf("version %d, %v; want 2", got, err)
+	}
+	if _, err := db.KeyByHash(ctx, k.Hash); err != nil {
+		t.Fatalf("the key written in the transaction: %v", err)
+	}
+}
+
+func testUpdateConfigRollsBack(t *testing.T, open Opener) {
+	db := open(t)
+	ctx := context.Background()
+	if err := db.CreateKey(ctx, Key("taken", "member")); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	tests := []struct {
+		name string
+		fn   func(ctx context.Context) error
+		want error
+	}{
+		{"fn fails", func(ctx context.Context) error {
+			if err := db.CreateKey(ctx, Key("half", "member")); err != nil {
+				return err
+			}
+			return boom
+		}, boom},
+		{"store call fails", func(ctx context.Context) error {
+			if err := db.CreateKey(ctx, Key("half", "member")); err != nil {
+				return err
+			}
+			return db.CreateKey(ctx, Key("taken", "member"))
+		}, store.ErrConflict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := db.UpdateConfig(ctx, tt.fn); !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+			if v, err := db.ConfigVersion(ctx); err != nil || v != 1 {
+				t.Fatalf("version %d, %v; want 1 after a rollback", v, err)
+			}
+			if _, err := db.KeyByHash(ctx, Key("half", "member").Hash); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("a key from the rolled back transaction: %v", err)
+			}
+		})
+	}
+	// The store still works after the rollbacks.
+	if _, err := db.UpdateConfig(ctx, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testUpdateConfigNested(t *testing.T, open Opener) {
+	db := open(t)
+	ctx := context.Background()
+	v, err := db.UpdateConfig(ctx, func(ctx context.Context) error {
+		inner, err := db.UpdateConfig(ctx, func(ctx context.Context) error {
+			return db.CreateKey(ctx, Key("inner", "member"))
+		})
+		if err == nil && inner != 2 {
+			t.Errorf("inner version %d, want 2", inner)
+		}
+		return err
+	})
+	if err != nil || v != 3 {
+		t.Fatalf("UpdateConfig = %d, %v; want 3", v, err)
+	}
+	if _, err := db.KeyByHash(ctx, Key("inner", "member").Hash); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testUpdateConfigConcurrent(t *testing.T, open Opener) {
+	db := open(t)
+	ctx := context.Background()
+	const n = 20
+	versions := make(chan int64, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			v, err := db.UpdateConfig(ctx, func(context.Context) error { return nil })
+			if err != nil {
+				t.Error(err)
+			}
+			versions <- v
+		})
+	}
+	wg.Wait()
+	close(versions)
+	seen := map[int64]bool{}
+	for v := range versions {
+		if seen[v] {
+			t.Fatalf("version %d given twice", v)
+		}
+		seen[v] = true
+	}
+	if v, err := db.ConfigVersion(ctx); err != nil || v != n+1 {
+		t.Fatalf("version %d, %v; want %d", v, err, n+1)
 	}
 }

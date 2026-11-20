@@ -18,7 +18,7 @@ import (
 // admit reserves the call against the caller's limits once the model is known, and writes the
 // refusal itself when the call may not run.
 func (g *gateway) admit(c *call, est limits.Estimate) bool {
-	if g.d.Limiter == nil {
+	if c.limiter == nil {
 		return true
 	}
 	// Any target of the route may end up serving the call, so the reservation is priced at the
@@ -34,7 +34,7 @@ func (g *gateway) admit(c *call, est limits.Estimate) bool {
 		}
 		return dearest
 	}
-	t, d := g.d.Limiter.Admit(c.r.Context(), c.caller, est)
+	t, d := c.limiter.Admit(c.r.Context(), c.caller, est)
 	if d != nil {
 		if d.RetryAfter > 0 {
 			c.w.Header().Set("Retry-After", strconv.FormatInt(int64(math.Ceil(d.RetryAfter.Seconds())), 10))
