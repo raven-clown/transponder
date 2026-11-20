@@ -30,15 +30,16 @@ routes:
     targets:
       - {provider: steady, model: text-embedding-3-small}
 
-# The key "batch" may make 20 calls a minute. The demo sends more, so some get 429.
+# The key "batch" may make 10 calls a minute. The demo sends it about 36, so most get 429
+# once the first few have gone through.
 profiles:
   - name: batch
     limits:
-      requests: {rate: 20/m}
+      requests: {rate: 10/m}
 profile_bindings:
   - {subject: "key:batch", profile: batch}
 
-# The key "trial" may spend half a cent a day. It is spent within a few minutes, and the
-# calls after that get 402.
+# The key "trial" may spend a fifth of a cent a day. That goes within the first minute or
+# two, and the calls after it get 402.
 budgets:
-  - {subject: "key:trial", period: daily, limit_usd: 0.005}
+  - {subject: "key:trial", period: daily, limit_usd: 0.002}

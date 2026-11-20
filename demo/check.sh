@@ -40,7 +40,8 @@ wait_for 30 "Prometheus has tokens" above_zero 'sum(transponder_tokens_total)'
 wait_for 30 "Prometheus has cost" above_zero 'sum(transponder_cost_usd_total)'
 wait_for 30 "Prometheus has provider latency" above_zero 'sum(transponder_upstream_duration_seconds_count)'
 wait_for 120 "Prometheus has fallbacks" above_zero 'sum(transponder_fallbacks_total)'
-wait_for 180 "Prometheus has calls refused by a limit" above_zero 'sum(transponder_limited_total)'
+wait_for 120 "Prometheus has calls over a rate" above_zero 'sum(transponder_limited_total{reason="rate_limited"})'
+wait_for 180 "Prometheus has calls over a budget" above_zero 'sum(transponder_limited_total{reason="budget_exceeded"})'
 
 [ "$(status "$gateway/metrics")" = 401 ] || { echo "FAILED: /metrics on the gateway's port answers without a key" >&2; exit 1; }
 echo "ok: /metrics on the gateway's port needs a key"

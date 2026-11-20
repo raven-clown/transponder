@@ -6,7 +6,7 @@ transponder in front of a fake provider, with calls flowing through it and a Gra
 
 ## Run it
 
-You need Docker with Compose v2 and about 1.5 GB for the images.
+You need Docker with Compose v2 and about 4 GB of disk for the images, most of it the Go build image and Grafana.
 
 ```shell
 git clone https://github.com/raven-clown/transponder.git
@@ -23,7 +23,7 @@ Then open:
 | Prometheus | http://localhost:9090 | Try `sum by (code) (rate(transponder_requests_total[1m]))`. |
 | Gateway | http://localhost:8080 | The OpenAI and Anthropic APIs, with the keys below. |
 
-On a laptop with a fast connection the first `up` takes two to four minutes, most of it downloading images and compiling. Later starts take seconds.
+The first `up` downloads the images and compiles transponder: about 80 seconds on a fast connection with the Go image already there, longer on a slow one. Later starts take about 25 seconds. Every panel has data within a minute after that.
 
 If a port is taken, choose another before `up`, such as `DEMO_GRAFANA_PORT=3001`. The variables are `DEMO_GATEWAY_PORT`, `DEMO_GRAFANA_PORT`, `DEMO_PROMETHEUS_PORT` and `DEMO_JAEGER_PORT`.
 
@@ -56,8 +56,8 @@ The routes and limits in [`transponder.yaml`](transponder.yaml) are set up so ev
 
 - `fast` and `embed` go to the provider `steady`, which is the `upstream` service, as the models `gpt-4o-mini` and `text-embedding-3-small`. Their real prices apply, so the cost panel shows what the same traffic would cost there.
 - `smart` tries the provider `flaky` as `gpt-5` first and falls back to `steady` as `gpt-4o`. The fallback panel shows `smart: flaky to steady (server_error)`. After three failures in a row `flaky` cools down for 30 seconds and is tried last, so the fallbacks come in waves.
-- The key `batch` may make 20 calls a minute and is sent more, so the limit panel shows `rate_limited`.
-- The key `trial` has a daily budget of half a cent. It is spent within a few minutes, and then the limit panel shows `budget_exceeded`.
+- The key `batch` may make 10 calls a minute and is sent about 36, so the limit panel shows `rate_limited`.
+- The key `trial` has a daily budget of a fifth of a cent. It is spent within a minute or two, and then the limit panel shows `budget_exceeded`.
 - A few calls use a key that does not exist (401) or a model with no route (404).
 
 In Jaeger, a call on `smart` that fell back has one span for the call and one for each provider it tried, the first marked as an error with its reason. The spans carry the provider, model, status, tokens and cost, never the prompt or the answer.
@@ -69,8 +69,8 @@ The keys are fixed so this page can name them. They are public, so never use thi
 | Key | What it is for |
 |---|---|
 | `tp_demo_alice`, `tp_demo_bob` | Ordinary callers |
-| `tp_demo_batch` | 20 calls a minute |
-| `tp_demo_trial` | Half a cent a day |
+| `tp_demo_batch` | 10 calls a minute |
+| `tp_demo_trial` | A fifth of a cent a day |
 | `tp_demo_viewer` | The `viewer` role, which may read `/metrics` on the gateway's port |
 
 ```shell

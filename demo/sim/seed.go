@@ -23,8 +23,8 @@ type demoKey struct {
 var demoKeys = []demoKey{
 	{"alice", auth.RoleMember},
 	{"bob", auth.RoleMember},
-	{"batch", auth.RoleMember},  // bound to a profile with a low request rate
-	{"trial", auth.RoleMember},  // has a small daily budget
+	{"batch", auth.RoleMember},  // 10 calls a minute
+	{"trial", auth.RoleMember},  // a fifth of a cent a day
 	{"viewer", auth.RoleViewer}, // may read /metrics on the gateway's port
 }
 
