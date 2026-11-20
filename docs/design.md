@@ -248,7 +248,7 @@ Each streamed attempt has a timeout (`attempt_timeout`, default 60s until the fi
 
 Every request, gateway or admin, needs a caller, as the contract says:
 
-- `Authorization: Bearer <token>`. If the token is a JWT it is verified against the configured OIDC issuer (JWKS fetched and cached through `coreos/go-oidc`), audience checked. Otherwise it is looked up as an API key.
+- `Authorization: Bearer <token>`. If the token is a JWT it is verified against the configured OIDC issuer (JWKS fetched and cached in `internal/auth`, signatures checked with `go-jose`), audience checked. Otherwise it is looked up as an API key.
 - `x-api-key: <token>` is accepted the same way, because Anthropic clients send that header when given an API key.
 
 The result is an `Identity{User, Teams, Key, Role}`. There are three roles:

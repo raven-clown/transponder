@@ -97,12 +97,19 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 	start := g.d.Now()
 	id, err := g.d.Auth.Authenticate(r)
 	if err != nil {
-		if !errors.Is(err, auth.ErrUnauthenticated) {
+		switch {
+		case errors.Is(err, auth.ErrUnauthenticated):
+			// The reason names claims and key ids, never the token.
+			g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
+			writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key or token is required")
+		case errors.Is(err, auth.ErrUnavailable):
+			g.d.Logger.WarnContext(r.Context(), "checking a token", "err", err)
+			w.Header().Set("Retry-After", "10")
+			writeError(w, http.StatusServiceUnavailable, "api_error", "auth_unavailable", "", "the identity provider could not be reached to check the token")
+		default:
 			g.d.Logger.ErrorContext(r.Context(), "authenticating", "err", err)
-			writeError(w, http.StatusInternalServerError, "api_error", "", "", "could not check the API key")
-			return nil
+			writeError(w, http.StatusInternalServerError, "api_error", "", "", "could not check the credentials")
 		}
-		writeError(w, http.StatusUnauthorized, "invalid_request_error", "invalid_api_key", "", "a valid API key is required")
 		return nil
 	}
 	if r.ContentLength > maxBodyBytes {

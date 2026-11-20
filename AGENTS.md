@@ -32,7 +32,7 @@ Planned in `docs/design.md` section 4. Packages marked (planned) do not exist ye
 
 - `cmd/transponder`: main, flags, bootstrap config, server start
 - `internal/config`: bootstrap YAML, env overrides, and the providers and routes declared in the file
-- `internal/auth`: OIDC JWT verification, API keys, identity and roles
+- `internal/auth`: OIDC JWT verification with a cached JWKS, API keys, identity and roles; `internal/auth/authtest` is a local OIDC provider for tests
 - `internal/server`: HTTP mux, middleware, gateway handlers
 - `internal/admin` (planned): `/admin/v1` handlers, pagination, audit writes
 - `internal/schema`: canonical request, response, stream and usage types

@@ -37,6 +37,7 @@ type Identity struct {
 type Authenticator struct {
 	keys store.KeyStore
 	now  func() time.Time
+	oidc *OIDC
 }
 
 // NewAuthenticator returns an Authenticator that looks keys up in keys.
@@ -44,7 +45,16 @@ func NewAuthenticator(keys store.KeyStore, now func() time.Time) *Authenticator 
 	return &Authenticator{keys: keys, now: now}
 }
 
-// Authenticate reads Authorization: Bearer or x-api-key and returns the caller.
+// WithOIDC makes a also accept tokens that o verifies. API keys keep working next to them.
+func (a *Authenticator) WithOIDC(o *OIDC) *Authenticator {
+	a.oidc = o
+	return a
+}
+
+// Authenticate reads Authorization: Bearer or x-api-key and returns the caller. A JWT is
+// checked against the OIDC issuer when one is configured; anything else is looked up as an
+// API key. The error wraps ErrUnauthenticated when the credentials are missing or not valid,
+// and ErrUnavailable when the identity provider's keys could not be fetched.
 func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	token := bearer(r.Header.Get("Authorization"))
 	if token == "" {
@@ -52,6 +62,9 @@ func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 	}
 	if token == "" {
 		return Identity{}, ErrUnauthenticated
+	}
+	if a.oidc != nil && looksLikeJWT(token) {
+		return a.oidc.Verify(r.Context(), token)
 	}
 	k, err := a.keys.KeyByHash(r.Context(), HashKey(token))
 	if errors.Is(err, store.ErrNotFound) {

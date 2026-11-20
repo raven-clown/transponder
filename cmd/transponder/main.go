@@ -131,8 +131,19 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	if err := auth.EnsureAdmin(ctx, db, time.Now, stderr); err != nil {
+	authn, oidc, err := buildAuth(cfg, db, &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()})
+	if err != nil {
 		return err
+	}
+	ready := map[string]server.Pinger{"store": db}
+	if oidc != nil {
+		ready["oidc"] = oidc
+	}
+	// Someone who signs in as an admin can make keys, so no key is printed for them.
+	if oidc == nil || !oidc.MapsAdmin() {
+		if err := auth.EnsureAdmin(ctx, db, time.Now, stderr); err != nil {
+			return err
+		}
 	}
 
 	rt, err := buildRouter(cfg, &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()})
@@ -144,7 +155,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	gw := server.New(server.Deps{
-		Auth:   auth.NewAuthenticator(db, time.Now),
+		Auth:   authn,
 		Router: rt,
 		Prices: pricing.Default(),
 		Usage:  db,
@@ -153,7 +164,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
-		Ready:          map[string]server.Pinger{"store": db},
+		Ready:          ready,
 		Limiter:        limiter,
 	})
 	// Requests run on their own context so a drain that runs out of time can end them,
@@ -194,6 +205,39 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 		return err
 	}
 	return nil
+}
+
+// buildAuth returns what checks callers: API keys from keys, and tokens from the OIDC issuer
+// when one is configured. The verifier is nil when it is not.
+func buildAuth(cfg *config.Bootstrap, keys store.KeyStore, client *http.Client) (*auth.Authenticator, *auth.OIDC, error) {
+	authn := auth.NewAuthenticator(keys, time.Now)
+	oc := cfg.Auth.OIDC
+	if !oc.Enabled() {
+		return authn, nil, nil
+	}
+	mapping := make(map[string]auth.Role, len(oc.RoleMapping))
+	for value, name := range oc.RoleMapping {
+		role, err := auth.ParseRole(name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("auth.oidc.role_mapping for %q: %w", value, err)
+		}
+		mapping[value] = role
+	}
+	oidc, err := auth.NewOIDC(auth.OIDCConfig{
+		Issuer:      oc.Issuer,
+		Audience:    oc.Audience,
+		JWKSURL:     oc.JWKSURL,
+		UserClaim:   oc.UserClaim,
+		TeamsClaim:  oc.TeamsClaim,
+		RolesClaim:  oc.RolesClaim,
+		RoleMapping: mapping,
+		ClockSkew:   oc.ClockSkew,
+		Client:      client,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return authn.WithOIDC(oidc), oidc, nil
 }
 
 // buildRouter turns the providers and routes of the file into a router. With no routes,

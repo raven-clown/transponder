@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,6 +33,7 @@ type Bootstrap struct {
 	// UpdateCheck logs a line at start and once a day when a newer release is out.
 	UpdateCheck bool `yaml:"update_check"`
 
+	Auth      Auth       `yaml:"auth"`
 	Providers []Provider `yaml:"providers"`
 	Routes    []Route    `yaml:"routes"`
 	Settings  Settings   `yaml:"settings"`
@@ -42,6 +44,69 @@ type Bootstrap struct {
 	ProfileBindings []BindingConfig `yaml:"profile_bindings"`
 	Budgets         []BudgetConfig  `yaml:"budgets"`
 	Limits          LimitsStore     `yaml:"limits"`
+}
+
+// Auth says how callers sign in, next to API keys.
+type Auth struct {
+	OIDC OIDC `yaml:"oidc"`
+}
+
+// OIDC accepts tokens from one OpenID Connect issuer. It is off while Issuer is empty.
+type OIDC struct {
+	// Issuer is the iss claim of the tokens, and where the discovery document is.
+	Issuer string `yaml:"issuer"`
+	// Audience must be among the aud claim of a token.
+	Audience string `yaml:"audience"`
+	// JWKSURL is where the signing keys are, for an issuer without a discovery document.
+	JWKSURL string `yaml:"jwks_url"`
+	// UserClaim holds the user id. Default sub.
+	UserClaim string `yaml:"user_claim"`
+	// TeamsClaim holds the user's teams. Default groups.
+	TeamsClaim string `yaml:"teams_claim"`
+	// RolesClaim holds the values RoleMapping reads.
+	RolesClaim string `yaml:"roles_claim"`
+	// RoleMapping gives admin, viewer or member to a value of RolesClaim.
+	RoleMapping map[string]string `yaml:"role_mapping"`
+	// ClockSkew is how far a token's exp and nbf may be off. Default 1m.
+	ClockSkew time.Duration `yaml:"clock_skew"`
+}
+
+// Enabled reports whether tokens from an OIDC issuer are accepted.
+func (o OIDC) Enabled() bool { return o.Issuer != "" }
+
+// validate checks the OIDC settings that can be checked without reaching the issuer.
+func (o OIDC) validate() error {
+	if !o.Enabled() {
+		if o.Audience != "" || o.JWKSURL != "" || o.RolesClaim != "" || len(o.RoleMapping) > 0 {
+			return errors.New("config: auth.oidc is set but auth.oidc.issuer is empty")
+		}
+		return nil
+	}
+	if u, err := url.Parse(o.Issuer); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: auth.oidc.issuer %q must be an http or https URL", o.Issuer)
+	}
+	if o.Audience == "" {
+		return errors.New("config: auth.oidc.audience is needed, so tokens issued for another service are refused")
+	}
+	if o.JWKSURL != "" {
+		if u, err := url.Parse(o.JWKSURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("config: auth.oidc.jwks_url %q must be an http or https URL", o.JWKSURL)
+		}
+	}
+	if len(o.RoleMapping) > 0 && o.RolesClaim == "" {
+		return errors.New("config: auth.oidc.role_mapping needs auth.oidc.roles_claim")
+	}
+	for value, role := range o.RoleMapping {
+		switch role {
+		case "admin", "viewer", "member":
+		default:
+			return fmt.Errorf("config: auth.oidc.role_mapping gives %q the role %q, which must be admin, viewer or member", value, role)
+		}
+	}
+	if o.ClockSkew < 0 {
+		return fmt.Errorf("config: auth.oidc.clock_skew %s must be positive", o.ClockSkew)
+	}
+	return nil
 }
 
 // ProfileConfig is a named set of limits in the shared mothership format.
@@ -236,6 +301,17 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 	if c.Settings.Cooldown == 0 {
 		c.Settings.Cooldown = 30 * time.Second
 	}
+	if c.Auth.OIDC.Enabled() {
+		if c.Auth.OIDC.UserClaim == "" {
+			c.Auth.OIDC.UserClaim = "sub"
+		}
+		if c.Auth.OIDC.TeamsClaim == "" {
+			c.Auth.OIDC.TeamsClaim = "groups"
+		}
+		if c.Auth.OIDC.ClockSkew == 0 {
+			c.Auth.OIDC.ClockSkew = time.Minute
+		}
+	}
 	return c, c.validate()
 }
 
@@ -253,6 +329,9 @@ func (c *Bootstrap) validate() error {
 		return fmt.Errorf("config: limits.on_store_error %q must be local or deny", c.Limits.OnStoreError)
 	}
 	if _, err := c.LimitsConfig(); err != nil {
+		return err
+	}
+	if err := c.Auth.OIDC.validate(); err != nil {
 		return err
 	}
 	if c.Store.SQLite != "" && c.Store.Postgres != "" {
@@ -376,7 +455,8 @@ func leafPaths(t reflect.Type, prefix string) map[string]reflect.Kind {
 		if tag == "" || tag == "-" {
 			continue
 		}
-		if f.Type.Kind() == reflect.Slice {
+		// A list or a map has no single value an environment variable could carry.
+		if f.Type.Kind() == reflect.Slice || f.Type.Kind() == reflect.Map {
 			continue
 		}
 		if f.Type.Kind() == reflect.Struct {
