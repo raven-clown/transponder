@@ -274,6 +274,7 @@ func (g *gateway) countTokens(w http.ResponseWriter, r *http.Request) {
 		writeAnthropicRequestError(w, err)
 		return
 	}
+	c.tried = true
 	resp, err := n.Native(r.Context(), &provider.NativeCall{Path: "/messages/count_tokens", Body: body, Header: r.Header})
 	if err != nil {
 		var pe *provider.Error
