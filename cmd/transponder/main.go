@@ -152,7 +152,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 	reloadsDone := make(chan struct{})
 	go func() {
 		defer close(reloadsDone)
-		reloader.Run(reloadCtx, reloadInterval)
+		reloader.Run(reloadCtx, runtime.DefaultInterval)
 	}()
 	// The loop reads the store, so it stops before the deferred Close.
 	defer func() {
@@ -231,9 +231,6 @@ func openStore(ctx context.Context, cfg config.Store) (database, error) {
 	}
 	return sqlite.Open(ctx, cfg.SQLite)
 }
-
-// reloadInterval is how often serve checks config_version; tests shorten it.
-var reloadInterval = runtime.DefaultInterval
 
 // live is the runtime config a reload swaps: what a call reads when it starts.
 type live struct {
