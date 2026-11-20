@@ -28,6 +28,44 @@ func change(a, b float64) string {
 	return fmt.Sprintf("%+.0f%%", (b-a)/a*100)
 }
 
+// runMerge combines reports of separate runs of one binary into one, each number the median,
+// so runs of two binaries can take turns and share the machine's drift.
+func runMerge(args []string, stdout io.Writer) error {
+	if len(args) < 3 {
+		return errors.New("merge takes the file to write and at least two reports")
+	}
+	var out report
+	runs := map[string][]row{}
+	var order []string
+	for _, path := range args[1:] {
+		rep, err := readReport(path)
+		if err != nil {
+			return err
+		}
+		if out.Rows == nil {
+			out = rep
+			out.Count = 0
+		}
+		out.Count += rep.Count
+		for _, r := range rep.Rows {
+			if _, ok := runs[r.Scenario]; !ok {
+				order = append(order, r.Scenario)
+			}
+			runs[r.Scenario] = append(runs[r.Scenario], r)
+		}
+	}
+	out.Rows = nil
+	for _, name := range order {
+		out.Rows = append(out.Rows, median(runs[name]))
+	}
+	writeTable(stdout, out)
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(args[0], append(b, '\n'), 0o600)
+}
+
 // runCompare prints two reports side by side, the first as before and the second as after.
 func runCompare(args []string, stdout io.Writer) error {
 	if len(args) != 2 {

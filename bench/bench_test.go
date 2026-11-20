@@ -441,6 +441,17 @@ func TestRunSuite(t *testing.T) {
 	if n := strings.Count(table.String(), "\n"); n != 9 {
 		t.Fatalf("compare printed %d lines:\n%s", n, table.String())
 	}
+	merged := filepath.Join(dir, "merged.json")
+	if code := run(t.Context(), append([]string{"merge", merged}, outs...), io.Discard, io.Discard); code != 0 {
+		t.Fatal("merge failed")
+	}
+	rep, err := readReport(merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Count != 4 || len(rep.Rows) != 7 || rep.Rows[0].Scenario != "direct chat (floor)" {
+		t.Fatalf("merged %+v", rep)
+	}
 }
 
 func TestRunSuiteRejects(t *testing.T) {
@@ -451,6 +462,8 @@ func TestRunSuiteRejects(t *testing.T) {
 		{"run", "-bin", missing, "-duration", "1ms"},
 		{"compare", "one"},
 		{"compare", missing, missing},
+		{"merge", "out.json", "one.json"},
+		{"merge", filepath.Join(t.TempDir(), "out.json"), missing, missing},
 	} {
 		if code := run(t.Context(), args, io.Discard, io.Discard); code != 1 {
 			t.Errorf("run %v = %d, want 1", args, code)
