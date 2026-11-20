@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/raven-clown/transponder/internal/schema"
@@ -199,22 +200,166 @@ func IsResponseStreamError(ev sse.Event) bool {
 	return json.Unmarshal(ev.Data, &w) == nil && w.Type == responseError
 }
 
-// UnknownResponse reports whether an error body says the provider does not hold the response
-// that previous_response_id names, or does not take that field. The message is the provider's.
-func UnknownResponse(body []byte) (message string, ok bool) {
-	var w wireError
-	if json.Unmarshal(body, &w) != nil {
-		return "", false
+// ResponsesRefs is what a Responses API request takes from outside its own body: state the
+// provider stored earlier, and content the gateway cannot count before the call.
+type ResponsesRefs struct {
+	PreviousResponse bool // previous_response_id is set
+	Conversation     bool // conversation is set
+	ItemReference    bool // input names an item the provider stored, with or without type item_reference
+	Prompt           bool // prompt names a prompt stored with the provider
+	Files            int  // input_file parts in input, by id, by URL or inline
+}
+
+// Stateful reports the first field that continues stored state, or "" when there is none.
+func (r ResponsesRefs) Stateful() string {
+	switch {
+	case r.PreviousResponse:
+		return "previous_response_id"
+	case r.Conversation:
+		return "conversation"
+	case r.ItemReference:
+		return "input"
 	}
-	code, param := "", ""
-	if w.Error.Code != nil {
-		code = *w.Error.Code
+	return ""
+}
+
+// ReadResponsesRefs lists the references of a Responses API request. Keys are matched without
+// regard to case, as a server written in Go reads them, and a null value is no reference. A
+// body that cannot be read has none; PeekResponses refuses it first.
+func ReadResponsesRefs(body []byte) ResponsesRefs {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil {
+		return ResponsesRefs{}
 	}
-	if w.Error.Param != nil {
-		param = *w.Error.Param
+	var r ResponsesRefs
+	r.PreviousResponse = hasField(m, "previous_response_id")
+	r.Conversation = hasField(m, "conversation")
+	r.Prompt = hasField(m, "prompt")
+	for k, raw := range m {
+		if !strings.EqualFold(k, "input") {
+			continue
+		}
+		var v any
+		if json.Unmarshal(raw, &v) == nil {
+			if items, ok := v.([]any); ok && slices.ContainsFunc(items, storedItem) {
+				r.ItemReference = true
+			}
+			walkTypes(v, func(typ string) {
+				switch typ {
+				case "item_reference":
+					r.ItemReference = true
+				case "input_file":
+					r.Files++
+				}
+			})
+		}
 	}
-	if code == "previous_response_not_found" || param == "previous_response_id" {
-		return w.Error.Message, true
+	return r
+}
+
+// itemNeeds is the content an input item of each type must carry to stand without the store.
+// An item without a type is read as a message.
+var itemNeeds = map[string][]string{
+	"message":                 {"role", "content"},
+	"reasoning":               {"encrypted_content"},
+	"function_call":           {"call_id", "name", "arguments"},
+	"function_call_output":    {"call_id", "output"},
+	"custom_tool_call":        {"call_id", "name", "input"},
+	"custom_tool_call_output": {"call_id", "output"},
+	"computer_call_output":    {"call_id", "output"},
+}
+
+// storedItem reports whether an input item with an id may be read from the provider's store
+// rather than from the request. It fails closed: an item of a known type must carry the content
+// that type needs, any other item must carry something besides its id and type, and a null or
+// empty value counts as missing. A key given twice in different cases, or a type that is not a
+// string, also counts as stored, since a server may read either copy.
+func storedItem(item any) bool {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return false
 	}
-	return "", false
+	id, odd := false, false
+	var types []string
+	seen := map[string]bool{}
+	has := map[string]bool{}
+	for k, v := range m {
+		key := strings.ToLower(k)
+		odd = odd || seen[key]
+		seen[key] = true
+		switch {
+		case key == "id":
+			id = id || present(v)
+		case key == "type":
+			s, ok := v.(string)
+			odd = odd || !ok
+			types = append(types, strings.ToLower(s))
+		case present(v):
+			has[key] = true
+		}
+	}
+	if !id {
+		return false
+	}
+	if odd || len(has) == 0 {
+		return true
+	}
+	if len(types) == 0 {
+		types = []string{"message"}
+	}
+	for _, typ := range types {
+		for _, need := range itemNeeds[typ] {
+			if !has[need] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// present reports whether a JSON value carries anything: not null, an empty string, an empty
+// array or an empty object.
+func present(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case string:
+		return x != ""
+	case []any:
+		return len(x) > 0
+	case map[string]any:
+		return len(x) > 0
+	}
+	return true
+}
+
+// hasField reports whether any key that matches name without regard to case has a value other
+// than null.
+func hasField(m map[string]json.RawMessage, name string) bool {
+	for k, raw := range m {
+		if strings.EqualFold(k, name) && !isNull(raw) {
+			return true
+		}
+	}
+	return false
+}
+
+// walkTypes calls seen once for each object in v, with every distinct value of its type keys.
+// A part may carry type in two cases, and a server may read either.
+func walkTypes(v any, seen func(typ string)) {
+	switch x := v.(type) {
+	case map[string]any:
+		found := map[string]bool{}
+		for k, val := range x {
+			if s, ok := val.(string); ok && strings.EqualFold(k, "type") && !found[s] {
+				found[s] = true
+				seen(s)
+			}
+			walkTypes(val, seen)
+		}
+	case []any:
+		for _, val := range x {
+			walkTypes(val, seen)
+		}
+	}
 }
