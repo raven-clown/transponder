@@ -181,10 +181,16 @@ type Tracer struct {
 	dropped func(int)
 	every   time.Duration
 
-	queue chan SpanData
-	stop  chan struct{}
-	done  chan struct{}
-	once  sync.Once
+	// Finished spans wait in pending. A request only takes the lock and appends: it never
+	// wakes the exporter, which a channel send would do for every span.
+	mu      sync.Mutex
+	pending []SpanData
+	stopped bool
+	full    chan struct{} // told once when a whole batch is waiting
+
+	stop chan struct{}
+	done chan struct{}
+	once sync.Once
 }
 
 // NewTracer returns a tracer for cfg, or nil when cfg names no endpoint and no exporter.
@@ -209,7 +215,7 @@ func NewTracer(cfg TracerConfig) (*Tracer, error) {
 	}
 	t := &Tracer{
 		exp: exp, ratio: cfg.SampleRatio, now: cfg.Now, log: cfg.Logger, dropped: cfg.Dropped, every: cfg.FlushEvery,
-		queue: make(chan SpanData, spanQueueSize), stop: make(chan struct{}), done: make(chan struct{}),
+		full: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	if t.ratio == 0 {
 		t.ratio = 1
@@ -250,55 +256,87 @@ func CollectorHost(endpoint string) string {
 	return u.Host
 }
 
-// run exports the queue in batches: when a batch is full, on every tick, and once more when
-// the tracer shuts down.
+// run exports the waiting spans in batches: when a whole batch is waiting, on every tick,
+// and once more when the tracer shuts down.
 func (t *Tracer) run() {
 	defer close(t.done)
 	tick := time.NewTicker(t.every)
 	defer tick.Stop()
 	batch := make([]SpanData, 0, spanBatchSize)
 	failing := false
+	// flush exports until nothing is waiting. While an export is under way, new spans keep
+	// collecting in pending, up to the queue size.
 	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), spanExportTimeout)
-		err := t.exp.Export(ctx, batch)
-		cancel()
-		switch {
-		case err != nil:
-			t.drop(len(batch))
-			// One line when exports start to fail, not one per batch.
-			if !failing {
-				t.log.Warn("exporting spans failed, dropping them until it works again", "err", err)
+		for {
+			batch = t.take(batch[:0])
+			if len(batch) == 0 {
+				return
 			}
-			failing = true
-		case failing:
-			t.log.Info("exporting spans works again")
-			failing = false
+			ctx, cancel := context.WithTimeout(context.Background(), spanExportTimeout)
+			err := t.exp.Export(ctx, batch)
+			cancel()
+			switch {
+			case err != nil:
+				t.drop(len(batch))
+				// One line when exports start to fail, not one per batch.
+				if !failing {
+					t.log.Warn("exporting spans failed, dropping them until it works again", "err", err)
+				}
+				failing = true
+			case failing:
+				t.log.Info("exporting spans works again")
+				failing = false
+			}
 		}
-		batch = batch[:0]
 	}
 	for {
 		select {
-		case s := <-t.queue:
-			if batch = append(batch, s); len(batch) >= spanBatchSize {
-				flush()
-			}
+		case <-t.full:
+			flush()
 		case <-tick.C:
 			flush()
 		case <-t.stop:
-			for {
-				select {
-				case s := <-t.queue:
-					if batch = append(batch, s); len(batch) >= spanBatchSize {
-						flush()
-					}
-				default:
-					flush()
-					return
-				}
-			}
+			flush()
+			t.mu.Lock()
+			t.stopped = true
+			late := len(t.pending)
+			t.pending = nil
+			t.mu.Unlock()
+			t.drop(late)
+			return
+		}
+	}
+}
+
+// take moves up to one batch of waiting spans into batch.
+func (t *Tracer) take(batch []SpanData) []SpanData {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := min(len(t.pending), spanBatchSize)
+	batch = append(batch, t.pending[:n]...)
+	rest := copy(t.pending, t.pending[n:])
+	// The moved spans are cleared so their attributes can be freed.
+	clear(t.pending[rest:])
+	t.pending = t.pending[:rest]
+	return batch
+}
+
+// enqueue puts a finished span in line for export, or drops it when the line is full or
+// the tracer has stopped. It never blocks on the collector.
+func (t *Tracer) enqueue(s SpanData) {
+	t.mu.Lock()
+	if t.stopped || len(t.pending) >= spanQueueSize {
+		t.mu.Unlock()
+		t.drop(1)
+		return
+	}
+	t.pending = append(t.pending, s)
+	batch := len(t.pending) == spanBatchSize
+	t.mu.Unlock()
+	if batch {
+		select {
+		case t.full <- struct{}{}:
+		default:
 		}
 	}
 }
@@ -381,6 +419,9 @@ func (s *Span) begin(name string, kind SpanKind) {
 	binary.BigEndian.PutUint64(s.data.SpanID[:], nonZero())
 	if s.recording {
 		s.data.Name, s.data.Kind, s.data.Start = name, kind, s.t.now()
+		// Room for the attributes of a call or an attempt, so adding them does not grow the
+		// slice a step at a time.
+		s.data.Attrs = make([]Attr, 0, 16)
 	}
 }
 
@@ -462,9 +503,5 @@ func (s *Span) End() {
 	}
 	s.ended = true
 	s.data.End = s.t.now()
-	select {
-	case s.t.queue <- s.data:
-	default:
-		s.t.drop(1)
-	}
+	s.t.enqueue(s.data)
 }
