@@ -339,5 +339,5 @@ func Ops(ready map[string]Pinger, m *telemetry.Metrics) http.Handler {
 	if m != nil {
 		mux.Handle("GET /metrics", m.Handler())
 	}
-	return mux
+	return noSniff(mux)
 }
