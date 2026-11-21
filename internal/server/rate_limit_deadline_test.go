@@ -10,15 +10,22 @@ import (
 	"github.com/raven-clown/transponder/internal/server"
 )
 
-// testClock is a clock a test moves by hand, so a wait measured against it is exact.
+// testClock is a clock a test moves by hand, so a wait measured against it is exact. A live
+// one runs with the real clock plus what the test advanced it by, for a wait that something
+// outside the test's reach measured on the real clock.
 type testClock struct {
-	mu sync.Mutex
-	t  time.Time
+	mu   sync.Mutex
+	t    time.Time
+	live bool
+	off  time.Duration
 }
 
 func (c *testClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.live {
+		return time.Now().Add(c.off)
+	}
 	return c.t
 }
 
@@ -26,6 +33,7 @@ func (c *testClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.t = c.t.Add(d)
+	c.off += d
 }
 
 func TestRateLimitRetryAfterCountsDown(t *testing.T) {
@@ -35,11 +43,16 @@ func TestRateLimitRetryAfterCountsDown(t *testing.T) {
 		first   func(*testClock) string
 		advance time.Duration
 		want    int
+		// live runs the gateway's clock with the real one: the provider turns a wait in
+		// seconds into a deadline on the real clock, so a frozen clock would count the time
+		// the test itself took as part of the wait.
+		live bool
 	}{
 		"seconds": {
 			first:   func(*testClock) string { return "30" },
 			advance: 10 * time.Second,
 			want:    20,
+			live:    true,
 		},
 		"http date": {
 			first: func(c *testClock) string {
@@ -54,7 +67,7 @@ func TestRateLimitRetryAfterCountsDown(t *testing.T) {
 			// with the real one. Starting the fake clock on a whole second keeps it just
 			// behind the real clock, so a date-shaped wait is measured on the second it named
 			// rather than a second late.
-			clock := &testClock{t: time.Now().Truncate(time.Second)}
+			clock := &testClock{t: time.Now().Truncate(time.Second), live: tc.live}
 			a := countedUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Retry-After", tc.first(clock))
 				w.WriteHeader(http.StatusTooManyRequests)
