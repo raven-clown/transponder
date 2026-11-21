@@ -7,6 +7,7 @@ Thanks for helping out. Bug reports, docs fixes, tests and new features are all 
 - Issues labeled `good first issue` are small and say exactly what to change.
 - Issues labeled `help wanted` are bigger. Each one describes the proposed API, the behavior and the tests it needs.
 - The milestones group issues by release. Start with the earliest one.
+- The [mothership board](https://github.com/users/raven-clown/projects/3/views/1?filterQuery=is%3Aissue+is%3Aopen+no%3Aassignee+label%3A%22good+first+issue%22%2C%22help+wanted%22) lists every open `good first issue` and `help wanted` issue across airlock, rosetta, transponder and logbook that nobody has taken yet.
 
 If you take an issue, leave a comment on it so nobody else picks it up. If you go quiet for two weeks, someone else may take it over.
 
