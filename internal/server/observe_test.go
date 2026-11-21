@@ -20,7 +20,7 @@ import (
 
 func TestAuthFailedWarnsOnceAboutTrailingSlashIssuer(t *testing.T) {
 	var logs bytes.Buffer
-	g := &gateway{d: Deps{Logger: slog.New(slog.NewTextHandler(&logs, nil))}}
+	g := &gateway{d: Deps{Logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}}
 	err := fmt.Errorf("%w: issuer is %q, want %q: %w; set auth.oidc.issuer to %q",
 		auth.ErrUnauthenticated, "https://x/", "https://x", auth.ErrIssuerTrailingSlash, "https://x/")
 	write := func(http.ResponseWriter, int, string, string, string, string) {}
@@ -28,11 +28,11 @@ func TestAuthFailedWarnsOnceAboutTrailingSlashIssuer(t *testing.T) {
 	for range 2 {
 		g.authFailed(httptest.NewRecorder(), req, err, write)
 	}
-	if n := strings.Count(logs.String(), "trailing slash"); n != 1 {
+	if n := strings.Count(logs.String(), "level=WARN"); n != 1 {
 		t.Fatalf("warn count = %d, want 1:\n%s", n, logs.String())
 	}
-	if !strings.Contains(logs.String(), "level=WARN") {
-		t.Fatalf("hint is not at warn level:\n%s", logs.String())
+	if n := strings.Count(logs.String(), "level=DEBUG"); n != 2 {
+		t.Fatalf("debug count = %d, want one per refusal:\n%s", n, logs.String())
 	}
 }
 

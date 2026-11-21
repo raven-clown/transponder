@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/raven-clown/transponder/api"
@@ -65,6 +66,8 @@ type Deps struct {
 type handler struct {
 	d   Deps
 	mux *http.ServeMux
+	// issuerSlashWarned keeps the trailing-slash hint from flooding the log.
+	issuerSlashWarned sync.Once
 }
 
 // route is one endpoint. need is the role the caller must have.
@@ -121,6 +124,12 @@ func (h *handler) openapi(w http.ResponseWriter, _ *http.Request) {
 func (h *handler) deny(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, auth.ErrUnauthenticated):
+		h.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
+		if errors.Is(err, auth.ErrIssuerTrailingSlash) {
+			h.issuerSlashWarned.Do(func() {
+				h.d.Logger.WarnContext(r.Context(), "credentials refused", "reason", err.Error())
+			})
+		}
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "", "a valid API key or token is required")
 	case errors.Is(err, auth.ErrForbidden):
 		writeError(w, http.StatusForbidden, "forbidden", "", "your role does not allow this; reads need viewer and writes need admin")
