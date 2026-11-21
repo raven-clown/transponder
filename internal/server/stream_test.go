@@ -133,6 +133,25 @@ func TestStreamNativeKeepsUsageChunk(t *testing.T) {
 	}
 }
 
+func TestStreamNativeContentParts(t *testing.T) {
+	up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":\"hmm\"},{\"type\":\"text\",\"text\":\"hello\"}]}}]}\n\n"+
+			"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"+
+			"data: [DONE]\n\n")
+	})
+	e := setupRoutes(t, []router.Route{openaiRoute("*", "gpt-x", up)})
+	res := e.post(t, `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	if res.status != http.StatusOK {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if !strings.Contains(string(res.body), "hello") {
+		t.Fatalf("body %s", res.body)
+	}
+	if r := e.usage(t)[0]; !r.Estimated || r.OutputTokens == 0 {
+		t.Fatalf("record %+v", r)
+	}
+}
+
 func TestStreamUpstreamFailsFirst(t *testing.T) {
 	e := setupRoutes(t, []router.Route{openaiRoute("*", "", statusUpstream(t, 500, "oops"))})
 	res := e.post(t, streamPing)

@@ -84,6 +84,8 @@ func TestReadChunk(t *testing.T) {
 		{"usage only", `{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3}}`, "", schema.Usage{InputTokens: 10, OutputTokens: 3}, true, true},
 		{"text and usage", `{"choices":[{"delta":{"content":"x"}}],"usage":{"prompt_tokens":1}}`, "x", schema.Usage{InputTokens: 1}, true, false},
 		{"null content", `{"choices":[{"delta":{"content":null,"tool_calls":[]}}]}`, "", schema.Usage{}, false, false},
+		{"content parts", `{"choices":[{"delta":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"hi"}]}}]}`, "hi", schema.Usage{}, false, false},
+		{"content parts and usage", `{"choices":[{"delta":{"content":[{"type":"text","text":"x"}]}}],"usage":{"prompt_tokens":1}}`, "x", schema.Usage{InputTokens: 1}, true, false},
 		{"choices not objects, usage kept", `{"choices":[1],"usage":{"prompt_tokens":4}}`, "", schema.Usage{InputTokens: 4}, true, false},
 		{"not json", `nope`, "", schema.Usage{}, false, false},
 	}

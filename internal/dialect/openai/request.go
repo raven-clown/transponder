@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/raven-clown/transponder/internal/schema"
 )
@@ -155,10 +156,27 @@ func (d *ChunkDecoder) toolIndex(tc wireToolCall) int {
 	return i
 }
 
+// chunkContent is a streamed delta.content. A plain string, the common case on the stream
+// path, is read without a second decode; a list of parts goes through messageText.
+type chunkContent string
+
+func (c *chunkContent) UnmarshalJSON(raw []byte) error {
+	if len(raw) >= 2 && raw[0] == '"' {
+		body := raw[1 : len(raw)-1]
+		if bytes.IndexByte(body, '\\') < 0 && utf8.Valid(body) {
+			*c = chunkContent(body)
+			return nil
+		}
+	}
+	s, err := messageText(raw)
+	*c = chunkContent(s)
+	return err
+}
+
 type wireChunkIn struct {
 	Choices []struct {
 		Delta struct {
-			Content   *string        `json:"content"`
+			Content   chunkContent   `json:"content"`
 			ToolCalls []wireToolCall `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
@@ -178,8 +196,8 @@ func (d *ChunkDecoder) Events(data []byte) ([]schema.Event, error) {
 		out = append(out, schema.Event{Type: schema.EventStart})
 	}
 	for _, ch := range c.Choices {
-		if ch.Delta.Content != nil && *ch.Delta.Content != "" {
-			out = append(out, schema.Event{Type: schema.EventText, Text: *ch.Delta.Content})
+		if ch.Delta.Content != "" {
+			out = append(out, schema.Event{Type: schema.EventText, Text: string(ch.Delta.Content)})
 		}
 		for _, tc := range ch.Delta.ToolCalls {
 			i := d.toolIndex(tc)

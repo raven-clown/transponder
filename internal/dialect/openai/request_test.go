@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -54,6 +55,82 @@ func TestDecodeChatResponse(t *testing.T) {
 	}
 	if _, err := DecodeChatResponse([]byte(`{"choices":[]}`)); err == nil {
 		t.Fatal("a response without choices should be an error")
+	}
+}
+
+func TestDecodeChatResponseContentShapes(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"string", `"hi"`, "hi"},
+		{"null", `null`, ""},
+		{"text parts are joined", `[{"type":"text","text":"a"},{"type":"text","text":"b"}]`, "ab"},
+		{"reasoning part is skipped", `[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"hi"}]`, "hi"},
+		{"only a reasoning part", `[{"type":"thinking","thinking":"hmm"}]`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"id":"r","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":` + tt.content + `},"finish_reason":"stop"}]}`
+			got, err := DecodeChatResponse([]byte(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Message.Text() != tt.want {
+				t.Fatalf("text %q, want %q", got.Message.Text(), tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodeChatResponseUnreadableContent(t *testing.T) {
+	body := `{"id":"r","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":{"type":"text"}},"finish_reason":"stop"}]}`
+	_, err := DecodeChatResponse([]byte(body))
+	if err == nil {
+		t.Fatal("an object as content should be an error")
+	}
+	if strings.Contains(err.Error(), "messages") {
+		t.Fatalf("the error names a request field: %v", err)
+	}
+	var re *RequestError
+	if errors.As(err, &re) {
+		t.Fatalf("a response content error is not a request error: %v", err)
+	}
+}
+
+func TestChunkDecoderContentParts(t *testing.T) {
+	var d ChunkDecoder
+	evs, err := d.Events([]byte(`{"choices":[{"index":0,"delta":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"hi"}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []schema.Event{{Type: schema.EventStart}, {Type: schema.EventText, Text: "hi"}}
+	if !reflect.DeepEqual(evs, want) {
+		t.Fatalf("events\n got %+v\nwant %+v", evs, want)
+	}
+}
+
+func TestChunkContentStringShapes(t *testing.T) {
+	tests := []struct {
+		name, content, want string
+	}{
+		{"plain", `"hi"`, "hi"},
+		{"escaped quote and newline", `"a\"b\nc"`, "a\"b\nc"},
+		{"unicode escape", `"é"`, "é"},
+		{"null", `null`, ""},
+		{"empty", `""`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var c chunkContent
+			if err := json.Unmarshal([]byte(tt.content), &c); err != nil {
+				t.Fatal(err)
+			}
+			if string(c) != tt.want {
+				t.Fatalf("content %q, want %q", c, tt.want)
+			}
+		})
 	}
 }
 

@@ -126,7 +126,9 @@ func DecodeChatRequest(r io.Reader) (*schema.ChatRequest, error) {
 	return req, nil
 }
 
-// messageText reads the content of a response, given as a string, a list of text parts, or null.
+// messageText reads the content of a response, given as a string, a list of content parts, or
+// null. Text parts are joined in order, and a part with nothing for the caller, such as a
+// reasoning part, is skipped.
 func messageText(raw json.RawMessage) (string, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
@@ -141,14 +143,13 @@ func messageText(raw json.RawMessage) (string, error) {
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return "", &RequestError{Param: "messages", Code: "unsupported", Message: "message content must be a string or a list of text parts"}
+		return "", fmt.Errorf("openai: reading the response content: %w", err)
 	}
 	var b strings.Builder
 	for _, p := range parts {
-		if p.Type != "text" {
-			return "", &RequestError{Param: "messages", Code: "unsupported", Message: "only text content parts are supported so far"}
+		if p.Type == "text" {
+			b.WriteString(p.Text)
 		}
-		b.WriteString(p.Text)
 	}
 	return b.String(), nil
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -230,6 +231,24 @@ func TestLoadRejects(t *testing.T) {
 		{name: "both stores", body: "store:\n  sqlite: a.db\n  postgres: postgres://x\n"},
 		{name: "previous secrets key alone with Postgres", body: "store:\n  postgres: postgres://x\nprevious_secrets_key: abc\n", want: "previous_secrets_key needs secrets_key"},
 		{name: "bad log level", body: "log_level: loud\n"},
+		{name: "listen address without a port", body: "listen_addr: \"8080\"\n", want: `listen_addr "8080" must be host:port`},
+		{name: "ops listen address not host:port", body: "ops_listen_addr: nope\n", want: `ops_listen_addr "nope" must be host:port`},
+		{name: "ops listen address uses the same port", body: "listen_addr: \":8080\"\nops_listen_addr: \":8080\"\n", want: "must differ"},
+		{name: "ops listen address on every interface", body: "listen_addr: \"0.0.0.0:8080\"\nops_listen_addr: \"127.0.0.1:8080\"\n", want: "must differ"},
+		{name: "ops listen address with a padded port", body: "listen_addr: \":8080\"\nops_listen_addr: \":08080\"\n", want: "must differ"},
+		{name: "listen address from the environment without a port", environ: []string{"TRANSPONDER_LISTEN_ADDR=8080"}, want: `listen_addr "8080" must be host:port`},
+		{name: "listen address without a port number", body: "listen_addr: \":\"\n", want: `listen_addr ":" must be host:port`},
+		{name: "listen address with an unknown service name", body: "listen_addr: \":nope\"\n", want: "neither a number nor a known service"},
+		{name: "listen address port out of range", body: "listen_addr: \":70000\"\n", want: "between 0 and 65535"},
+		{name: "ops listen address with the same IPv6 host written twice", body: "listen_addr: \"[::1]:8080\"\nops_listen_addr: \"[0:0:0:0:0:0:0:1]:8080\"\n", want: "must differ"},
+		{name: "ops listen address with the same name in another case", body: "listen_addr: \"LocalHost:8080\"\nops_listen_addr: \"localhost:8080\"\n", want: "must differ"},
+		{name: "ops listen address on an IPv6 wildcard", body: "listen_addr: \"0.0.0.0:8080\"\nops_listen_addr: \"[::]:8080\"\n", want: "must differ"},
+		{name: "ops listen address on an IPv6 loopback behind an IPv4 wildcard", body: "listen_addr: \"0.0.0.0:8080\"\nops_listen_addr: \"[::1]:8080\"\n", want: "must differ"},
+		{name: "ops listen address on an IPv4 loopback behind an IPv6 wildcard", body: "listen_addr: \"[::]:8080\"\nops_listen_addr: \"127.0.0.1:8080\"\n", want: "must differ"},
+		{name: "listen address with a zone on an IPv4 address", body: "listen_addr: \"127.0.0.1%lo:8080\"\n", want: "only an IPv6 address takes"},
+		{name: "listen address with a second percent sign", body: "listen_addr: \"[fe80::1%eth0%x]:8080\"\n", want: "only an IPv6 address takes"},
+		{name: "listen address with an empty zone", body: "listen_addr: \"[fe80::1%]:8080\"\n", want: "only an IPv6 address takes"},
+		{name: "ops listen address with the same link-local address", body: "listen_addr: \"[fe80::1%eth0]:8080\"\nops_listen_addr: \"[fe80:0:0:0:0:0:0:1%eth0]:8080\"\n", want: "must differ"},
 		{name: "missing file", path: filepath.Join(t.TempDir(), "nope.yaml")},
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
@@ -259,6 +278,36 @@ func TestLoadRejects(t *testing.T) {
 				t.Fatalf("error %q does not name %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadAcceptsListenAddrs(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "different ports on every interface", body: "listen_addr: \":8080\"\nops_listen_addr: \":9000\"\n"},
+		{name: "same port on two named hosts", body: "listen_addr: \"127.0.0.1:8080\"\nops_listen_addr: \"127.0.0.2:8080\"\n"},
+		{name: "two free ports cannot collide", body: "listen_addr: \":0\"\nops_listen_addr: \":0\"\n"},
+		{name: "one link-local address on two interfaces", body: "listen_addr: \"[fe80::1%eth0]:8080\"\nops_listen_addr: \"[fe80::1%eth1]:8080\"\n"},
+		{name: "two zones that differ only in case", body: "listen_addr: \"[fe80::1%eth0]:8080\"\nops_listen_addr: \"[fe80::1%ETH0]:8080\"\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Load(writeFile(t, tt.body), nil); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRefusesAServicePortOnTheNumberItNames(t *testing.T) {
+	if _, err := net.DefaultResolver.LookupPort(t.Context(), "tcp", "http"); err != nil {
+		t.Skip("this host has no service list to look the name up in")
+	}
+	_, err := Load(writeFile(t, "listen_addr: \":http\"\nops_listen_addr: \":80\"\n"), nil)
+	if err == nil || !strings.Contains(err.Error(), "must differ") {
+		t.Fatalf("error %v does not report the shared port", err)
 	}
 }
 

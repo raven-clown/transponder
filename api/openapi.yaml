@@ -880,7 +880,10 @@ components:
           type: array
           items: { type: string }
         disabled: { type: boolean }
-        expires_at: { type: [string, "null"], format: date-time }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When set, it must be after now; a key that would be born expired is refused.
 
     KeyPatch:
       type: object

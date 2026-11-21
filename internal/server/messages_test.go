@@ -176,6 +176,44 @@ func TestMessagesToOpenAIWithTools(t *testing.T) {
 	}
 }
 
+func TestMessagesToOpenAIWithContentParts(t *testing.T) {
+	t.Run("plain", func(t *testing.T) {
+		up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `{"id":"c1","model":"gpt-x","choices":[{"message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"hello"}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`)
+		})
+		e := setupRoutes(t, []router.Route{openaiRoute("*", "gpt-x", up)})
+		res := e.messages(t, nil, `{"model":"m","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`)
+		if res.status != http.StatusOK {
+			t.Fatalf("status %d: %s", res.status, res.body)
+		}
+		if !strings.Contains(string(res.body), `"text":"hello"`) || strings.Contains(string(res.body), "hmm") {
+			t.Fatalf("body %s", res.body)
+		}
+		if r := e.usage(t)[0]; r.Provider != "oa" || r.Estimated {
+			t.Fatalf("record %+v", r)
+		}
+	})
+	t.Run("streamed", func(t *testing.T) {
+		up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"hmm\"},{\"type\":\"text\",\"text\":\"hello\"}]}}]}\n\n"+
+				"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"+
+				"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n"+
+				"data: [DONE]\n\n")
+		})
+		e := setupRoutes(t, []router.Route{openaiRoute("*", "gpt-x", up)})
+		res := e.messages(t, nil, `{"model":"m","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+		if res.status != http.StatusOK {
+			t.Fatalf("status %d: %s", res.status, res.body)
+		}
+		if !strings.Contains(string(res.body), `"text":"hello"`) || strings.Contains(string(res.body), "hmm") {
+			t.Fatalf("body %s", res.body)
+		}
+		if r := e.usage(t)[0]; r.Provider != "oa" || r.Estimated {
+			t.Fatalf("record %+v", r)
+		}
+	})
+}
+
 func TestMessagesErrors(t *testing.T) {
 	closed := upstream(t, func(http.ResponseWriter, *http.Request) {})
 	closed.Close()

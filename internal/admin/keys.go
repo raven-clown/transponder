@@ -115,6 +115,10 @@ func (h *handler) createKey(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, "key", err)
 		return
 	}
+	if now := h.d.Now(); !expires.IsZero() && !expires.After(now) {
+		h.fail(w, r, "key", invalid("expires_at", "expires_at is in the past; a key that has expired cannot be used"))
+		return
+	}
 	teams, err := readTeams(body.Teams)
 	if err != nil {
 		h.fail(w, r, "key", err)
@@ -305,6 +309,7 @@ func managedByFile(what string) *apiError {
 }
 
 // readExpiry reads an optional RFC 3339 time, where null or absent is no expiry.
+// An explicit zero timestamp is refused so it cannot pass for "no expiry".
 func readExpiry(raw json.RawMessage) (time.Time, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return time.Time{}, nil
@@ -316,6 +321,9 @@ func readExpiry(raw json.RawMessage) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
 		return time.Time{}, invalid("expires_at", "expires_at must be an RFC 3339 time or null")
+	}
+	if t.IsZero() {
+		return time.Time{}, invalid("expires_at", "expires_at must not be the zero time; use null for no expiry")
 	}
 	return t, nil
 }

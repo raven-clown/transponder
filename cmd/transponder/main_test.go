@@ -1349,6 +1349,10 @@ routes:
 listen_addr: ${UNDEFINED_TRANSPONDER_VAR}
 `)
 
+	badListenCfg := writeYAML("bad_listen.yaml", `
+listen_addr: "8080"
+`)
+
 	tests := []struct {
 		name       string
 		args       []string
@@ -1379,6 +1383,12 @@ listen_addr: ${UNDEFINED_TRANSPONDER_VAR}
 			args:       []string{"--config-test", "--config", badEnvCfg},
 			wantCode:   1,
 			wantStderr: "UNDEFINED_TRANSPONDER_VAR",
+		},
+		{
+			name:       "listen address without a port fails and names the key",
+			args:       []string{"--config-test", "--config", badListenCfg},
+			wantCode:   1,
+			wantStderr: "listen_addr \"8080\" must be host:port",
 		},
 	}
 

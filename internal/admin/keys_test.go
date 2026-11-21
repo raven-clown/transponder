@@ -88,6 +88,9 @@ func TestCreateKeyInvalid(t *testing.T) {
 		{"bad role", map[string]any{"name": "a", "role": "owner"}, "invalid", "role"},
 		{"bad expiry", map[string]any{"name": "a", "expires_at": "tomorrow"}, "invalid", "expires_at"},
 		{"expiry not a string", map[string]any{"name": "a", "expires_at": 5}, "invalid", "expires_at"},
+		{"past expiry", map[string]any{"name": "a", "expires_at": "2026-11-20T11:00:00Z"}, "invalid", "expires_at"},
+		{"expiry at now", map[string]any{"name": "a", "expires_at": "2026-11-20T12:00:00Z"}, "invalid", "expires_at"},
+		{"zero expiry", map[string]any{"name": "a", "expires_at": "0001-01-01T00:00:00Z"}, "invalid", "expires_at"},
 		{"empty team", map[string]any{"name": "a", "teams": []string{""}}, "invalid", "teams"},
 		{"unknown field", map[string]any{"name": "a", "owner": "me"}, "invalid", "owner"},
 		{"wrong type", map[string]any{"name": 5}, "invalid", "name"},
@@ -104,6 +107,29 @@ func TestCreateKeyInvalid(t *testing.T) {
 	rec := e.raw(auth.RoleAdmin, http.MethodPost, "/keys", `{"name":"`+strings.Repeat("a", 2<<20)+`"}`)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("huge body: status %d", rec.Code)
+	}
+}
+
+func TestCreateKeyPastExpiry(t *testing.T) {
+	e := newEnv(t)
+	wantError(t, e.do(auth.RoleAdmin, http.MethodPost, "/keys",
+		map[string]any{"name": "stale", "expires_at": "2026-11-19T00:00:00Z"}), http.StatusBadRequest, "invalid", "expires_at")
+
+	before, _ := e.db.ConfigVersion(context.Background())
+	e.do(auth.RoleAdmin, http.MethodPost, "/keys",
+		map[string]any{"name": "fresh", "role": "member", "teams": []string{}, "expires_at": "2026-11-21T00:00:00Z"})
+	if after, _ := e.db.ConfigVersion(context.Background()); after != before+1 {
+		t.Fatalf("config version %d, want %d", after, before+1)
+	}
+}
+
+func TestPatchKeyPastExpiry(t *testing.T) {
+	e := newEnv(t)
+	e.do(auth.RoleAdmin, http.MethodPost, "/keys", map[string]any{"name": "k", "role": "viewer"})
+	body := decodeBody(t, e.do(auth.RoleAdmin, http.MethodPatch, "/keys/k",
+		map[string]any{"expires_at": "2026-11-19T00:00:00Z"}, "If-Match", `"1"`))
+	if body["expires_at"] != "2026-11-19T00:00:00Z" {
+		t.Fatalf("body %v", body)
 	}
 }
 

@@ -73,7 +73,7 @@ func ReadChunk(data []byte) (text string, u schema.Usage, ok, usageOnly bool) {
 	var w struct {
 		Choices []struct {
 			Delta struct {
-				Content string `json:"content"`
+				Content chunkContent `json:"content"`
 			} `json:"delta"`
 		} `json:"choices"`
 		Usage *wireUsageIn `json:"usage"`
@@ -86,11 +86,11 @@ func ReadChunk(data []byte) (text string, u schema.Usage, ok, usageOnly bool) {
 	switch len(w.Choices) {
 	case 0:
 	case 1:
-		text = w.Choices[0].Delta.Content
+		text = string(w.Choices[0].Delta.Content)
 	default:
 		var b strings.Builder
 		for _, ch := range w.Choices {
-			b.WriteString(ch.Delta.Content)
+			b.WriteString(string(ch.Delta.Content))
 		}
 		text = b.String()
 	}
