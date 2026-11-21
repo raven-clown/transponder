@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-21
+
 ### Changed
 
 - When every target of a route is rate limiting, answering 429 or Anthropic's 529, the caller gets 429 `upstream_rate_limited` with a `Retry-After` taken from the shortest wait the providers asked for, bounded to an hour, and one second when none gave one. It used to be a 502 `upstream_error`, which SDKs and Claude Code treat as a broken server and retry at once. The 502 for a route that mixed a rate limit with another failure no longer says no provider answered.
@@ -226,7 +228,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/raven-clown/transponder/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/raven-clown/transponder/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/raven-clown/transponder/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/raven-clown/transponder/compare/v0.2.2...v0.2.3

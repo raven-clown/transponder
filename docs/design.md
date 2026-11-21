@@ -479,5 +479,6 @@ Done:
 | v0.2.3 | USD budgets per user, team and key; profiles with token limits, reasoning tokens counted apart and request rate and concurrency limits; reserve then settle in memory, rebuilt from usage at start; llama.cpp provider |
 | v0.2.4 | Fallback across a route's targets with a cooldown for the ones that keep failing, `X-Transponder-*` headers, `GET /v1/usage`; xAI and Vercel AI Gateway providers |
 | v0.3.0 | Access per route, OIDC and the three roles, the admin API and audit log, Postgres and several replicas, Prometheus metrics and OTLP tracing, the five-minute demo, images in chat, `POST /v1/responses` as a passthrough; Mistral, NVIDIA NIM, Groq, Cerebras, SiliconFlow and LM Studio providers |
+| v0.3.1 | 429 with `Retry-After` when every target is rate limiting, listen addresses checked at load, expired keys refused at creation, OpenAI content given as a list of parts, a clearer trailing-slash issuer error |
 
 Next: the items after v1 listed above, in that order, versions to be set.
