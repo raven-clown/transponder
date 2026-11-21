@@ -4,9 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+
+- When every target of a route is rate limiting, answering 429 or Anthropic's 529, the caller gets 429 `upstream_rate_limited` with a `Retry-After` taken from the shortest wait the providers asked for, bounded to an hour, and one second when none gave one. It used to be a 502 `upstream_error`, which SDKs and Claude Code treat as a broken server and retry at once. The 502 for a route that mixed a rate limit with another failure no longer says no provider answered.
+
 ### Fixed
 
-- A token whose issuer differs from `auth.oidc.issuer` only by a trailing slash is still refused, but the reason now names the exact value and the setting to change, and the hint is logged once at warn level instead of only at debug level (#173).
+- A token whose issuer differs from `auth.oidc.issuer` only by a trailing slash is still refused, but the reason now names the exact value and the setting to change. The gateway and the admin API log the hint once at warn level, and every refusal still at debug level (#173).
 
 ## [0.3.0] - 2026-11-21
 

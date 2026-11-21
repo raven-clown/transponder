@@ -4,7 +4,7 @@ What can go wrong around transponder, what it does then, and the test that holds
 
 ## Upstream down
 
-A target that cannot be reached, answers 5xx, 429, 408, 401 or 403, or closes before it answers, is skipped, and the next target of the route is tried. The response carries `X-Transponder-Fallbacks` with the number of skipped targets. A 400, 404, 413 or 422 from the provider is the caller's own mistake, which another provider would not fix, so it goes back to the caller as is. When every target fails, the caller gets 502 `upstream_error` naming the last provider.
+A target that cannot be reached, answers 5xx, 429, 408, 401 or 403, or closes before it answers, is skipped, and the next target of the route is tried. The response carries `X-Transponder-Fallbacks` with the number of skipped targets. A 400, 404, 413 or 422 from the provider is the caller's own mistake, which another provider would not fix, so it goes back to the caller as is. When every target fails, the caller gets 502 `upstream_error` naming the last provider. When every target the route tried was rate limiting, that is, 429 or Anthropic's 529, the caller gets 429 `upstream_rate_limited` instead, with `Retry-After` set to the earliest deadline the providers gave, less the time already spent trying them, or one second when none gave a wait. A provider that answers `Retry-After: 0` is ready at once, which is a deadline that has arrived rather than the absence of one, so its wait outranks a later provider's longer one. A target that skips the request as unsupported never answered, so a route that mixes a rate limit with a skip, or with another failure, keeps the 502. A 429 whose body names a spent quota, as OpenAI's `error.code: insufficient_quota` does, is not a rate limit: no wait clears it, so the target counts as failed and the route keeps the 502.
 
 After `settings.cooldown_failures` failures in a row (default 3), a target is put last in every route for `settings.cooldown` (default 30s). It is still tried when every other target has failed, and one success ends the cooldown. The cooldown is measured on the monotonic clock, and a config reload keeps it.
 
@@ -13,6 +13,11 @@ After `settings.cooldown_failures` failures in a row (default 3), a target is pu
 | Fall back on 5xx, 429, 529, 401 and a closed connection | `TestFallbackOnServerError`, `TestFallbackReasons` in `internal/server/fallback_test.go` |
 | No fallback on the caller's own bad request | `TestNoFallbackOnBadRequest` in `internal/server/fallback_test.go` |
 | Every target fails | `TestAllTargetsFail` in `internal/server/fallback_test.go` |
+| Every target is rate limiting | `TestAllTargetsRateLimited`, `TestRateLimitedWithoutRetryAfter`, `TestRateLimitThenServerError` in `internal/server/fallback_test.go`, and `TestRateLimitRetryAfterCountsDown`, `TestRateLimitKeepsAnExpiredDeadline` in `internal/server/rate_limit_deadline_test.go` |
+| A `Retry-After` is read in both forms and bounded | `TestRetryAfter` in `internal/provider/provider_test.go` |
+| A deadline that has run out stays the earliest one | `TestRateLimitKeepsAnExpiredDeadline` in `internal/server/rate_limit_deadline_test.go` |
+| A provider ready now outranks a later deadline | `TestRateLimitImmediateOutranksALaterDeadline` in `internal/server/fallback_test.go` |
+| A 429 that names a spent quota is a failure, not a wait | `TestQuotaExhaustedIsNotRateLimit`, `TestQuotaExhaustedStaysAFailureBesideARateLimit` in `internal/server/fallback_test.go` |
 | Cooldown order, end and restart | `TestCooldown` in `internal/router/router_test.go`, `TestCooldownSkipsFailingTarget` in `internal/server/fallback_test.go` |
 | A reload keeps the cooldowns | `TestLoadLiveKeepsCooldowns` in `cmd/transponder/main_test.go`, `TestKeepHealth` in `internal/router/router_test.go` |
 | The record of failing targets stays bounded | `TestHealthIsBounded` in `internal/router/router_test.go` |

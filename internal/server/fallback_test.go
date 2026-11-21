@@ -12,6 +12,7 @@ import (
 
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/provider/anthropic"
+	"github.com/raven-clown/transponder/internal/provider/echo"
 	oaprovider "github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/router"
 )
@@ -119,6 +120,178 @@ func TestAllTargetsFail(t *testing.T) {
 	recs := e.usage(t)
 	if len(recs) != 1 || recs[0].Provider != "b" || recs[0].Fallbacks != 1 || recs[0].Status != 502 {
 		t.Fatalf("records %+v", recs)
+	}
+}
+
+func TestAllTargetsRateLimited(t *testing.T) {
+	limited := func(after string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			if after != "" {
+				w.Header().Set("Retry-After", after)
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
+		}
+	}
+	for name, send := range map[string]string{"plain": ping, "stream": streamPing} {
+		t.Run(name, func(t *testing.T) {
+			a := countedUpstream(t, limited("30"))
+			b := countedUpstream(t, limited("5"))
+			e := setupRoutes(t, route("*", oaTarget("a", "", a), oaTarget("b", "", b)))
+			res := e.post(t, send)
+			// A stream answers before it starts, so the caller gets the same 429 as a plain
+			// request rather than a stream that opens and dies.
+			if res.status != http.StatusTooManyRequests || errorCode(t, res) != "upstream_rate_limited" {
+				t.Fatalf("status %d: %s", res.status, res.body)
+			}
+			if got := res.header.Get("Retry-After"); got != "5" {
+				t.Fatalf("Retry-After %q, want the shortest wait a provider gave", got)
+			}
+			if body := string(res.body); !strings.Contains(body, "retry after 5 seconds") {
+				t.Fatalf("body %q", body)
+			}
+			recs := e.usage(t)
+			if len(recs) != 1 || recs[0].Provider != "b" || recs[0].Fallbacks != 1 || recs[0].Status != http.StatusTooManyRequests {
+				t.Fatalf("records %+v", recs)
+			}
+		})
+	}
+}
+
+func TestRateLimitImmediateOutranksALaterDeadline(t *testing.T) {
+	// A provider that answers Retry-After: 0 is ready now. That is a deadline that has
+	// arrived, not the absence of one, so it stays the earliest and the caller is told the
+	// one-second minimum rather than the 30 seconds the next target asks for.
+	a := countedUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
+	})
+	b := countedUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
+	})
+	e := setupRoutes(t, route("*", oaTarget("a", "", a), oaTarget("b", "", b)))
+	res := e.post(t, ping)
+	if res.status != http.StatusTooManyRequests || errorCode(t, res) != "upstream_rate_limited" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if got := res.header.Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After %q, want 1: a provider ready now outranks a later deadline", got)
+	}
+	if body := string(res.body); !strings.Contains(body, "retry after 1 second") {
+		t.Fatalf("body %q", body)
+	}
+	if recs := e.usage(t); len(recs) != 1 || recs[0].Status != http.StatusTooManyRequests {
+		t.Fatalf("records %+v", recs)
+	}
+}
+
+func TestRateLimitedWithoutRetryAfter(t *testing.T) {
+	// 429 and 529 with no header: the caller still gets a wait, and the default one.
+	a := countedUpstream(t, status(http.StatusTooManyRequests, "{}"))
+	b := countedUpstream(t, status(529, "{}"))
+	e := setupRoutes(t, route("*", oaTarget("a", "", a), oaTarget("b", "", b)))
+	res := e.post(t, ping)
+	if res.status != http.StatusTooManyRequests || res.header.Get("Retry-After") != "1" {
+		t.Fatalf("status %d, headers %v: %s", res.status, res.header, res.body)
+	}
+	if body := string(res.body); !strings.Contains(body, "retry after 1 second") || strings.Contains(body, "1 seconds") {
+		t.Fatalf("body %q", body)
+	}
+}
+
+func TestRateLimitThenServerError(t *testing.T) {
+	a := countedUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	b := countedUpstream(t, status(http.StatusServiceUnavailable, "y"))
+	e := setupRoutes(t, route("*", oaTarget("a", "", a), oaTarget("b", "", b)))
+	res := e.post(t, ping)
+	// One target that could not answer at all keeps the 502: the wait would be a guess.
+	if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_error" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if got := res.header.Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After %q on a 502", got)
+	}
+	if body := string(res.body); !strings.Contains(body, "no provider for this model could answer") {
+		t.Fatalf("body %q", body)
+	}
+	if r := e.usage(t)[0]; r.Status != http.StatusBadGateway || r.Provider != "b" {
+		t.Fatalf("record %+v", r)
+	}
+}
+
+func TestRateLimitWithSkippedTarget(t *testing.T) {
+	// One target cannot carry an image and the other is rate limiting, so not every provider
+	// is waiting on a limit: the caller keeps the 502 and fixes the request.
+	limited := statusUpstream(t, http.StatusTooManyRequests, "{}")
+	routes := []router.Route{{Match: "*", Targets: []router.Target{
+		{Provider: echo.New("echo"), Type: "echo"},
+		{Provider: anthropic.New("claude", limited.URL, "sk-ant-gateway", limited.Client()), Type: "anthropic"},
+	}}}
+	e := setupRoutes(t, routes)
+	res := e.messages(t, nil, `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{}}]}]}`)
+	if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_error" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+}
+
+func TestQuotaExhaustedIsNotRateLimit(t *testing.T) {
+	// OpenAI answers an account with no credit left with 429 and error.code
+	// insufficient_quota, which no wait clears, so the caller keeps the 502 rather than being
+	// told to back off a limit that is not one.
+	outOfQuota := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}`)
+	}
+	for name, send := range map[string]string{"plain": ping, "stream": streamPing} {
+		t.Run(name, func(t *testing.T) {
+			a := countedUpstream(t, outOfQuota)
+			e := setupRoutes(t, route("*", oaTarget("a", "", a)))
+			res := e.post(t, send)
+			if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_error" {
+				t.Fatalf("status %d: %s", res.status, res.body)
+			}
+			if got := res.header.Get("Retry-After"); got != "" {
+				t.Fatalf("Retry-After %q on a 502", got)
+			}
+			if r := e.usage(t)[0]; r.Status != http.StatusBadGateway {
+				t.Fatalf("record %+v", r)
+			}
+		})
+	}
+}
+
+func TestQuotaExhaustedStaysAFailureBesideARateLimit(t *testing.T) {
+	// One target is out of quota and the next is only rate limiting, so not every provider is
+	// waiting on a limit: the first cannot answer at any wait, and the route keeps the 502.
+	outOfQuota := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		// Only error.type here, so this test holds that branch on its own; the test above
+		// covers error.code.
+		_, _ = io.WriteString(w, `{"error":{"type":"insufficient_quota"}}`)
+	}
+	limited := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"slow down"}}`)
+	}
+	a := countedUpstream(t, outOfQuota)
+	b := countedUpstream(t, limited)
+	e := setupRoutes(t, route("*", oaTarget("a", "", a), oaTarget("b", "", b)))
+	res := e.post(t, ping)
+	if res.status != http.StatusBadGateway || errorCode(t, res) != "upstream_error" {
+		t.Fatalf("status %d: %s", res.status, res.body)
+	}
+	if got := res.header.Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After %q on a 502", got)
+	}
+	if r := e.usage(t)[0]; r.Provider != "b" || r.Fallbacks != 1 {
+		t.Fatalf("record %+v", r)
 	}
 }
 

@@ -194,7 +194,8 @@ func TestMessagesErrors(t *testing.T) {
 		{name: "no route", routes: echoOnly, body: `{"model":"other","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 404, errType: "not_found_error"},
 		{name: "image to echo", routes: echoOnly, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{}}]}]}`, status: 400, errType: "invalid_request_error"},
 		{name: "upstream 400 passes through", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 400, `{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}`))}, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 400, upstreamBody: `{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}`},
-		{name: "upstream 529", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 529, `{}`))}, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 502, errType: "api_error"},
+		{name: "upstream 529 is a rate limit", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 529, `{}`))}, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 429, errType: "rate_limit_error"},
+		{name: "upstream 529 is a rate limit, streaming", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 529, `{}`))}, body: `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`, status: 429, errType: "rate_limit_error"},
 		{name: "upstream down, streaming", routes: []router.Route{anthropicRoute("*", "", closed)}, body: `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`, status: 502, errType: "api_error"},
 	}
 	for _, tt := range tests {
@@ -216,6 +217,16 @@ func TestMessagesErrors(t *testing.T) {
 			}
 			if got := anthropicErrorType(t, res); got != tt.errType {
 				t.Fatalf("error type %s: %s", got, res.body)
+			}
+			if tt.status == http.StatusTooManyRequests {
+				// A rate limit the gateway writes itself still tells the caller when to come
+				// back, and is recorded with the status the caller saw, plain or streamed.
+				if got := res.header.Get("Retry-After"); got != "1" {
+					t.Fatalf("Retry-After %q, want the default second: %s", got, res.body)
+				}
+				if recs := e.usage(t); len(recs) != 1 || recs[0].Status != http.StatusTooManyRequests {
+					t.Fatalf("records %+v", recs)
+				}
 			}
 		})
 	}
