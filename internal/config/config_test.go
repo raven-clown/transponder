@@ -254,6 +254,10 @@ func TestLoadRejects(t *testing.T) {
 		{name: "provider without name", body: "providers:\n  - type: echo\n", want: "providers[0]"},
 		{name: "duplicate provider", body: "providers:\n  - {name: a, type: echo}\n  - {name: a, type: echo}\n", want: `"a"`},
 		{name: "unknown provider type", body: "providers:\n  - {name: b, type: bedrock}\n", want: "bedrock"},
+		{name: "route with the same name as an earlier one", body: "providers:\n  - {name: e, type: echo}\nroutes:\n  - {match: gpt-4o, allow: ['team:a'], targets: [{provider: e}]}\n  - {match: gpt-4o, allow: ['team:b'], targets: [{provider: e}]}\n", want: `routes[1] "gpt-4o" can never match: routes[0] has the same match and comes first`},
+		{name: "route with the same glob as an earlier one", body: "providers:\n  - {name: e, type: echo}\nroutes:\n  - {match: 'claude-*', targets: [{provider: e}]}\n  - {match: gpt-4o, targets: [{provider: e}]}\n  - {match: 'claude-*', targets: [{provider: e}]}\n", want: `routes[2] "claude-*" can never match: routes[0] has the same match and comes first`},
+		{name: "route after a catch-all", body: "providers:\n  - {name: e, type: echo}\nroutes:\n  - {match: '*', targets: [{provider: e}]}\n  - {match: gpt-4o, targets: [{provider: e}]}\n", want: `routes[1] "gpt-4o" can never match: routes[0] matches every model and comes first`},
+		{name: "second catch-all", body: "providers:\n  - {name: e, type: echo}\nroutes:\n  - {match: '*', targets: [{provider: e}]}\n  - {match: '*', targets: [{provider: e}]}\n", want: `routes[1] "*" can never match: routes[0] matches every model`},
 		{name: "provider base URL without scheme", body: "providers:\n  - {name: no-scheme, type: openai, base_url: api.openai.com/v1}\nroutes:\n  - {match: '*', targets: [{provider: no-scheme}]}\n", want: `provider "no-scheme": base_url must be an http or https URL`},
 		{name: "provider base URL with unsupported scheme", body: "providers:\n  - {name: ftp-provider, type: openai, base_url: ftp://example.com}\nroutes:\n  - {match: '*', targets: [{provider: ftp-provider}]}\n", want: `provider "ftp-provider": base_url must be an http or https URL`},
 		{name: "provider base URL without host", body: "providers:\n  - {name: no-host, type: openai, base_url: 'https://'}\nroutes:\n  - {match: '*', targets: [{provider: no-host}]}\n", want: `provider "no-host": base_url must be an http or https URL`},
@@ -286,6 +290,13 @@ func TestLoadRejects(t *testing.T) {
 				t.Fatalf("error %q does not name %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadAcceptsACatchAllRouteLast(t *testing.T) {
+	body := "providers:\n  - {name: e, type: echo}\nroutes:\n  - {match: gpt-4o, targets: [{provider: e}]}\n  - {match: 'claude-*', targets: [{provider: e}]}\n  - {match: '*', targets: [{provider: e}]}\n"
+	if _, err := Load(writeFile(t, body), nil); err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 }
 

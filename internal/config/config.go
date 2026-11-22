@@ -413,8 +413,33 @@ func (c *Bootstrap) validate() error {
 	if err := c.ValidateRuntime(); err != nil {
 		return err
 	}
+	if err := checkRoutesReachable(c.Routes); err != nil {
+		return err
+	}
 	if len(c.Providers) > 0 && len(c.Routes) == 0 {
 		return errors.New("config: providers are declared but no routes send models to them")
+	}
+	return nil
+}
+
+// checkRoutesReachable refuses a file route that no call can reach: routes are tried in order
+// and the first match wins, so a route with the same match as an earlier one, or any route
+// after "*", never gets a call. Routes made through the admin API keep their own positions,
+// so this is checked for the file only.
+func checkRoutesReachable(routes []Route) error {
+	first := make(map[string]int, len(routes))
+	catchAll := -1
+	for i, r := range routes {
+		if catchAll >= 0 {
+			return fmt.Errorf("config: routes[%d] %q can never match: routes[%d] matches every model and comes first; move routes[%d] to the end", i, r.Match, catchAll, catchAll)
+		}
+		if j, ok := first[r.Match]; ok {
+			return fmt.Errorf("config: routes[%d] %q can never match: routes[%d] has the same match and comes first; use a different model name for each set of callers", i, r.Match, j)
+		}
+		first[r.Match] = i
+		if r.Match == "*" {
+			catchAll = i
+		}
 	}
 	return nil
 }

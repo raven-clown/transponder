@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - `GET /admin/v1/status` lists the targets in cooldown as `cooldowns`, each with its route, provider, model, failures and when its cooldown ends and it is tried in its configured order again, so a target that keeps failing can be seen without reading `transponder_fallbacks_total`. The list is this replica's view, because cooldown state is kept per replica (#185).
 
+### Changed
+
+- A config file whose route can never match no longer loads: a route with the same `match` as an earlier one, or any route after `match: "*"`, is refused with both routes named. Such a route never got a call, so two `gpt-4o` routes with different `allow` lists sent every caller to the first and answered 403 `route_forbidden` to the rest, while `--config-test` said `config ok`. Routes made through the admin API are not checked this way (#170).
+
 ### Fixed
 
 - `--config-test` now rejects invalid provider `base_url` values using the same rules as the admin API. The error names the provider without showing the URL.

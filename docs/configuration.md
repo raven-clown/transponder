@@ -98,7 +98,7 @@ Each item of `providers` is one backend. The [provider table](../README.md#provi
 
 ## Routes
 
-Routes are tried in order and the first whose `match` fits the requested model wins. A route's targets are tried in order until one answers.
+Routes are tried in order and the first whose `match` fits the requested model wins. A route's targets are tried in order until one answers. A file whose route can never match, because an earlier route has the same `match` or is `*`, does not load, so give each set of callers its own model name and put `*` last.
 
 | Key | Default | Environment variable | What it sets |
 |---|---|---|---|
