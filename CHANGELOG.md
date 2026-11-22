@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-22
+
 ### Added
 
 - `GET /admin/v1/status` lists the targets in cooldown as `cooldowns`, each with its route, provider, model, failures and when its cooldown ends and it is tried in its configured order again, so a target that keeps failing can be seen without reading `transponder_fallbacks_total`. The list is this replica's view, because cooldown state is kept per replica (#185).
@@ -240,7 +242,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A built-in price table for OpenAI models, so `X-Usage-Cost-USD` and the usage records carry real cost. Unpriced models are served at zero cost and logged as `unpriced`.
 - Usage headers on error responses too, at zero.
 
-[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/raven-clown/transponder/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/raven-clown/transponder/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/raven-clown/transponder/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/raven-clown/transponder/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/raven-clown/transponder/compare/v0.2.3...v0.2.4
