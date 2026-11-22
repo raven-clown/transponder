@@ -76,13 +76,12 @@ func TestFallbackOnServerError(t *testing.T) {
 }
 
 func TestFallbackReasons(t *testing.T) {
-	closed := countedUpstream(t, status(200, ""))
-	closed.srv.Close()
+	down := countedUpstream(t, dropConnection)
 	for name, first := range map[string]*counted{
 		"429":                countedUpstream(t, status(429, "{}")),
 		"401 from upstream":  countedUpstream(t, status(401, "{}")),
 		"529":                countedUpstream(t, status(529, "{}")),
-		"connection refused": closed,
+		"connection dropped": down,
 	} {
 		t.Run(name, func(t *testing.T) {
 			b := countedUpstream(t, status(200, okChat))

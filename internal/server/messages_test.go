@@ -215,8 +215,7 @@ func TestMessagesToOpenAIWithContentParts(t *testing.T) {
 }
 
 func TestMessagesErrors(t *testing.T) {
-	closed := upstream(t, func(http.ResponseWriter, *http.Request) {})
-	closed.Close()
+	down := upstream(t, dropConnection)
 	echoOnly := []router.Route{{Match: "m", Targets: []router.Target{{Provider: echo.New("echo"), Type: "echo"}}}}
 	tests := []struct {
 		name         string
@@ -234,7 +233,7 @@ func TestMessagesErrors(t *testing.T) {
 		{name: "upstream 400 passes through", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 400, `{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}`))}, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 400, upstreamBody: `{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}`},
 		{name: "upstream 529 is a rate limit", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 529, `{}`))}, body: `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]}`, status: 429, errType: "rate_limit_error"},
 		{name: "upstream 529 is a rate limit, streaming", routes: []router.Route{anthropicRoute("*", "", statusUpstream(t, 529, `{}`))}, body: `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`, status: 429, errType: "rate_limit_error"},
-		{name: "upstream down, streaming", routes: []router.Route{anthropicRoute("*", "", closed)}, body: `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`, status: 502, errType: "api_error"},
+		{name: "upstream down, streaming", routes: []router.Route{anthropicRoute("*", "", down)}, body: `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`, status: 502, errType: "api_error"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

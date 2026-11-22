@@ -64,8 +64,7 @@ func TestChatNativeNoUsage(t *testing.T) {
 }
 
 func TestChatUpstreamErrors(t *testing.T) {
-	closed := upstream(t, func(http.ResponseWriter, *http.Request) {})
-	closed.Close()
+	down := upstream(t, dropConnection)
 	tests := []struct {
 		name       string
 		up         *httptest.Server
@@ -76,7 +75,7 @@ func TestChatUpstreamErrors(t *testing.T) {
 		{name: "400 passes through", wantStatus: 400, wantBody: `{"error":{"message":"bad","code":"invalid_value"}}`, up: statusUpstream(t, 400, `{"error":{"message":"bad","code":"invalid_value"}}`)},
 		{name: "500", wantStatus: 502, wantCode: "upstream_error", up: statusUpstream(t, 500, `oops`)},
 		{name: "401 from upstream", wantStatus: 502, wantCode: "upstream_error", up: statusUpstream(t, 401, `{}`)},
-		{name: "connection refused", wantStatus: 502, wantCode: "upstream_error", up: closed},
+		{name: "connection dropped", wantStatus: 502, wantCode: "upstream_error", up: down},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

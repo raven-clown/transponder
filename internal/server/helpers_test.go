@@ -153,6 +153,16 @@ func upstream(t *testing.T, h http.HandlerFunc) *httptest.Server {
 	return srv
 }
 
+// dropConnection is an upstream that is down: it closes the connection without an answer.
+// A test server closed to get a dead URL frees its port, and a server started after it can
+// be given that port and answer the call meant to fail, so a dead upstream keeps its port.
+func dropConnection(w http.ResponseWriter, _ *http.Request) {
+	conn, _, err := http.NewResponseController(w).Hijack()
+	if err == nil {
+		_ = conn.Close()
+	}
+}
+
 func openaiRoute(match, model string, up *httptest.Server) router.Route {
 	a := oaprovider.New(oaprovider.Options{Name: "oa", BaseURL: up.URL, APIKey: "k", Client: up.Client()})
 	return router.Route{Match: match, Targets: []router.Target{{Provider: a, Type: "openai", Model: model}}}
