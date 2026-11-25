@@ -60,6 +60,7 @@ transponder --config-test --config transponder.yaml
 | `ops_listen_addr` | none | `TRANSPONDER_OPS_LISTEN_ADDR` | A second address that also serves `/healthz`, `/readyz` and `/metrics`, where `/metrics` needs no key. Keep it inside your network. |
 | `log_level` | `info` | `TRANSPONDER_LOG_LEVEL` | `debug`, `info`, `warn` or `error`. Logs are JSON on stdout. |
 | `update_check` | `false` | `TRANSPONDER_UPDATE_CHECK` | At start and once a day, logs one `update available` line when a newer release is out. Off by default. |
+| `log_requests` | `false` | `TRANSPONDER_LOG_REQUESTS` | Logs one `call` line per call, with its request id, endpoint, route, provider, model, status, duration, tokens, cost, user and key name. Never the prompt, the answer or a provider error. Off by default. |
 
 ## Store and secrets
 

@@ -54,6 +54,8 @@ type Deps struct {
 	Tracer *telemetry.Tracer
 	// Admin, when set, serves every path under /admin/v1/.
 	Admin http.Handler
+	// LogRequests logs one call line per call with its usage. It never holds prompt or answer text.
+	LogRequests bool
 }
 
 // New returns the gateway handler.
@@ -228,12 +230,14 @@ func (g *gateway) price(ctx context.Context, c *call, u schema.Usage) int64 {
 	return cost
 }
 
-func (g *gateway) record(ctx context.Context, rec store.UsageRecord) {
+// record stores the usage record and returns it with its latency.
+func (g *gateway) record(ctx context.Context, rec store.UsageRecord) store.UsageRecord {
 	rec.Latency = g.d.Now().Sub(rec.Time)
 	if err := g.d.Usage.RecordUsage(context.WithoutCancel(ctx), rec); err != nil {
 		g.d.Logger.ErrorContext(ctx, "recording usage", "request_id", rec.RequestID, "err", err)
 		g.d.Metrics.EventDropped("sql")
 	}
+	return rec
 }
 
 func writeError(w http.ResponseWriter, status int, errType, code, param, message string) {

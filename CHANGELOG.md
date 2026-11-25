@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `log_requests: true` (`TRANSPONDER_LOG_REQUESTS`) logs one info line, `call`, per call with its request id, endpoint, route, provider, model, status, duration, tokens, cost, user and key name, so a failed call can be found by request id in a log store. It never holds the prompt, the answer or a provider error. Off by default (#179).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

@@ -41,6 +41,8 @@ type Bootstrap struct {
 	LogLevel           string `yaml:"log_level"`
 	// UpdateCheck logs a line at start and once a day when a newer release is out.
 	UpdateCheck bool `yaml:"update_check"`
+	// LogRequests logs one info line, call, for each call, with its usage and never its text.
+	LogRequests bool `yaml:"log_requests"`
 	// OpsListenAddr serves /healthz, /readyz and /metrics on a port of their own, where
 	// /metrics needs no key. Empty leaves them on ListenAddr only.
 	OpsListenAddr string `yaml:"ops_listen_addr"`

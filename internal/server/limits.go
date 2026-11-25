@@ -76,7 +76,14 @@ func (g *gateway) recordCall(ctx context.Context, c *call) {
 		r := c.rec
 		c.ticket.Settle(r.InputTokens+r.CacheReadTokens+r.CacheWriteTokens+r.OutputTokens+r.ReasoningTokens, r.CostNUSD)
 	}
-	g.record(ctx, c.rec)
+	r := g.record(ctx, c.rec)
+	if g.d.LogRequests {
+		g.d.Logger.InfoContext(ctx, "call",
+			"request_id", r.RequestID, "endpoint", r.Endpoint, "route", r.Route,
+			"provider", r.Provider, "model", r.Model, "status", r.Status,
+			"duration", r.Latency, "input_tokens", r.InputTokens, "output_tokens", r.OutputTokens,
+			"cost_nusd", r.CostNUSD, "user", r.User, "key", r.Key)
+	}
 }
 
 // requestedMax reads the largest number among fields, since providers disagree on which of

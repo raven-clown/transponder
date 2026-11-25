@@ -203,10 +203,11 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 			c := reloader.Current().Value
 			return c.router, c.limiter
 		},
-		Prices: pricing.Default(),
-		Usage:  db,
-		Logger: logger,
-		Now:    time.Now,
+		Prices:      pricing.Default(),
+		Usage:       db,
+		Logger:      logger,
+		Now:         time.Now,
+		LogRequests: cfg.LogRequests,
 
 		AttemptTimeout: cfg.Settings.AttemptTimeout,
 		RequestTimeout: cfg.Settings.RequestTimeout,
