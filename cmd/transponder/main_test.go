@@ -287,6 +287,14 @@ func TestBuildRouter(t *testing.T) {
 			model: "llama3.2", provider: "local", typ: "ollama", upstream: "llama3.2",
 		},
 		{
+			name: "github route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "gh", Type: "github", APIKey: "ghp_token"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "gh"}}}},
+			},
+			model: "openai/gpt-4.1", provider: "gh", typ: "github", upstream: "openai/gpt-4.1",
+		},
+		{
 			name: "cloudflare route",
 			cfg: config.Bootstrap{
 				Providers: []config.Provider{{Name: "cf", Type: "cloudflare", BaseURL: "https://gateway.ai.cloudflare.com/v1/account/gateway/compat", APIKey: "token"}},

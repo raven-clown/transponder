@@ -16,7 +16,7 @@
 
 </div>
 
-**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, Ollama and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
+**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, GitHub Models, Ollama and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
 
 <p align="center">
   <a href="demo/README.md"><img src="demo/dashboard.jpg" alt="The Grafana dashboard of the demo: requests per second by endpoint and status, added latency percentiles, tokens and cost by model, fallbacks between providers, and refused calls by reason." width="100%"></a>
@@ -201,6 +201,7 @@ flowchart TB
 | Anthropic `anthropic` | `anthropic` | `https://api.anthropic.com/v1` | yes | URL, inline | no | no |
 | Google Gemini API `gemini` | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | yes | inline | yes | no |
 | Ollama `ollama` | `openai` | `http://localhost:11434/v1` | yes | URL, inline | yes | yes |
+| GitHub Models `github` | `openai` | `https://models.github.ai/inference` | yes | URL, inline | yes | yes |
 | vLLM `vllm` | `openai` | `http://localhost:8000/v1` | yes | URL, inline | yes | yes |
 | llama.cpp server `llamacpp` | `openai` | `http://localhost:8080/v1` | yes | URL, inline | yes | yes |
 | LM Studio `lmstudio` | `openai` | `http://localhost:1234/v1` | yes | URL, inline | yes | yes |
