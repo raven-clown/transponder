@@ -16,7 +16,7 @@
 
 </div>
 
-**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, Ollama and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
+**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, Ollama, Moonshot AI (Kimi) and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
 
 <p align="center">
   <a href="demo/README.md"><img src="demo/dashboard.jpg" alt="The Grafana dashboard of the demo: requests per second by endpoint and status, added latency percentiles, tokens and cost by model, fallbacks between providers, and refused calls by reason." width="100%"></a>
@@ -201,6 +201,7 @@ flowchart TB
 | Anthropic `anthropic` | `anthropic` | `https://api.anthropic.com/v1` | yes | URL, inline | no | no |
 | Google Gemini API `gemini` | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | yes | inline | yes | no |
 | Ollama `ollama` | `openai` | `http://localhost:11434/v1` | yes | URL, inline | yes | yes |
+| Moonshot AI (Kimi) `moonshot` | `openai` | `https://api.moonshot.ai/v1` | yes | URL, inline | yes | yes |
 | vLLM `vllm` | `openai` | `http://localhost:8000/v1` | yes | URL, inline | yes | yes |
 | llama.cpp server `llamacpp` | `openai` | `http://localhost:8080/v1` | yes | URL, inline | yes | yes |
 | LM Studio `lmstudio` | `openai` | `http://localhost:1234/v1` | yes | URL, inline | yes | yes |
@@ -219,7 +220,7 @@ flowchart TB
 - Every type serves chat, plain and streamed. A test builds every registered provider type and checks this table against what its adapter does, so the table cannot fall behind the code.
 - *Dialect* is the API the provider speaks. A caller of the same dialect is passed through with only `model` changed; any other is translated. `/v1/responses` goes only to `openai`-dialect targets.
 - *Embeddings* and *Responses API* say what transponder sends; whether a server has that endpoint is up to it. A target that answers 404, 405 or 501 to `/v1/responses` is skipped.
-- `base_url` overrides the default for any type: a self-hosted NIM is usually `http://localhost:8000/v1`, SiliconFlow in China is `https://api.siliconflow.cn/v1`, and Cloudflare is your gateway's compatibility endpoint, `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat`. llama.cpp's server listens on 8080 by default, as transponder does, so on one host move one of them.
+- `base_url` overrides the default for any type: a self-hosted NIM is usually `http://localhost:8000/v1`, SiliconFlow in China is `https://api.siliconflow.cn/v1`, Moonshot AI in China is `https://api.moonshot.cn/v1`, and Cloudflare is your gateway's compatibility endpoint, `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/compat`. llama.cpp's server listens on 8080 by default, as transponder does, so on one host move one of them.
 - Local types (`ollama`, `vllm`, `llamacpp`, `lmstudio`, `echo`) count as free in usage records. Prices for the others are in [`internal/pricing/prices.yaml`](internal/pricing/prices.yaml); a model without a price is recorded as unpriced and counted in `transponder_unpriced_requests_total`.
 
 Missing one? A provider that speaks the OpenAI API is a twenty-line package and one line in the registry: see [Add a provider](docs/architecture.md#add-a-provider).

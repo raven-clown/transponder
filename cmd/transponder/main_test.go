@@ -375,6 +375,14 @@ func TestBuildRouter(t *testing.T) {
 			model: "m", provider: "siliconflow", typ: "siliconflow", upstream: "m",
 		},
 		{
+			name: "moonshot route",
+			cfg: config.Bootstrap{
+				Providers: []config.Provider{{Name: "kimi", Type: "moonshot", APIKey: "k"}},
+				Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "kimi"}}}},
+			},
+			model: "m", provider: "kimi", typ: "moonshot", upstream: "m",
+		},
+		{
 			name: "lmstudio route",
 			cfg: config.Bootstrap{
 				Providers: []config.Provider{{Name: "lmstudio", Type: "lmstudio", APIKey: "k"}},
