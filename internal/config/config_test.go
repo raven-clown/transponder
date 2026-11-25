@@ -272,6 +272,8 @@ func TestLoadRejects(t *testing.T) {
 		{name: "providers without routes", body: "providers:\n  - {name: a, type: openai}\n", want: "routes"},
 		{name: "route without targets", body: "routes:\n  - match: x\n", want: `"x"`},
 		{name: "target unknown provider", body: "providers:\n  - {name: a, type: echo}\nroutes:\n  - match: x\n    targets: [{provider: z}]\n", want: `"z"`},
+		{name: "two daily budgets for one subject", body: "budgets:\n  - {subject: \"user:alice\", period: daily, limit_usd: 1}\n  - {subject: \"user:alice\", period: daily, limit_usd: 5}\n", want: `budgets[1] repeats the daily budget of user:alice in budgets[0]`},
+		{name: "two bindings for one key", body: "profile_bindings:\n  - {subject: \"key:batch\", profile: a}\n  - {subject: \"key:batch\", profile: b}\nprofiles:\n  - {name: a}\n  - {name: b}\n", want: `profile_bindings[1] gives key:batch a second profile, profile_bindings[0]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -290,6 +292,25 @@ func TestLoadRejects(t *testing.T) {
 				t.Fatalf("error %q does not name %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadRejectsDuplicatesFromProfilesFile(t *testing.T) {
+	shared := filepath.Join(t.TempDir(), "profiles.yaml")
+	if err := os.WriteFile(shared, []byte("profiles:\n  - name: team\n  - name: pro\nprofile_bindings:\n  - {subject: \"user:alice\", profile: team}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := "profiles_file: " + filepath.ToSlash(shared) + "\nprofile_bindings:\n  - {subject: \"user:alice\", profile: pro}\n"
+	_, err := Load(writeFile(t, body), nil)
+	if err == nil || !strings.Contains(err.Error(), "gives user:alice a second profile") {
+		t.Fatalf("error %v does not name the duplicate binding", err)
+	}
+}
+
+func TestLoadAcceptsDailyAndMonthlyBudgetForOneSubject(t *testing.T) {
+	body := "budgets:\n  - {subject: \"user:alice\", period: daily, limit_usd: 1}\n  - {subject: \"user:alice\", period: monthly, limit_usd: 20}\n"
+	if _, err := Load(writeFile(t, body), nil); err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 }
 

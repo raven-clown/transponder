@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+
+- A config file with two budgets for one subject and period, or two profile bindings for one subject, no longer loads. The limiter applied both budgets or took the first binding, so the second line did nothing and `--config-test` said `config ok`. The error names both entries, and a binding from `profiles_file` counts too (#171).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added
