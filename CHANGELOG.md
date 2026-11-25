@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- An embeddings request whose `input` is a list of token ids, or a list of such lists, counts as one token per id when the provider sends no usage. It used to be estimated as zero tokens, so the call cost nothing.
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

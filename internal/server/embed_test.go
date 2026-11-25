@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/raven-clown/transponder/internal/provider/echo"
@@ -51,6 +52,44 @@ func TestEmbeddingsNative(t *testing.T) {
 	r := e.usage(t)[0]
 	if r.Endpoint != "embeddings" || r.CostNUSD != 20_000_000 || r.Route != "embed" || r.Status != 200 {
 		t.Fatalf("record %+v", r)
+	}
+}
+
+func TestEmbeddingsEstimateWithoutUsage(t *testing.T) {
+	const answer = `{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"text-embedding-3-small"}`
+	// ids is the token count for id input. Zero means text, which only has to estimate above zero.
+	tests := []struct {
+		name string
+		body string
+		ids  int64
+	}{
+		{name: "string", body: `{"model":"embed","input":"hello"}`},
+		{name: "list of strings", body: `{"model":"embed","input":["hello","world"]}`},
+		{name: "list of ids", body: `{"model":"embed","input":[1,2,3]}`, ids: 3},
+		{name: "list of lists", body: `{"model":"embed","input":[[1,2],[3]]}`, ids: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			up := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, answer)
+			})
+			e := setupRoutes(t, []router.Route{openaiRoute("embed", "text-embedding-3-small", up)})
+			res := e.embed(t, e.auth(), tt.body)
+			if res.status != http.StatusOK {
+				t.Fatalf("status %d: %s", res.status, res.body)
+			}
+			got, err := strconv.ParseInt(res.header.Get("X-Usage-Input-Tokens"), 10, 64)
+			if err != nil || got <= 0 {
+				t.Fatalf("X-Usage-Input-Tokens = %q", res.header.Get("X-Usage-Input-Tokens"))
+			}
+			if tt.ids != 0 && got != tt.ids {
+				t.Fatalf("X-Usage-Input-Tokens = %d, want %d", got, tt.ids)
+			}
+			recs := e.usage(t)
+			if len(recs) != 1 || !recs[0].Estimated || recs[0].InputTokens != got {
+				t.Fatalf("record %+v, header tokens %d", recs, got)
+			}
+		})
 	}
 }
 
