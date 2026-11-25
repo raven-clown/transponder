@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Together AI provider (`type: together`) defaulting to `https://api.together.xyz/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. No prices are included, so calls are logged as unpriced.
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

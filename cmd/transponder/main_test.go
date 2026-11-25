@@ -1413,3 +1413,22 @@ listen_addr: "8080"
 		t.Fatalf("database file %s was created by --config-test, want it not to exist", dbPath)
 	}
 }
+
+func TestBuildRouterTogetherDefault(t *testing.T) {
+	cfg := &config.Bootstrap{
+		Providers: []config.Provider{{Name: "together", Type: "together", APIKey: "k"}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "together"}}}},
+	}
+	r, err := buildRouter(cfg, http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Resolve("m")
+	a, ok := got.Provider.(interface{ BaseURL() string })
+	if !ok {
+		t.Fatalf("provider %T", got.Provider)
+	}
+	if a.BaseURL() != "https://api.together.xyz/v1" || got.Free {
+		t.Fatalf("base %q free=%v", a.BaseURL(), got.Free)
+	}
+}

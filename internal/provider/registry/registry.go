@@ -22,6 +22,7 @@ import (
 	"github.com/raven-clown/transponder/internal/provider/openai"
 	"github.com/raven-clown/transponder/internal/provider/openrouter"
 	"github.com/raven-clown/transponder/internal/provider/siliconflow"
+	"github.com/raven-clown/transponder/internal/provider/together"
 	"github.com/raven-clown/transponder/internal/provider/vercel"
 	"github.com/raven-clown/transponder/internal/provider/vllm"
 	"github.com/raven-clown/transponder/internal/provider/xai"
@@ -80,6 +81,9 @@ var specs = []Spec{
 	}},
 	{Type: "groq", New: func(s Settings) provider.Provider {
 		return groq.New(s.Name, s.BaseURL, s.APIKey, s.Client)
+	}},
+	{Type: "together", New: func(s Settings) provider.Provider {
+		return together.New(s.Name, s.BaseURL, s.APIKey, s.Client)
 	}},
 	{Type: "cerebras", New: func(s Settings) provider.Provider {
 		return cerebras.New(s.Name, s.BaseURL, s.APIKey, s.Client)
