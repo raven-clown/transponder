@@ -11,6 +11,15 @@ type statusJSON struct {
 	Store         storeStatusJSON  `json:"store"`
 	Config        configStatusJSON `json:"config"`
 	Cooldowns     []cooldownJSON   `json:"cooldowns"`
+	OIDC          *oidcStatusJSON  `json:"oidc,omitempty"`
+}
+
+type oidcStatusJSON struct {
+	Issuer      string  `json:"issuer"`
+	Keys        int     `json:"keys"`
+	FetchedAt   *string `json:"fetched_at,omitempty"`
+	LastError   string  `json:"last_error,omitempty"`
+	LastErrorAt *string `json:"last_error_at,omitempty"`
 }
 
 type cooldownJSON struct {
@@ -53,6 +62,16 @@ func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 					Failures: c.Failures, Until: formatTime(c.Until),
 				})
 			}
+		}
+	}
+	if h.d.OIDC != nil {
+		st := h.d.OIDC.KeyState()
+		out.OIDC = &oidcStatusJSON{
+			Issuer:      st.Issuer,
+			Keys:        st.Keys,
+			FetchedAt:   optTime(st.FetchedAt),
+			LastError:   st.LastError,
+			LastErrorAt: optTime(st.LastErrorAt),
 		}
 	}
 	if err := h.d.Store.Ping(r.Context()); err != nil {

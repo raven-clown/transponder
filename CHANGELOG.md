@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `GET /admin/v1/status` has an `oidc` object while OIDC is on: the issuer, the number of signing keys this replica holds, when they were last fetched, and the error and time of the latest fetch when it failed. A failed key refresh with keys still cached shows here, so stale keys are visible without reading the log. The object is this replica's view and is left out when OIDC is off (#186).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added
