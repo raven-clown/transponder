@@ -864,6 +864,62 @@ func TestServeRecordsOpenStreamOnShutdown(t *testing.T) {
 	}
 }
 
+func TestServeWaitsForShutdownTimeoutSetting(t *testing.T) {
+	old := shutdownTimeout
+	shutdownTimeout = 50 * time.Millisecond
+	defer func() { shutdownTimeout = old }()
+
+	// The call outlives the default drain, so it only finishes if the setting is used.
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-time.After(300 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"finished-after-stop\"}}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer up.Close()
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Bootstrap{
+		Store:     config.Store{SQLite: filepath.Join(t.TempDir(), "t.db")},
+		LogLevel:  "info",
+		Settings:  config.Settings{ShutdownTimeout: 5 * time.Second},
+		Providers: []config.Provider{{Name: "oa", Type: "openai", BaseURL: up.URL}},
+		Routes:    []config.Route{{Match: "*", Targets: []config.Target{{Provider: "oa"}}}},
+	}
+	key, stop := startServe(t, cfg, ln)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://"+ln.Addr().String()+"/v1/chat/completions",
+		strings.NewReader(`{"model":"m","stream":true,"messages":[{"role":"user","content":"ping"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	if _, err := br.ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	rest, err := io.ReadAll(br)
+	if err != nil {
+		t.Fatalf("call was cut during shutdown: %v", err)
+	}
+	if !strings.Contains(string(rest), "finished-after-stop") || !strings.Contains(string(rest), "[DONE]") {
+		t.Fatalf("call did not finish, rest of stream %q", rest)
+	}
+}
+
 func TestStopOnContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	called := make(chan struct{}, 1)

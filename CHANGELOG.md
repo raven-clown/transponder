@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `settings.shutdown_timeout` (environment `TRANSPONDER_SETTINGS__SHUTDOWN_TIMEOUT`, default `10s`) sets how long open calls get to finish after a stop signal. A stream that runs longer than the default is cut on every rolling deploy, so raise it to the longest call you want to finish, for example `5m`, and match the pod's termination grace period (#177).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

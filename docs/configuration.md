@@ -115,6 +115,7 @@ Routes are tried in order and the first whose `match` fits the requested model w
 | `settings.request_timeout` | `10m` | `TRANSPONDER_SETTINGS__REQUEST_TIMEOUT` | The longest a whole call may take, streams and fallbacks included. |
 | `settings.cooldown_failures` | `3` | `TRANSPONDER_SETTINGS__COOLDOWN_FAILURES` | Failures in a row after which a target is tried last in its routes. |
 | `settings.cooldown` | `30s` | `TRANSPONDER_SETTINGS__COOLDOWN` | How long such a target stays last. |
+| `settings.shutdown_timeout` | `10s` | `TRANSPONDER_SETTINGS__SHUTDOWN_TIMEOUT` | How long open calls get to finish after a stop signal before they are cut. Set it above the longest stream you want to survive a deploy, such as Kubernetes' `terminationGracePeriodSeconds`. |
 
 ## Budgets
 
