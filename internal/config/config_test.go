@@ -570,6 +570,25 @@ routes:
 	}
 }
 
+func TestLoadGitHubProvider(t *testing.T) {
+	p := writeFile(t, `providers:
+  - name: github
+    type: github
+    api_key: ghp_test
+routes:
+  - match: "*"
+    targets:
+      - provider: github
+`)
+	c, err := Load(p, nil)
+	if err != nil {
+		t.Fatalf("type github should load: %v", err)
+	}
+	if want := (Provider{Name: "github", Type: "github", APIKey: "ghp_test"}); !reflect.DeepEqual(c.Providers[0], want) {
+		t.Fatalf("provider = %+v", c.Providers[0])
+	}
+}
+
 func TestLoadProvidersAndRoutes(t *testing.T) {
 	p := writeFile(t, `providers:
   - name: openai

@@ -17,6 +17,7 @@ func TestLookup(t *testing.T) {
 		{typ: "ollama", free: true},
 		{typ: "litellm"},
 		{typ: "cloudflare", needsBaseURL: true},
+		{typ: "github"},
 		{typ: "openrouter"},
 		{typ: "xai"},
 		{typ: "vercel"},

@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `type: github` provider for [GitHub Models](https://docs.github.com/en/github-models/use-github-models/prototyping-with-ai-models). It defaults to `https://models.github.ai/inference` and sends `api_key`, a GitHub token with the `models` scope, as a bearer token. Model names look like `openai/gpt-4.1` (#57).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added
