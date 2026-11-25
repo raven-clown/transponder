@@ -744,6 +744,7 @@ ops_listen_addr: ":9464"
 | `transponder_request_duration_seconds` | `endpoint`, `route` | Histogram of the time from the request arriving to the last byte of the answer, streams included. |
 | `transponder_inflight_requests` | | Requests being served now. |
 | `transponder_limited_total` | `reason` | Requests refused by a limit or a budget: `rate_limited`, `concurrency_limited`, `quota_exceeded`, `budget_exceeded`, `input_too_large`. |
+| `transponder_auth_refused_total` | `reason` | Credentials refused: `missing`, `unknown_key`, `disabled_key`, `expired_key`, `bad_token`, `wrong_issuer`, `wrong_audience`, `expired_token`. Every reason is 0 from the start. No label holds a key, a user or a token. |
 | `transponder_events_dropped_total` | `sink` | Usage records that could not be written (`sql`) and spans that could not be exported (`otlp`). |
 | `transponder_tokens_total` | `direction`, `provider`, `model` | Tokens used. `direction` is `input`, `output`, `cache_read`, `cache_write` or `reasoning`. |
 | `transponder_cost_usd_total` | `provider`, `model` | Cost in US dollars. |

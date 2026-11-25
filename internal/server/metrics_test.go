@@ -386,3 +386,36 @@ func TestOpsServesMetricsWithoutKey(t *testing.T) {
 		t.Errorf("chat on the ops handler: status %d, want 404", rec.Code)
 	}
 }
+
+// A refused credential is counted by its reason, and every reason is in the scrape from the
+// start, at 0. The key that was refused is never in a label.
+func TestMetricsForRefusedCredentials(t *testing.T) {
+	up := countedUpstream(t, status(200, okChat))
+	e := setupMetered(t, route("fast", oaTarget("a", "gpt-4o-mini", up)), nil)
+
+	if got := e.scrape(t); !strings.Contains(got, `transponder_auth_refused_total{reason="unknown_key"} 0`) {
+		t.Fatalf("reasons are not in the scrape before any refusal:\n%s", got)
+	}
+	e.call(http.MethodPost, "/v1/chat/completions", "", ping)
+	e.call(http.MethodPost, "/v1/chat/completions", "tp_no-such-key-5678", ping)
+	e.call(http.MethodPost, "/v1/chat/completions", "tp_no-such-key-5678", ping)
+
+	got := e.scrape(t)
+	wantMetrics(t, got,
+		`transponder_auth_refused_total{reason="missing"} 1`,
+		`transponder_auth_refused_total{reason="unknown_key"} 2`,
+		`transponder_auth_refused_total{reason="wrong_audience"} 0`,
+		`transponder_auth_refused_total{reason="expired_token"} 0`,
+	)
+	if strings.Contains(got, "tp_no-such-key-5678") {
+		t.Error("a refused key is in the metrics")
+	}
+	for _, reason := range auth.Reasons {
+		if !strings.Contains(got, fmt.Sprintf(`transponder_auth_refused_total{reason=%q}`, string(reason))) {
+			t.Errorf("reason %q is not in the scrape", reason)
+		}
+	}
+	if up.calls.Load() != 0 {
+		t.Errorf("the provider was called %d times", up.calls.Load())
+	}
+}

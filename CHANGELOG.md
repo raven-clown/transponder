@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `transponder_auth_refused_total{reason}` counts refused keys and tokens by reason: `missing`, `unknown_key`, `disabled_key`, `expired_key`, `bad_token`, `wrong_issuer`, `wrong_audience` and `expired_token`. A wrong audience and a wrong key now show as different series. Every reason is at 0 from the start, and no label holds a key, a user or a token (#183).
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

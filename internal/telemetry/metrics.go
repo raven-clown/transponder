@@ -19,17 +19,18 @@ var durationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5
 type Metrics struct {
 	reg *Registry
 
-	requests  *Vec
-	duration  *Vec
-	inflight  *Vec
-	limited   *Vec
-	dropped   *Vec
-	tokens    *Vec
-	cost      *Vec
-	upstream  *Vec
-	fallbacks *Vec
-	unpriced  *Vec
-	reloads   *Vec
+	requests    *Vec
+	duration    *Vec
+	inflight    *Vec
+	limited     *Vec
+	dropped     *Vec
+	tokens      *Vec
+	cost        *Vec
+	upstream    *Vec
+	fallbacks   *Vec
+	unpriced    *Vec
+	reloads     *Vec
+	authRefused *Vec
 
 	mu           sync.RWMutex
 	callerModels map[string]struct{}
@@ -67,13 +68,34 @@ func NewMetrics(version string) *Metrics {
 		reloads: r.Counter("transponder_config_reloads_total",
 			"Reloads of the runtime config, by result: ok for a new version swapped in, failed for one that could not be read or loaded.",
 			"result"),
+		authRefused: r.Counter("transponder_auth_refused_total",
+			"Credentials refused, by reason: missing, unknown_key, disabled_key, expired_key, bad_token, wrong_issuer, wrong_audience or expired_token. No label holds a key, a user or a token.",
+			"reason"),
 		callerModels: map[string]struct{}{},
 	}
 	r.Gauge("transponder_build_info", "The running version, as a label on a constant 1.", "version").Set(1, version)
 	// Series without labels exist from the start, so a dashboard shows 0 rather than no data.
 	m.inflight.Add(0)
 	m.unpriced.Add(0)
+	for _, reason := range AuthRefusalReasons {
+		m.authRefused.Add(0, reason)
+	}
 	return m
+}
+
+// AuthRefusalReasons are the reasons a refused credential is counted under. They match the
+// reasons of package auth, which a test checks.
+var AuthRefusalReasons = []string{
+	"missing", "unknown_key", "disabled_key", "expired_key",
+	"bad_token", "wrong_issuer", "wrong_audience", "expired_token",
+}
+
+// AuthRefused counts one refused credential, by its reason.
+func (m *Metrics) AuthRefused(reason string) {
+	if m == nil {
+		return
+	}
+	m.authRefused.Add(1, reason)
 }
 
 // Request is what one finished gateway request adds to the metrics.

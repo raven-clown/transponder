@@ -128,7 +128,7 @@ func (o *OIDC) Ping(ctx context.Context) error {
 func (o *OIDC) Verify(ctx context.Context, token string) (Identity, error) {
 	jws, err := jose.ParseSignedCompact(token, signingAlgs)
 	if err != nil {
-		return Identity{}, rejectf("malformed token or unsupported signature: %v", err)
+		return Identity{}, refuse(ReasonBadToken, "malformed token or unsupported signature: %v", err)
 	}
 	// The issuer is read before the signature is checked, so a token from somewhere else
 	// never causes a key fetch. Nothing else is trusted until the signature holds.
@@ -139,10 +139,11 @@ func (o *OIDC) Verify(ctx context.Context, token string) (Identity, error) {
 		if err == nil && peek.Issuer != "" && strings.TrimSuffix(peek.Issuer, "/") == strings.TrimSuffix(o.cfg.Issuer, "/") {
 			// Still refused: the issuer must match exactly. The reason spells out
 			// the fix and quotes the token's value, whichever side has the slash.
-			return Identity{}, fmt.Errorf("%w: issuer is %q, want %q: %w; set auth.oidc.issuer to %q",
-				ErrUnauthenticated, peek.Issuer, o.cfg.Issuer, ErrIssuerTrailingSlash, peek.Issuer)
+			return Identity{}, &Refusal{Reason: ReasonWrongIssuer, cause: ErrIssuerTrailingSlash,
+				msg: fmt.Sprintf("issuer is %q, want %q: %v; set auth.oidc.issuer to %q",
+					peek.Issuer, o.cfg.Issuer, ErrIssuerTrailingSlash, peek.Issuer)}
 		}
-		return Identity{}, rejectf("issuer is %q, want %q", peek.Issuer, o.cfg.Issuer)
+		return Identity{}, refuse(ReasonWrongIssuer, "issuer is %q, want %q", peek.Issuer, o.cfg.Issuer)
 	}
 	header := jws.Signatures[0].Protected
 	verify := func(keys []jose.JSONWebKey) ([]byte, bool) {
@@ -170,21 +171,21 @@ func (o *OIDC) Verify(ctx context.Context, token string) (Identity, error) {
 		payload, verified = verify(keys)
 	}
 	if !verified {
-		return Identity{}, rejectf("no key of the issuer verifies the signature (kid %q)", header.KeyID)
+		return Identity{}, refuse(ReasonBadToken, "no key of the issuer verifies the signature (kid %q)", header.KeyID)
 	}
 
 	var claims map[string]any
 	dec := json.NewDecoder(bytes.NewReader(payload))
 	dec.UseNumber()
 	if err := dec.Decode(&claims); err != nil {
-		return Identity{}, rejectf("claims are not a JSON object: %v", err)
+		return Identity{}, refuse(ReasonBadToken, "claims are not a JSON object: %v", err)
 	}
 	if err := o.checkClaims(claims); err != nil {
 		return Identity{}, err
 	}
 	user, _ := lookupClaim(claims, o.cfg.UserClaim).(string)
 	if user == "" {
-		return Identity{}, rejectf("claim %q is missing or not a string", o.cfg.UserClaim)
+		return Identity{}, refuse(ReasonBadToken, "claim %q is missing or not a string", o.cfg.UserClaim)
 	}
 	id := Identity{OrgID: store.DefaultOrg, User: user, Role: RoleMember}
 	if o.cfg.TeamsClaim != "" {
@@ -211,15 +212,15 @@ func (o *OIDC) checkClaims(claims map[string]any) error {
 		}
 	}
 	if !found {
-		return rejectf("audience does not include %q", o.cfg.Audience)
+		return refuse(ReasonWrongAudience, "audience does not include %q", o.cfg.Audience)
 	}
 	now := o.cfg.Now()
 	exp, ok := claimTime(claims["exp"])
 	if !ok {
-		return rejectf("claim exp is missing")
+		return refuse(ReasonBadToken, "claim exp is missing")
 	}
 	if !now.Before(exp.Add(o.cfg.ClockSkew)) {
-		return rejectf("token expired at %s", exp.UTC().Format(time.RFC3339))
+		return refuse(ReasonExpiredToken, "token expired at %s", exp.UTC().Format(time.RFC3339))
 	}
 	// nbf and iat are optional, but one that is present has to be a time and not ahead of now.
 	for _, name := range []string{"nbf", "iat"} {
@@ -229,20 +230,16 @@ func (o *OIDC) checkClaims(claims map[string]any) error {
 		}
 		at, ok := claimTime(v)
 		if !ok {
-			return rejectf("claim %s is not a time", name)
+			return refuse(ReasonBadToken, "claim %s is not a time", name)
 		}
 		if now.Add(o.cfg.ClockSkew).Before(at) {
 			if name == "iat" {
-				return rejectf("token is issued in the future, at %s", at.UTC().Format(time.RFC3339))
+				return refuse(ReasonBadToken, "token is issued in the future, at %s", at.UTC().Format(time.RFC3339))
 			}
-			return rejectf("token is not valid before %s", at.UTC().Format(time.RFC3339))
+			return refuse(ReasonBadToken, "token is not valid before %s", at.UTC().Format(time.RFC3339))
 		}
 	}
 	return nil
-}
-
-func rejectf(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrUnauthenticated, fmt.Sprintf(format, args...))
 }
 
 // lookupClaim returns the claim called name. When there is none and name has dots, it is

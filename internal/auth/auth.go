@@ -3,6 +3,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +23,59 @@ const (
 
 // ErrUnauthenticated means the request carries no valid credentials.
 var ErrUnauthenticated = errors.New("auth: unauthenticated")
+
+// Reason says why credentials were refused. The set is fixed, so it can be a metric label.
+type Reason string
+
+// The reasons credentials can be refused for.
+const (
+	ReasonMissing       Reason = "missing"
+	ReasonUnknownKey    Reason = "unknown_key"
+	ReasonDisabledKey   Reason = "disabled_key"
+	ReasonExpiredKey    Reason = "expired_key"
+	ReasonBadToken      Reason = "bad_token"
+	ReasonWrongIssuer   Reason = "wrong_issuer"
+	ReasonWrongAudience Reason = "wrong_audience"
+	ReasonExpiredToken  Reason = "expired_token"
+)
+
+// Reasons lists every Reason.
+var Reasons = []Reason{
+	ReasonMissing, ReasonUnknownKey, ReasonDisabledKey, ReasonExpiredKey,
+	ReasonBadToken, ReasonWrongIssuer, ReasonWrongAudience, ReasonExpiredToken,
+}
+
+// Refusal is the error for credentials that were refused. It wraps ErrUnauthenticated and
+// names the reason. Its text may quote the token's claims, never the token itself.
+type Refusal struct {
+	Reason Reason
+	msg    string
+	cause  error
+}
+
+// Error implements error.
+func (e *Refusal) Error() string { return ErrUnauthenticated.Error() + ": " + e.msg }
+
+// Unwrap lets errors.Is match ErrUnauthenticated and the cause, when there is one.
+func (e *Refusal) Unwrap() []error {
+	if e.cause != nil {
+		return []error{ErrUnauthenticated, e.cause}
+	}
+	return []error{ErrUnauthenticated}
+}
+
+// ReasonOf returns why err refused the credentials, when a refusal is in its chain.
+func ReasonOf(err error) (Reason, bool) {
+	var r *Refusal
+	if errors.As(err, &r) {
+		return r.Reason, true
+	}
+	return "", false
+}
+
+func refuse(reason Reason, format string, args ...any) error {
+	return &Refusal{Reason: reason, msg: fmt.Sprintf(format, args...)}
+}
 
 // Identity is the caller of a request. User is the user id from the token, or the key name
 // for an API key. Key is the key name, empty when the caller signed in with a token.
@@ -61,20 +115,23 @@ func (a *Authenticator) Authenticate(r *http.Request) (Identity, error) {
 		token = strings.TrimSpace(r.Header.Get("X-Api-Key"))
 	}
 	if token == "" {
-		return Identity{}, ErrUnauthenticated
+		return Identity{}, refuse(ReasonMissing, "no API key or token was sent")
 	}
 	if a.oidc != nil && looksLikeJWT(token) {
 		return a.oidc.Verify(r.Context(), token)
 	}
 	k, err := a.keys.KeyByHash(r.Context(), HashKey(token))
 	if errors.Is(err, store.ErrNotFound) {
-		return Identity{}, ErrUnauthenticated
+		return Identity{}, refuse(ReasonUnknownKey, "no API key matches")
 	}
 	if err != nil {
 		return Identity{}, err
 	}
-	if k.Disabled || (!k.ExpiresAt.IsZero() && !k.ExpiresAt.After(a.now())) {
-		return Identity{}, ErrUnauthenticated
+	if k.Disabled {
+		return Identity{}, refuse(ReasonDisabledKey, "the API key is disabled")
+	}
+	if !k.ExpiresAt.IsZero() && !k.ExpiresAt.After(a.now()) {
+		return Identity{}, refuse(ReasonExpiredKey, "the API key expired at %s", k.ExpiresAt.UTC().Format(time.RFC3339))
 	}
 	return Identity{OrgID: k.OrgID, User: k.Name, Teams: k.Teams, Key: k.Name, Role: keyRole(k.Role)}, nil
 }
