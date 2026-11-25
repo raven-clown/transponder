@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- `GET /admin/v1/audit` takes `action`, one of `create`, `update`, `delete` or `rotate`, so `?action=delete` lists only the deletes. Any other value is 400 `invalid` on `action`.
+
 ## [0.3.2] - 2026-11-22
 
 ### Added

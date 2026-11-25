@@ -177,6 +177,9 @@ func TestAuditList(t *testing.T) {
 		query string
 		want  int
 	}{
+		{"action=create", 2},
+		{"action=update", 1},
+		{"action=delete", 0},
 		{"resource=keys", 3},
 		{"resource=keys/a", 2},
 		{"resource=providers", 0},
@@ -191,4 +194,5 @@ func TestAuditList(t *testing.T) {
 		}
 	}
 	wantError(t, e.do(auth.RoleViewer, http.MethodGet, "/audit?from=never", nil), http.StatusBadRequest, "invalid", "from")
+	wantError(t, e.do(auth.RoleViewer, http.MethodGet, "/audit?action=read", nil), http.StatusBadRequest, "invalid", "action")
 }

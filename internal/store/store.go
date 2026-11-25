@@ -111,6 +111,7 @@ type AuditRecord struct {
 type AuditQuery struct {
 	OrgID    string
 	Actor    string
+	Action   string // create, update, delete or rotate
 	Kind     string
 	Resource string
 	From     time.Time // inclusive

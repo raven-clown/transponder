@@ -652,6 +652,10 @@ paths:
       operationId: listAudit
       summary: Audit records of writes through this API, newest first.
       parameters:
+        - name: action
+          in: query
+          description: The action of the write.
+          schema: { type: string, enum: [create, update, delete, rotate] }
         - name: actor
           in: query
           description: "Who made the write: `key:<name>` or `user:<id>`."

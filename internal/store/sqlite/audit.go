@@ -33,6 +33,9 @@ func (db *DB) ListAudit(ctx context.Context, q store.AuditQuery) ([]store.AuditR
 	if q.Actor != "" {
 		add("actor = ?", q.Actor)
 	}
+	if q.Action != "" {
+		add("action = ?", q.Action)
+	}
 	if q.Kind != "" {
 		add("kind = ?", q.Kind)
 	}

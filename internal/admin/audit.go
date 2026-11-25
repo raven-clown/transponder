@@ -101,11 +101,17 @@ func (h *handler) audit(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, "audit", err)
 		return
 	}
+	action := q.Get("action")
+	if action != "" && action != actionCreate && action != actionUpdate && action != actionDelete && action != actionRotate {
+		h.fail(w, r, "audit", invalid("action", "action must be create, update, delete or rotate"))
+		return
+	}
 	id, _ := auth.FromContext(r.Context())
 	kind, resource, _ := strings.Cut(q.Get("resource"), "/")
 	recs, err := h.d.Store.ListAudit(r.Context(), store.AuditQuery{
 		OrgID:    orgOf(id),
 		Actor:    q.Get("actor"),
+		Action:   action,
 		Kind:     kind,
 		Resource: resource,
 		From:     from,

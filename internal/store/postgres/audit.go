@@ -25,6 +25,7 @@ func (db *DB) AddAudit(ctx context.Context, r store.AuditRecord) error {
 func (db *DB) ListAudit(ctx context.Context, q store.AuditQuery) ([]store.AuditRecord, error) {
 	f := newFilter("org_id", q.OrgID)
 	f.eq("actor", q.Actor)
+	f.eq("action", q.Action)
 	f.eq("kind", q.Kind)
 	f.eq("resource", q.Resource)
 	f.timeRange(q.From, q.To)

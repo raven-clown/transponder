@@ -287,11 +287,17 @@ func testAudit(t *testing.T, open Opener) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v\nwant %+v", got, want)
 	}
+	del := Audit(7, "key:admin", "routes", "chat")
+	del.Action = "delete"
+	if err := db.AddAudit(ctx, del); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name  string
 		q     store.AuditQuery
 		wants []string
 	}{
+		{"action", store.AuditQuery{Action: "delete"}, []string{"chat"}},
 		{"actor", store.AuditQuery{Actor: "user:alice"}, []string{"logbook", "rosetta"}},
 		{"kind", store.AuditQuery{Kind: "providers"}, []string{"openai"}},
 		{"kind and resource", store.AuditQuery{Kind: "keys", Resource: "logbook"}, []string{"logbook", "logbook"}},
