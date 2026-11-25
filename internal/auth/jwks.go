@@ -40,7 +40,29 @@ type keySet struct {
 	fetched   time.Time     // the last fetch that worked
 	attempted time.Time     // the last fetch, whether or not it worked
 	inflight  chan struct{} // closed when the running fetch ends
-	lastErr   error
+	lastErr   error         // the error of the last fetch, nil after one that worked
+	lastErrAt time.Time     // when lastErr happened
+}
+
+// KeyState is the key set as this replica last read it. LastError is the error of the
+// latest fetch and is empty once a fetch has worked. It holds no token.
+type KeyState struct {
+	Issuer      string
+	Keys        int
+	FetchedAt   time.Time // the last fetch that worked; zero before the first one
+	LastError   string
+	LastErrorAt time.Time
+}
+
+// state returns a snapshot of the key set.
+func (s *keySet) state() KeyState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := KeyState{Issuer: s.issuer, Keys: len(s.keys), FetchedAt: s.fetched}
+	if s.lastErr != nil {
+		st.LastError, st.LastErrorAt = s.lastErr.Error(), s.lastErrAt
+	}
+	return st
 }
 
 // lookup returns the keys a token naming kid may be signed with: the key with that id, or
@@ -137,6 +159,7 @@ func (s *keySet) refresh() {
 	// The interval counts from the end of a fetch, so a provider that hangs is not asked
 	// again the moment the fetch gives up.
 	s.attempted = s.now()
+	s.lastErrAt = s.attempted
 	if err == nil {
 		s.jwksURL, s.keys, s.fetched = jwksURL, keys, s.attempted
 	}

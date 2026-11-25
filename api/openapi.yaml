@@ -835,6 +835,17 @@ components:
               model: { type: string, description: The model sent upstream. }
               failures: { type: integer, description: The failures in a row since the target last succeeded, which is at least the number that put it in cooldown. }
               until: { type: string, format: date-time, description: When the cooldown ends and the target is tried in its configured order again. }
+        oidc:
+          type: object
+          description: The identity provider's signing keys as this replica last read them. Absent when OIDC is off. Each replica fetches its own keys.
+          additionalProperties: false
+          required: [issuer, keys]
+          properties:
+            issuer: { type: string }
+            keys: { type: integer, description: The signing keys held. Zero until a fetch has worked. }
+            fetched_at: { type: string, format: date-time, description: When the keys were last fetched successfully. Absent before the first fetch. }
+            last_error: { type: string, description: The error of the latest fetch, present only while that fetch failed. It names no token. }
+            last_error_at: { type: string, format: date-time, description: When last_error happened. }
 
     Role:
       type: string

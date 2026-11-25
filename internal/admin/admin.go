@@ -65,6 +65,9 @@ type Deps struct {
 	// Router, when set, returns the router serving now, whose cooldowns /status reports. Nil
 	// means no cooldowns are tracked.
 	Router func() *router.Router
+	// OIDC, when set, is the identity provider whose key state /status reports. Nil means
+	// OIDC is off and /status leaves the oidc object out.
+	OIDC *auth.OIDC
 }
 
 type handler struct {

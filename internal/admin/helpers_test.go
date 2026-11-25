@@ -71,6 +71,8 @@ type env struct {
 	keys   map[auth.Role]string
 	file   *config.Bootstrap
 	box    *secrets.Box
+	// oidc, when set, is the identity provider /status reports.
+	oidc *auth.OIDC
 }
 
 func newEnv(t *testing.T) *env {
@@ -106,7 +108,7 @@ func (e *env) on(st Store) *env {
 // with returns an env with the same keys on st, with file as the config file and box sealing
 // provider keys.
 func (e *env) with(st Store, file *config.Bootstrap, box *secrets.Box) *env {
-	e = &env{t: e.t, db: e.db, store: st, keys: e.keys, file: file, box: box, spec: loadSpec(e.t), logs: &bytes.Buffer{},
+	e = &env{t: e.t, db: e.db, store: st, keys: e.keys, file: file, box: box, oidc: e.oidc, spec: loadSpec(e.t), logs: &bytes.Buffer{},
 		reload: &fakeReloader{status: runtime.Status{Version: 1, LoadedAt: testNow.Add(-time.Hour)}}}
 	e.h = New(Deps{
 		File:      e.file,
@@ -120,8 +122,15 @@ func (e *env) with(st Store, file *config.Bootstrap, box *secrets.Box) *env {
 		StoreKind: "sqlite",
 		Started:   testNow.Add(-90 * time.Second),
 		Router:    func() *router.Router { return e.router },
+		OIDC:      e.oidc,
 	})
 	return e
+}
+
+// withOIDC returns the env with o as its identity provider.
+func (e *env) withOIDC(o *auth.OIDC) *env {
+	e.oidc = o
+	return e.with(e.store, e.file, e.box)
 }
 
 // do sends a request as role, checks the response against openapi.yaml and returns it.

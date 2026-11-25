@@ -224,6 +224,7 @@ func serve(ctx context.Context, cfg *config.Bootstrap, ln net.Listener, stdout, 
 			Started:   started,
 			File:      cfg,
 			Secrets:   box,
+			OIDC:      oidc,
 			Router: func() *router.Router {
 				return reloader.Current().Value.router
 			},

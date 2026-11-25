@@ -117,6 +117,11 @@ func (o *OIDC) MapsAdmin() bool {
 	return false
 }
 
+// KeyState returns the snapshot of the issuer's key set this replica holds.
+func (o *OIDC) KeyState() KeyState {
+	return o.keys.state()
+}
+
 // Ping reports whether the issuer's keys have been fetched, fetching them when they have not.
 func (o *OIDC) Ping(ctx context.Context) error {
 	_, err := o.keys.lookup(ctx, "", false)

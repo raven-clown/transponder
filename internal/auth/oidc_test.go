@@ -715,3 +715,54 @@ func TestLooksLikeJWT(t *testing.T) {
 		}
 	}
 }
+
+func TestOIDCKeyState(t *testing.T) {
+	p := authtest.NewIDP(t)
+	key := p.NewKey("k")
+	o := verifier(p, nil)
+	ctx := context.Background()
+	token := func() string { return authtest.Sign(t, jose.ES256, key, "k", p.Claims()) }
+
+	st := o.KeyState()
+	if st.Issuer != p.Issuer() || st.Keys != 0 || !st.FetchedAt.IsZero() || st.LastError != "" || !st.LastErrorAt.IsZero() {
+		t.Fatalf("before the first fetch: %+v", st)
+	}
+
+	if _, err := o.Verify(ctx, token()); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	st = o.KeyState()
+	if st.Keys != 1 || !st.FetchedAt.Equal(p.Clock.Now()) || st.LastError != "" {
+		t.Fatalf("after a fetch: %+v", st)
+	}
+	fetchedAt := st.FetchedAt
+
+	p.Set(func(p *authtest.IDP) { p.Status = http.StatusBadGateway })
+	p.Clock.Advance(jwksMaxAge)
+	p.DrainFetches()
+	if _, err := o.Verify(ctx, token()); err != nil {
+		t.Fatalf("with cached keys and the issuer down: %v", err)
+	}
+	// AwaitFetch returns when the request reaches the provider, not when the refresh ends, so
+	// the snapshot is polled until the failure is recorded.
+	deadline := time.Now().Add(10 * time.Second)
+	for st = o.KeyState(); st.LastError == ""; st = o.KeyState() {
+		if time.Now().After(deadline) {
+			t.Fatal("the failed refresh was not recorded")
+		}
+		select {
+		case <-time.After(time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	if st.Keys != 1 || !st.FetchedAt.Equal(fetchedAt) {
+		t.Fatalf("after a failed refresh the cached keys are kept: %+v", st)
+	}
+	if !strings.Contains(st.LastError, "status 502") || !st.LastErrorAt.Equal(p.Clock.Now()) {
+		t.Fatalf("after a failed refresh: last error %q at %v, want status 502 at %v", st.LastError, st.LastErrorAt, p.Clock.Now())
+	}
+	if strings.Contains(st.LastError, "eyJ") {
+		t.Fatalf("last error holds a token: %q", st.LastError)
+	}
+}
