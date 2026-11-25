@@ -68,7 +68,7 @@ log_level: debug
 		SecretsKey: "abc",
 		OTel:       OTel{Endpoint: "http://otel:4318"},
 		LogLevel:   "debug",
-		Settings:   Settings{AttemptTimeout: time.Minute, RequestTimeout: 10 * time.Minute, CooldownFailures: 3, Cooldown: 30 * time.Second},
+		Settings:   Settings{AttemptTimeout: time.Minute, RequestTimeout: 10 * time.Minute, CooldownFailures: 3, Cooldown: 30 * time.Second, ShutdownTimeout: 10 * time.Second},
 	}
 	if !reflect.DeepEqual(*c, want) {
 		t.Fatalf("got %+v, want %+v", *c, want)
@@ -265,6 +265,7 @@ func TestLoadRejects(t *testing.T) {
 		{name: "negative cooldown", body: "settings:\n  cooldown: -1s\n", want: "cooldown"},
 		{name: "negative cooldown failures", body: "settings:\n  cooldown_failures: -1\n", want: "cooldown_failures"},
 		{name: "negative attempt timeout", body: "settings:\n  attempt_timeout: -1s\n", want: "attempt_timeout"},
+		{name: "negative shutdown timeout", body: "settings:\n  shutdown_timeout: -1s\n", want: "shutdown_timeout"},
 		{name: "request timeout not a duration", body: "settings:\n  request_timeout: soon\n", want: "`soon`"},
 		{name: "unknown type lists the known ones", body: "providers:\n  - {name: b, type: bedrock}\n", want: "known types are anthropic, cerebras, cloudflare, echo, gemini"},
 		{name: "cloudflare without base URL", body: "providers:\n  - {name: cf, type: cloudflare}\nroutes:\n  - {match: '*', targets: [{provider: cf}]}\n", want: `provider "cf" of type cloudflare needs base_url`},

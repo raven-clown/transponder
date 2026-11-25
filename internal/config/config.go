@@ -227,6 +227,8 @@ type Settings struct {
 	CooldownFailures int `yaml:"cooldown_failures"`
 	// Cooldown is how long such a target stays last.
 	Cooldown time.Duration `yaml:"cooldown"`
+	// ShutdownTimeout is how long open calls get to finish after a stop signal.
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 }
 
 // Provider is one backend declared in the file.
@@ -347,6 +349,9 @@ func Load(path string, environ []string) (*Bootstrap, error) {
 	if c.Settings.Cooldown == 0 {
 		c.Settings.Cooldown = 30 * time.Second
 	}
+	if c.Settings.ShutdownTimeout == 0 {
+		c.Settings.ShutdownTimeout = 10 * time.Second
+	}
 	if c.Auth.OIDC.Enabled() {
 		if c.Auth.OIDC.UserClaim == "" {
 			c.Auth.OIDC.UserClaim = "sub"
@@ -409,6 +414,9 @@ func (c *Bootstrap) validate() error {
 	}
 	if c.Settings.RequestTimeout < 0 {
 		return fmt.Errorf("config: settings.request_timeout %s must be positive", c.Settings.RequestTimeout)
+	}
+	if c.Settings.ShutdownTimeout < 0 {
+		return fmt.Errorf("config: settings.shutdown_timeout %s must be positive", c.Settings.ShutdownTimeout)
 	}
 	if err := c.ValidateRuntime(); err != nil {
 		return err
