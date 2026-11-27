@@ -51,7 +51,9 @@ func (g *gateway) responses(w http.ResponseWriter, r *http.Request) {
 	if !g.countable(c, refs) {
 		return
 	}
-	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_output_tokens")}) {
+	if !g.admit(c, func() limits.Estimate {
+		return limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_output_tokens")}
+	}) {
 		return
 	}
 	if out, _ := c.ticket.Caps(); out > 0 {
