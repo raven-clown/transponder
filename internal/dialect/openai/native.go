@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -109,7 +110,11 @@ func RewriteRequest(body []byte, model string, forceUsage bool) ([]byte, error) 
 		return rewriteByMap(body, model, forceUsage)
 	}
 	name, _ := json.Marshal(model)
-	out := make([]byte, 0, len(body)+len(name)+48)
+	if len(body) > math.MaxInt-len(name)-48 {
+		return nil, errors.New("openai: request body too large")
+	}
+	capHint := len(body) + len(name) + 48
+	out := make([]byte, 0, capHint)
 	out = append(out, `{"model":`...)
 	out = append(out, name...)
 	if forceUsage {
