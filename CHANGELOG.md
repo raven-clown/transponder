@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 - `type: github` provider for [GitHub Models](https://docs.github.com/en/github-models/use-github-models/prototyping-with-ai-models). It defaults to `https://models.github.ai/inference` and sends `api_key`, a GitHub token with the `models` scope, as a bearer token. Model names look like `openai/gpt-4.1` (#57).
 
+### Changed
+
+- The input token estimate that limits and budgets reserve against is worked out in one pass over the request body, without decoding it into a tree or copying its text, and only when a limit applies to the call. A chat call through the gateway takes 19% less time with 18% fewer allocations, and a gateway with no limits configured no longer works out the estimate before each call; it still estimates usage afterwards when a provider reports none. The estimate is the same as before for every body without repeated keys, which a fuzz test checks against the previous code; for a body that repeats a key, every copy now counts, so the estimate can only be higher.
+
 ## [0.3.2] - 2026-11-22
 
 ### Added
