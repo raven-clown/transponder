@@ -20,5 +20,11 @@ func Estimate(s string) int64 {
 			other++
 		}
 	}
+	return FromCounts(ascii, other)
+}
+
+// FromCounts is Estimate for a text already counted: ascii characters below 0x80 and other
+// characters, an invalid UTF-8 byte counting as one other.
+func FromCounts(ascii, other int64) int64 {
 	return (ascii+3)/4 + (other*3+1)/2
 }
