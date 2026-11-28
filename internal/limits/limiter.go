@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strings"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -330,15 +330,29 @@ func (t *Ticket) Release() {
 // SetHeaders adds the IETF RateLimit-Policy and RateLimit headers for the rates the call was
 // counted against.
 func (t *Ticket) SetHeaders(h http.Header) {
-	var policies, states []string
-	for _, r := range t.rates {
-		policies = append(policies, fmt.Sprintf("%q;q=%d;w=%d", r.name, r.rate.N, int64(r.rate.Per/time.Second)))
-		states = append(states, fmt.Sprintf("%q;r=%d;t=%d", r.name, r.bucket.Remaining, int64(math.Ceil(r.bucket.Reset.Seconds()))))
+	if len(t.rates) == 0 {
+		return
 	}
-	if len(policies) > 0 {
-		h.Set("RateLimit-Policy", strings.Join(policies, ", "))
-		h.Set("RateLimit", strings.Join(states, ", "))
+	var policy, state []byte
+	for i, r := range t.rates {
+		if i > 0 {
+			policy = append(policy, ", "...)
+			state = append(state, ", "...)
+		}
+		policy = strconv.AppendQuote(policy, r.name)
+		policy = append(policy, ";q="...)
+		policy = strconv.AppendInt(policy, r.rate.N, 10)
+		policy = append(policy, ";w="...)
+		policy = strconv.AppendInt(policy, int64(r.rate.Per/time.Second), 10)
+		state = strconv.AppendQuote(state, r.name)
+		state = append(state, ";r="...)
+		state = strconv.AppendInt(state, r.bucket.Remaining, 10)
+		state = append(state, ";t="...)
+		state = strconv.AppendInt(state, int64(math.Ceil(r.bucket.Reset.Seconds())), 10)
 	}
+	// Both names are already in canonical form.
+	h["Ratelimit-Policy"] = []string{string(policy)}
+	h["Ratelimit"] = []string{string(state)}
 }
 
 // Seed adds usage recorded before a restart to the counters of the windows that are still

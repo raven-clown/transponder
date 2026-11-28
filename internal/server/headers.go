@@ -21,13 +21,27 @@ func noSniff(next http.Handler) http.Handler {
 	})
 }
 
+// formatUSD writes nano-USD as dollars with six decimals, such as 0.002500.
 func formatUSD(nusd int64) string {
-	return fmt.Sprintf("%d.%06d", nusd/1_000_000_000, (nusd%1_000_000_000)/1_000)
+	if nusd < 0 {
+		// Never a real cost; kept as it always read.
+		return fmt.Sprintf("%d.%06d", nusd/1_000_000_000, (nusd%1_000_000_000)/1_000)
+	}
+	var buf [32]byte
+	b := strconv.AppendInt(buf[:0], nusd/1_000_000_000, 10)
+	b = append(b, '.')
+	micro := (nusd % 1_000_000_000) / 1_000
+	for div := int64(100_000); div > 0; div /= 10 {
+		b = append(b, byte('0'+micro/div%10))
+	}
+	return string(b)
 }
 
+// setUsageHeaders writes the usage headers by their names in Go's canonical form, which skips
+// the check Header.Set makes on every call. X-Usage-Cost-USD is X-Usage-Cost-Usd in that form.
 func setUsageHeaders(h http.Header, u schema.Usage, costNUSD int64) {
-	h.Set("X-Usage-Input-Tokens", strconv.FormatInt(u.InputTokens, 10))
-	h.Set("X-Usage-Output-Tokens", strconv.FormatInt(u.OutputTokens, 10))
-	h.Set("X-Usage-Reasoning-Tokens", strconv.FormatInt(u.ReasoningTokens, 10))
-	h.Set("X-Usage-Cost-USD", formatUSD(costNUSD))
+	h["X-Usage-Input-Tokens"] = []string{strconv.FormatInt(u.InputTokens, 10)}
+	h["X-Usage-Output-Tokens"] = []string{strconv.FormatInt(u.OutputTokens, 10)}
+	h["X-Usage-Reasoning-Tokens"] = []string{strconv.FormatInt(u.ReasoningTokens, 10)}
+	h["X-Usage-Cost-Usd"] = []string{formatUSD(costNUSD)}
 }
