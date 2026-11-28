@@ -35,6 +35,7 @@ status() {
 }
 
 wait_for 60 "Prometheus has answered requests" above_zero 'sum(transponder_requests_total{code="200"})'
+wait_for 60 "Prometheus has Responses API calls" above_zero 'sum(transponder_requests_total{endpoint="responses"})'
 wait_for 30 "Prometheus has request durations" above_zero 'sum(transponder_request_duration_seconds_count)'
 wait_for 30 "Prometheus has tokens" above_zero 'sum(transponder_tokens_total)'
 wait_for 30 "Prometheus has cost" above_zero 'sum(transponder_cost_usd_total)'

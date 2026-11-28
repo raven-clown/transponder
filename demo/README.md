@@ -40,10 +40,10 @@ docker compose down -v
 | Service | What it is |
 |---|---|
 | `transponder` | The gateway, built from this repository with [`transponder.yaml`](transponder.yaml). |
-| `upstream` | A fake OpenAI-compatible provider: chat, streamed chat and embeddings, with made-up answers after 80 to 600 ms. |
+| `upstream` | A fake OpenAI-compatible provider: chat, streamed chat, the Responses API (plain and streamed) and embeddings, with made-up answers after 80 to 600 ms. |
 | `flaky` | The same, answering 503 to about a third of its calls. |
 | `seed` | Puts five API keys in the store before the gateway starts, then exits. |
-| `traffic` | Sends about four calls a second through the gateway. |
+| `traffic` | Sends about four calls a second through the gateway, Responses API calls included. |
 | `prometheus` | Scrapes `/metrics` every 5 seconds on the gateway's ops port, where no key is needed. |
 | `grafana` | The dashboard, provisioned from [`grafana/`](grafana). |
 | `jaeger` | Takes the traces over OTLP on port 4318 and shows them. |
@@ -55,6 +55,7 @@ docker compose down -v
 The routes and limits in [`transponder.yaml`](transponder.yaml) are set up so every panel has something to show:
 
 - `fast` and `embed` go to the provider `steady`, which is the `upstream` service, as the models `gpt-4o-mini` and `text-embedding-3-small`. Their real prices apply, so the cost panel shows what the same traffic would cost there.
+- Some calls use the Responses API (`/v1/responses`), plain and streamed, on `fast`. Their endpoint shows as `responses` on the requests panel and in Jaeger, with their tokens, cached and reasoning tokens, and cost.
 - `smart` tries the provider `flaky` as `gpt-5` first and falls back to `steady` as `gpt-4o`. The fallback panel shows `smart: flaky to steady (server_error)`. After three failures in a row `flaky` cools down for 30 seconds and is tried last, so the fallbacks come in waves.
 - The key `batch` may make 10 calls a minute and is sent about 36, so the limit panel shows `rate_limited`.
 - The key `trial` has a daily budget of a fifth of a cent. It is spent within a minute or two, and then the limit panel shows `budget_exceeded`.

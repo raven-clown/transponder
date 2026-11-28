@@ -18,6 +18,7 @@ providers:
   - {name: flaky, type: openai, base_url: "http://flaky:9000/v1", api_key: demo}
 
 routes:
+  # Chat, streamed chat and the Responses API all use this route.
   - match: fast
     targets:
       - {provider: steady, model: gpt-4o-mini}

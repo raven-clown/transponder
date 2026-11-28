@@ -27,11 +27,13 @@ type scenario struct {
 }
 
 // scenarios are chosen so every panel of the dashboard has something to show: two routes,
-// streams, embeddings, a route whose first provider fails, a caller over its rate, a caller
-// over its budget, and a few plain mistakes.
+// streams, embeddings, Responses API calls, a route whose first provider fails, a caller over
+// its rate, a caller over its budget, and a few plain mistakes.
 var scenarios = []scenario{
 	{name: "chat", weight: 35, key: "tp_demo_alice", path: "/v1/chat/completions", model: "fast"},
 	{name: "chat stream", weight: 15, key: "tp_demo_bob", path: "/v1/chat/completions", model: "fast", stream: true},
+	{name: "responses", weight: 6, key: "tp_demo_alice", path: "/v1/responses", model: "fast"},
+	{name: "responses stream", weight: 4, key: "tp_demo_bob", path: "/v1/responses", model: "fast", stream: true},
 	{name: "chat with fallback", weight: 20, key: "tp_demo_alice", path: "/v1/chat/completions", model: "smart"},
 	{name: "stream with fallback", weight: 5, key: "tp_demo_bob", path: "/v1/chat/completions", model: "smart", stream: true},
 	{name: "embeddings over the rate", weight: 15, key: "tp_demo_batch", path: "/v1/embeddings", model: "embed"},
@@ -67,9 +69,12 @@ func pick(r float64) scenario {
 func (s scenario) body(r float64) []byte {
 	prompt := prompts[int(r*float64(len(prompts)))%len(prompts)]
 	var v map[string]any
-	if s.path == "/v1/embeddings" {
+	switch s.path {
+	case "/v1/embeddings":
 		v = map[string]any{"model": s.model, "input": prompt}
-	} else {
+	case "/v1/responses":
+		v = map[string]any{"model": s.model, "stream": s.stream, "max_output_tokens": 100, "input": prompt}
+	default:
 		// With limits on, a call reserves the price of its output limit before it runs, so
 		// a small one keeps the demo's budget from being spent by the first reservation.
 		v = map[string]any{

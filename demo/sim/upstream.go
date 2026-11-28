@@ -17,9 +17,9 @@ import (
 // answer is what the fake provider says, whatever it is asked.
 const answer = "This is a canned answer from the demo upstream. It has no model behind it, only a timer and a counter."
 
-// upstream answers chat completions and embeddings in the OpenAI wire format, after a
-// delay, and fails some of the time, so the gateway in front of it has latency, tokens and
-// fallbacks to show.
+// upstream answers chat completions, Responses API calls and embeddings in the OpenAI wire
+// format, after a delay, and fails some of the time, so the gateway in front of it has
+// latency, tokens and fallbacks to show.
 type upstream struct {
 	minLatency, maxLatency time.Duration
 	failRate               float64
@@ -70,6 +70,7 @@ func serveUntilDone(ctx context.Context, ln net.Listener, h http.Handler) error 
 func (u *upstream) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", u.chat)
+	mux.HandleFunc("POST /v1/responses", u.responses)
 	mux.HandleFunc("POST /v1/embeddings", u.embeddings)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok\n") })
 	return mux
@@ -116,6 +117,12 @@ type chatRequest struct {
 // tokens is a rough count, a token for every four bytes, which is all a demo needs.
 func tokens(n int) int { return n/4 + 1 }
 
+// words returns the answer cut at a random word, so output tokens vary from call to call.
+func (u *upstream) words() []string {
+	words := strings.Fields(answer)
+	return words[:1+int(u.random()*float64(len(words)))]
+}
+
 func (u *upstream) chat(w http.ResponseWriter, r *http.Request) {
 	var req chatRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil || req.Model == "" {
@@ -129,9 +136,7 @@ func (u *upstream) chat(w http.ResponseWriter, r *http.Request) {
 	for _, m := range req.Messages {
 		prompt += len(m.Content)
 	}
-	// The answer is cut at a random word, so output tokens vary from call to call.
-	words := strings.Fields(answer)
-	words = words[:1+int(u.random()*float64(len(words)))]
+	words := u.words()
 	text := strings.Join(words, " ")
 	use := map[string]int{"prompt_tokens": tokens(prompt), "completion_tokens": tokens(len(text))}
 	use["total_tokens"] = use["prompt_tokens"] + use["completion_tokens"]
@@ -218,4 +223,77 @@ func (u *upstream) embeddings(w http.ResponseWriter, r *http.Request) {
 		"object": "list", "model": req.Model, "data": data,
 		"usage": map[string]int{"prompt_tokens": prompt, "total_tokens": prompt},
 	})
+}
+
+type responsesRequest struct {
+	Model  string          `json:"model"`
+	Stream bool            `json:"stream"`
+	Input  json.RawMessage `json:"input"`
+}
+
+// responseObject is a Responses API response with the fields a client reads.
+func responseObject(id, model string, created int64, status string, output []any, usage any) map[string]any {
+	return map[string]any{
+		"id": id, "object": "response", "created_at": created, "status": status, "error": nil,
+		"model": model, "output": output, "usage": usage,
+	}
+}
+
+func (u *upstream) responses(w http.ResponseWriter, r *http.Request) {
+	var req responsesRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil || req.Model == "" {
+		badRequest(w, "the body must be a JSON Responses request with a model")
+		return
+	}
+	if !u.begin(w, r) {
+		return
+	}
+	words := u.words()
+	text := strings.Join(words, " ")
+	input := tokens(len(req.Input))
+	output := tokens(len(text))
+	// Cached and reasoning tokens are part of usage on the newer models, so the demo shows them.
+	use := map[string]any{
+		"input_tokens": input, "input_tokens_details": map[string]int{"cached_tokens": int(u.random() * float64(input))},
+		"output_tokens": output, "output_tokens_details": map[string]int{"reasoning_tokens": output / 4},
+		"total_tokens": input + output,
+	}
+	id := fmt.Sprintf("resp_demo_%08x", int64(u.random()*1e9))
+	msgID := "msg_" + strings.TrimPrefix(id, "resp_")
+	created := time.Now().Unix()
+	message := map[string]any{
+		"type": "message", "id": msgID, "status": "completed", "role": "assistant",
+		"content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}},
+	}
+	if !req.Stream {
+		writeJSON(w, http.StatusOK, responseObject(id, req.Model, created, "completed", []any{message}, use))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	rc := http.NewResponseController(w)
+	seq := 0
+	send := func(event string, data map[string]any) {
+		data["type"] = event
+		data["sequence_number"] = seq
+		seq++
+		b, _ := json.Marshal(data)
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+		_ = rc.Flush()
+	}
+	send("response.created", map[string]any{"response": responseObject(id, req.Model, created, "in_progress", []any{}, nil)})
+	for i, word := range words {
+		if i > 0 {
+			word = " " + word
+		}
+		send("response.output_text.delta", map[string]any{"item_id": msgID, "output_index": 0, "content_index": 0, "delta": word})
+		select {
+		case <-time.After(15 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+	}
+	send("response.output_text.done", map[string]any{"item_id": msgID, "output_index": 0, "content_index": 0, "text": text})
+	send("response.completed", map[string]any{"response": responseObject(id, req.Model, created, "completed", []any{message}, use)})
 }

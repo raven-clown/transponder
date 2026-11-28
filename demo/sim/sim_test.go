@@ -119,6 +119,88 @@ func TestUpstreamStream(t *testing.T) {
 	}
 }
 
+func TestUpstreamResponses(t *testing.T) {
+	const body = `{"model":"gpt-4o-mini","input":"Say hello to the demo."}`
+	t.Run("plain", func(t *testing.T) {
+		rec := post(t, quick(0).handler(), "/v1/responses", "", body)
+		var out struct {
+			Object string `json:"object"`
+			Status string `json:"status"`
+			Output []struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"output"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+		if out.Object != "response" || out.Status != "completed" || len(out.Output) != 1 ||
+			len(out.Output[0].Content) != 1 || out.Output[0].Content[0].Type != "output_text" || !strings.HasPrefix(answer, out.Output[0].Content[0].Text) {
+			t.Fatalf("answer %+v", out)
+		}
+		assertResponsesUsage(t, rec.Body.Bytes())
+	})
+	t.Run("stream", func(t *testing.T) {
+		rec := post(t, quick(0).handler(), "/v1/responses", "", `{"model":"gpt-4o-mini","stream":true,"input":"hi"}`)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("status %d, content type %q", rec.Code, rec.Header().Get("Content-Type"))
+		}
+		var lastEvent, lastData string
+		var deltas int
+		for _, block := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n\n") {
+			event, data, ok := strings.Cut(block, "\ndata: ")
+			if !ok || !strings.HasPrefix(event, "event: ") {
+				t.Fatalf("block that is not an event: %q", block)
+			}
+			if event == "event: response.output_text.delta" {
+				deltas++
+			}
+			lastEvent, lastData = event, data
+		}
+		if deltas == 0 || lastEvent != "event: response.completed" {
+			t.Fatalf("%d deltas, the last event %q", deltas, lastEvent)
+		}
+		var completed struct {
+			Response json.RawMessage `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(lastData), &completed); err != nil {
+			t.Fatal(err)
+		}
+		assertResponsesUsage(t, completed.Response)
+	})
+}
+
+// assertResponsesUsage checks the usage of a Responses API response, with its cached and
+// reasoning tokens, the way the gateway reads it.
+func assertResponsesUsage(t *testing.T, body []byte) {
+	t.Helper()
+	var out struct {
+		Usage struct {
+			InputTokens        int `json:"input_tokens"`
+			InputTokensDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+			OutputTokens        int `json:"output_tokens"`
+			OutputTokensDetails struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"output_tokens_details"`
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("%s: %v", body, err)
+	}
+	u := out.Usage
+	if u.InputTokens == 0 || u.OutputTokens == 0 || u.TotalTokens != u.InputTokens+u.OutputTokens {
+		t.Fatalf("usage %+v", u)
+	}
+	if u.InputTokensDetails.CachedTokens > u.InputTokens || u.OutputTokensDetails.ReasoningTokens == 0 {
+		t.Fatalf("usage %+v has no cached or reasoning tokens in range", u)
+	}
+}
+
 func TestUpstreamEmbeddings(t *testing.T) {
 	for name, tt := range map[string]struct {
 		input string
@@ -157,6 +239,8 @@ func TestUpstreamRefusals(t *testing.T) {
 	}{
 		"chat that is not JSON":       {"/v1/chat/completions", "{"},
 		"chat without a model":        {"/v1/chat/completions", `{"messages":[]}`},
+		"responses that are not JSON": {"/v1/responses", "{"},
+		"responses without a model":   {"/v1/responses", `{"input":"x"}`},
 		"embeddings that are no JSON": {"/v1/embeddings", "nope"},
 		"embeddings without a model":  {"/v1/embeddings", `{"input":"x"}`},
 		"embeddings without input":    {"/v1/embeddings", `{"model":"m"}`},
@@ -279,7 +363,11 @@ func TestGatewayReadsTheUpstream(t *testing.T) {
 		if rec.Header().Get("X-Transponder-Provider") != "steady" {
 			t.Fatalf("%s: answered by %q", s.name, rec.Header().Get("X-Transponder-Provider"))
 		}
-		if s.stream && !strings.Contains(rec.Body.String(), "[DONE]") {
+		finish := "[DONE]"
+		if s.path == "/v1/responses" {
+			finish = "event: response.completed"
+		}
+		if s.stream && !strings.Contains(rec.Body.String(), finish) {
 			t.Fatalf("%s: the stream did not finish:\n%s", s.name, rec.Body)
 		}
 	}
@@ -288,6 +376,7 @@ func TestGatewayReadsTheUpstream(t *testing.T) {
 	got := rec.Body.String()
 	for _, want := range []string{
 		`transponder_requests_total{endpoint="chat.completions",route="fast",provider="steady",model="gpt-4o-mini",code="200"} 2`,
+		`transponder_requests_total{endpoint="responses",route="fast",provider="steady",model="gpt-4o-mini",code="200"} 2`,
 		`transponder_requests_total{endpoint="embeddings",route="embed",provider="steady",model="text-embedding-3-small",code="200"} 1`,
 		`transponder_tokens_total{direction="output",provider="steady",model="gpt-4o-mini"} `,
 		`transponder_tokens_total{direction="input",provider="steady",model="text-embedding-3-small"} `,
@@ -445,11 +534,18 @@ func TestScenarioBodies(t *testing.T) {
 			t.Fatalf("%s: body %s, err %v", s.name, s.body(0.3), err)
 		}
 		_, hasInput := body["input"]
-		if embeddings := s.path == "/v1/embeddings"; embeddings != hasInput {
+		if wantInput := s.path == "/v1/embeddings" || s.path == "/v1/responses"; wantInput != hasInput {
 			t.Errorf("%s: path %s, input present %v", s.name, s.path, hasInput)
 		}
-		if !hasInput && (body["stream"] != s.stream || body["max_tokens"] != float64(100)) {
-			t.Errorf("%s: stream %v, max_tokens %v", s.name, body["stream"], body["max_tokens"])
+		switch s.path {
+		case "/v1/responses":
+			if body["stream"] != s.stream || body["max_output_tokens"] != float64(100) {
+				t.Errorf("%s: stream %v, max_output_tokens %v", s.name, body["stream"], body["max_output_tokens"])
+			}
+		case "/v1/chat/completions":
+			if body["stream"] != s.stream || body["max_tokens"] != float64(100) {
+				t.Errorf("%s: stream %v, max_tokens %v", s.name, body["stream"], body["max_tokens"])
+			}
 		}
 	}
 	// The top of the range still names a prompt.
@@ -520,7 +616,7 @@ func TestTraffic(t *testing.T) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.paths["/v1/chat/completions"] == 0 || g.paths["/v1/embeddings"] == 0 {
+	if g.paths["/v1/chat/completions"] == 0 || g.paths["/v1/embeddings"] == 0 || g.paths["/v1/responses"] == 0 {
 		t.Fatalf("paths called: %v", g.paths)
 	}
 	for _, s := range scenarios {
