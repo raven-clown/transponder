@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"math"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/raven-clown/transponder/internal/schema"
 )
+
+// maxPresize bounds the buffer a rewritten request is sized to before it is written. The
+// gateway caps request bodies at 20 MiB, so a request never reaches it.
+const maxPresize = 1 << 30
 
 // Peek is what the gateway reads from a request before forwarding it.
 type Peek struct {
@@ -110,10 +113,12 @@ func RewriteRequest(body []byte, model string, forceUsage bool) ([]byte, error) 
 		return rewriteByMap(body, model, forceUsage)
 	}
 	name, _ := json.Marshal(model)
-	if len(body) > math.MaxInt-len(name)-48 {
-		return nil, errors.New("openai: request body too large")
-	}
 	capHint := len(body) + len(name) + 48
+	if capHint < 0 || capHint > maxPresize {
+		// Past the bound the buffer grows as it is written, which is also what a negative
+		// hint from an overflowed sum would need.
+		capHint = 0
+	}
 	out := make([]byte, 0, capHint)
 	out = append(out, `{"model":`...)
 	out = append(out, name...)
