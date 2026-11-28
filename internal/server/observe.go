@@ -303,6 +303,13 @@ func fallbackReason(err error) string {
 	return "error"
 }
 
+// countRefusal counts a refused credential under its reason.
+func (g *gateway) countRefusal(err error) {
+	if reason, ok := auth.ReasonOf(err); ok {
+		g.d.Metrics.AuthRefused(string(reason))
+	}
+}
+
 // authFailed answers a request whose credentials were refused or could not be checked.
 func (g *gateway) authFailed(w http.ResponseWriter, r *http.Request, err error, writeError errorFunc) {
 	switch {
@@ -310,6 +317,7 @@ func (g *gateway) authFailed(w http.ResponseWriter, r *http.Request, err error, 
 		// The reason names claims and key ids, never the token. A trailing-slash
 		// issuer is a config hint the operator needs at the default log level,
 		// but one line is enough (#173).
+		g.countRefusal(err)
 		g.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
 		if errors.Is(err, auth.ErrIssuerTrailingSlash) {
 			g.issuerSlashWarned.Do(func() {

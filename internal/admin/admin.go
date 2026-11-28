@@ -22,6 +22,7 @@ import (
 	"github.com/raven-clown/transponder/internal/runtime"
 	"github.com/raven-clown/transponder/internal/secrets"
 	"github.com/raven-clown/transponder/internal/store"
+	"github.com/raven-clown/transponder/internal/telemetry"
 )
 
 // Prefix is where the admin API is served.
@@ -47,11 +48,13 @@ type Reloader interface {
 
 // Deps are what the admin API needs.
 type Deps struct {
-	Auth   *auth.Authenticator
-	Store  Store
-	Reload Reloader
-	Logger *slog.Logger
-	Now    func() time.Time
+	Auth  *auth.Authenticator
+	Store Store
+	// Metrics counts refused credentials. Nil counts nothing.
+	Metrics *telemetry.Metrics
+	Reload  Reloader
+	Logger  *slog.Logger
+	Now     func() time.Time
 	// Version is the transponder build, and StoreKind sqlite or postgres, for /status.
 	Version   string
 	StoreKind string
@@ -128,6 +131,9 @@ func (h *handler) openapi(w http.ResponseWriter, _ *http.Request) {
 func (h *handler) deny(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, auth.ErrUnauthenticated):
+		if reason, ok := auth.ReasonOf(err); ok {
+			h.d.Metrics.AuthRefused(string(reason))
+		}
 		h.d.Logger.DebugContext(r.Context(), "credentials refused", "reason", err.Error())
 		if errors.Is(err, auth.ErrIssuerTrailingSlash) {
 			h.issuerSlashWarned.Do(func() {
