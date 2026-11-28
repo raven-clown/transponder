@@ -7,7 +7,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Changed
 
 - The usage headers and the `RateLimit-Policy` and `RateLimit` headers are written with `strconv` instead of `fmt`, and under their canonical names, saving up to 9 allocations per call. The headers read the same.
-
+- An OpenAI request forwarded to an OpenAI-dialect target is no longer decoded into a map and encoded again: `model`, and `stream_options` when usage is asked for, are written first and every other member is copied as the caller sent it, in the caller's order and spacing. Reading the model and stream fields scans the body the same way. Peeking and rewriting a chat request takes 3.1 µs instead of 8.5 µs and 7 allocations instead of 45, and a streamed chat call through the gateway is 13% faster. A body that repeats a top-level key is still rewritten the old way, so the provider gets each key once.
+- The input token estimate that limits and budgets reserve against is worked out in one pass over the request body, without decoding it into a tree or copying its text, and only when a limit applies to the call. A chat call through the gateway takes 19% less time with 18% fewer allocations, and a gateway with no limits configured no longer works out the estimate before each call; it still estimates usage afterwards when a provider reports none. The estimate is the same as before for every body without repeated keys, which a fuzz test checks against the previous code; for a body that repeats a key, every copy now counts, so the estimate can only be higher.
+>
 ## [0.3.2] - 2026-11-22
 
 ### Added

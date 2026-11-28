@@ -33,7 +33,9 @@ func (g *gateway) messages(w http.ResponseWriter, r *http.Request) {
 	if !g.resolve(c, peek.Model) {
 		return
 	}
-	if !g.admit(c, limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_tokens")}) {
+	if !g.admit(c, func() limits.Estimate {
+		return limits.Estimate{InputTokens: estimateInput(c.body), OutputTokens: requestedMax(c.body, "max_tokens")}
+	}) {
 		return
 	}
 	if out, reasoning := c.ticket.Caps(); out > 0 || reasoning > 0 {

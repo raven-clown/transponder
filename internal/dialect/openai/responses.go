@@ -20,18 +20,22 @@ type ResponsesPeek struct {
 // PeekResponses reads the routing fields of a Responses API request. Keys are matched exactly,
 // as in PeekRequest.
 func PeekResponses(body []byte) (ResponsesPeek, error) {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(body, &m); err != nil || m == nil {
+	if !json.Valid(body) {
+		return ResponsesPeek{}, invalidJSON("the request body is not a JSON object")
+	}
+	var buf [32]member
+	ms, ok := objectMembers(body, buf[:0])
+	if !ok {
 		return ResponsesPeek{}, invalidJSON("the request body is not a JSON object")
 	}
 	var p ResponsesPeek
-	if err := field(m, "model", &p.Model); err != nil {
+	if err := field(ms, "model", &p.Model); err != nil {
 		return ResponsesPeek{}, err
 	}
-	if err := field(m, "stream", &p.Stream); err != nil {
+	if err := field(ms, "stream", &p.Stream); err != nil {
 		return ResponsesPeek{}, err
 	}
-	if err := field(m, "background", &p.Background); err != nil {
+	if err := field(ms, "background", &p.Background); err != nil {
 		return ResponsesPeek{}, err
 	}
 	if p.Model == "" {
