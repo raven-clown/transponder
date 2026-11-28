@@ -10,9 +10,9 @@ import (
 	"github.com/raven-clown/transponder/internal/schema"
 )
 
-// maxPresize bounds the buffer a rewritten request is sized to before it is written. The
-// gateway caps request bodies at 20 MiB, so a request never reaches it.
-const maxPresize = 1 << 30
+// maxPresize bounds the size a rewritten request is given up front. A larger body grows the
+// buffer as it is written. The gateway caps request bodies at 20 MiB, so this is never reached.
+const maxPresize = 1 << 28
 
 // Peek is what the gateway reads from a request before forwarding it.
 type Peek struct {
@@ -113,11 +113,9 @@ func RewriteRequest(body []byte, model string, forceUsage bool) ([]byte, error) 
 		return rewriteByMap(body, model, forceUsage)
 	}
 	name, _ := json.Marshal(model)
-	capHint := len(body) + len(name) + 48
-	if capHint < 0 || capHint > maxPresize {
-		// Past the bound the buffer grows as it is written, which is also what a negative
-		// hint from an overflowed sum would need.
-		capHint = 0
+	var capHint int
+	if len(body) <= maxPresize && len(name) <= maxPresize {
+		capHint = len(body) + len(name) + 48
 	}
 	out := make([]byte, 0, capHint)
 	out = append(out, `{"model":`...)
