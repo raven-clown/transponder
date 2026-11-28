@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -72,10 +73,14 @@ func referencePeekResponses(body []byte) (ResponsesPeek, error) {
 
 // decoded is a body as encoding/json reads it, so two bodies that differ only in key order,
 // spacing or escapes compare equal.
+// decoded reads b with numbers kept as text, since a number past float64's range is still
+// valid JSON that the comparison has to see.
 func decoded(t *testing.T, b []byte) any {
 	t.Helper()
 	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
 		t.Fatalf("not JSON: %v: %s", err, b)
 	}
 	return v
