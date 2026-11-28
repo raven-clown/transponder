@@ -312,7 +312,7 @@ func streamStatus(c *call) int {
 var errUpstreamTooLarge = errors.New("the provider's response is larger than the gateway accepts")
 
 func readUpstream(resp *http.Response) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBytes+1))
+	b, err := provider.ReadBody(io.LimitReader(resp.Body, maxUpstreamBytes+1), resp.ContentLength, maxUpstreamBytes+1)
 	if err == nil && int64(len(b)) > maxUpstreamBytes {
 		return nil, errUpstreamTooLarge
 	}

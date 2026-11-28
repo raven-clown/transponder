@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -141,7 +140,7 @@ func (g *gateway) beginWith(w http.ResponseWriter, r *http.Request, endpoint str
 		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "body_too_large", "", "the request body is larger than 20 MiB")
 		return nil
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(rawWriter(w), r.Body, maxBodyBytes))
+	body, err := provider.ReadBody(http.MaxBytesReader(rawWriter(w), r.Body, maxBodyBytes), r.ContentLength, maxBodyBytes)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {

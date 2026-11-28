@@ -115,7 +115,7 @@ func (a *Adapter) call(ctx context.Context, path string, body []byte) ([]byte, e
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	out, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	out, err := provider.ReadBody(io.LimitReader(resp.Body, maxResponseBody), resp.ContentLength, maxResponseBody)
 	if err != nil {
 		return nil, &provider.Error{Provider: a.name, Retryable: true, Err: err}
 	}

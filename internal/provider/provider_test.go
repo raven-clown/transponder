@@ -4,14 +4,100 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/raven-clown/transponder/internal/schema"
 )
+
+func TestReadBody(t *testing.T) {
+	big := strings.Repeat("x", 3*presizeLimit+5000)
+	const noLimit = 1 << 40
+	for _, tt := range []struct {
+		name string
+		body string
+		size int64
+	}{
+		{"declared exactly", "hello", 5},
+		{"unknown length", "hello", -1},
+		{"empty", "", 0},
+		{"declared too small", "hello world", 3},
+		{"declared too large", "hello", 100},
+		{"over the presize limit", big, int64(len(big))},
+		{"longer than declared, past the presize limit", big, 10},
+		{"declared past the presize limit, shorter", "hello", int64(len(big))},
+		{"declared exactly the presize limit", big[:presizeLimit], presizeLimit},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, r := range []io.Reader{strings.NewReader(tt.body), iotest.OneByteReader(strings.NewReader(tt.body)), iotest.DataErrReader(strings.NewReader(tt.body))} {
+				got, err := ReadBody(r, tt.size, noLimit)
+				if err != nil || string(got) != tt.body {
+					t.Fatalf("got %d bytes, err %v; want %d bytes", len(got), err, len(tt.body))
+				}
+			}
+		})
+	}
+	t.Run("nothing sent holds little", func(t *testing.T) {
+		got, err := ReadBody(strings.NewReader("hi"), 1<<30, noLimit)
+		if err != nil || string(got) != "hi" || cap(got) > presizeLimit+1024 {
+			t.Fatalf("got %q, cap %d, err %v", got, cap(got), err)
+		}
+	})
+	t.Run("a sender that stalls holds a few times what it sent", func(t *testing.T) {
+		// A caller declares 20 MiB, sends 1 MiB and stops.
+		sent := strings.Repeat("x", 1<<20)
+		got, err := ReadBody(strings.NewReader(sent), 20<<20, 20<<20)
+		if err != nil || len(got) != len(sent) || cap(got) > 4*len(sent)+1024 {
+			t.Fatalf("len %d, cap %d, err %v", len(got), cap(got), err)
+		}
+	})
+	t.Run("a declared size past the limit is not trusted", func(t *testing.T) {
+		// A provider declares 64 TiB, sends 2 MiB and ends; the reader stops at 4 MiB.
+		const limit = 4 << 20
+		sent := strings.Repeat("x", 2<<20)
+		got, err := ReadBody(io.LimitReader(strings.NewReader(sent), limit), 1<<46, limit)
+		// The allocator rounds a large buffer up a little; it must not grow towards 64 TiB.
+		if err != nil || len(got) != len(sent) || cap(got) > limit+limit/64 {
+			t.Fatalf("len %d, cap %d, err %v", len(got), cap(got), err)
+		}
+	})
+	t.Run("a read error comes back", func(t *testing.T) {
+		boom := errors.New("boom")
+		if _, err := ReadBody(io.MultiReader(strings.NewReader("ab"), iotest.ErrReader(boom)), 10, noLimit); !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want boom", err)
+		}
+	})
+	t.Run("a wrapped EOF is an error, as in io.ReadAll", func(t *testing.T) {
+		wrapped := fmt.Errorf("cut: %w", io.EOF)
+		r := io.MultiReader(strings.NewReader("ab"), iotest.ErrReader(wrapped))
+		if _, err := ReadBody(r, 10, noLimit); !errors.Is(err, wrapped) {
+			t.Fatalf("err = %v, want the wrapped EOF", err)
+		}
+	})
+}
+
+func BenchmarkReadBody(b *testing.B) {
+	for _, size := range []int{2 << 10, 50 << 10, 1 << 20, 8 << 20} {
+		body := strings.Repeat("x", size)
+		b.Run(fmt.Sprintf("%dKiB/sized", size>>10), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_, _ = ReadBody(strings.NewReader(body), int64(size), 1<<30)
+			}
+		})
+		b.Run(fmt.Sprintf("%dKiB/readall", size>>10), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				_, _ = io.ReadAll(strings.NewReader(body))
+			}
+		})
+	}
+}
 
 func TestRetryableStatus(t *testing.T) {
 	for status, want := range map[int]bool{

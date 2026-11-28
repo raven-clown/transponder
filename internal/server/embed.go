@@ -61,7 +61,7 @@ func (g *gateway) embedNative(c *call, n provider.Native) error {
 	setUsageHeaders(c.w.Header(), u, cost)
 	c.w.Header().Set("Content-Type", "application/json")
 	c.w.WriteHeader(resp.StatusCode)
-	_, _ = c.w.Write(out)
+	_, _ = c.w.Write(out) //nolint:gosec // the provider's JSON, served as application/json
 	return nil
 }
 
