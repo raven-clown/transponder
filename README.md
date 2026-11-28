@@ -16,7 +16,7 @@
 
 </div>
 
-**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, Ollama and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
+**An LLM gateway that knows who is spending what.** One Go binary in front of OpenAI, Anthropic, Gemini, Together AI, Ollama and a dozen more. It speaks the OpenAI and Anthropic APIs, falls back across providers, signs people in with your own OIDC provider, counts tokens and cost per user, team and key, and enforces budgets that hold across replicas. Every feature is free, under Apache-2.0.
 
 <p align="center">
   <a href="demo/README.md"><img src="demo/dashboard.jpg" alt="The Grafana dashboard of the demo: requests per second by endpoint and status, added latency percentiles, tokens and cost by model, fallbacks between providers, and refused calls by reason." width="100%"></a>
@@ -214,6 +214,7 @@ flowchart TB
 | Groq `groq` | `openai` | `https://api.groq.com/openai/v1` | yes | URL, inline | yes | yes |
 | Cerebras `cerebras` | `openai` | `https://api.cerebras.ai/v1` | yes | URL, inline | yes | yes |
 | SiliconFlow `siliconflow` | `openai` | `https://api.siliconflow.com/v1` | yes | URL, inline | yes | yes |
+| Together AI `together` | `openai` | `https://api.together.xyz/v1` | yes | URL, inline | yes | yes |
 | built-in test provider `echo` | none | built in | no | ignored | yes | no |
 
 - Every type serves chat, plain and streamed. A test builds every registered provider type and checks this table against what its adapter does, so the table cannot fall behind the code.

@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Together AI provider (`type: together`) defaulting to `https://api.together.xyz/v1` and sending `api_key` as a bearer token. A `base_url` still overrides that default. No prices are included, so calls are logged as unpriced.
+
 ### Changed
 
 - The input token estimate that limits and budgets reserve against is worked out in one pass over the request body, without decoding it into a tree or copying its text, and only when a limit applies to the call. A chat call through the gateway takes 19% less time with 18% fewer allocations, and a gateway with no limits configured no longer works out the estimate before each call; it still estimates usage afterwards when a provider reports none. The estimate is the same as before for every body without repeated keys, which a fuzz test checks against the previous code; for a body that repeats a key, every copy now counts, so the estimate can only be higher.
