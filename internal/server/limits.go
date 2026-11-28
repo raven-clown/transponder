@@ -1,27 +1,25 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"maps"
 	"math"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/raven-clown/transponder/internal/limits"
 	"github.com/raven-clown/transponder/internal/schema"
-	"github.com/raven-clown/transponder/internal/tokens"
 )
 
 // admit reserves the call against the caller's limits once the model is known, and writes the
-// refusal itself when the call may not run.
-func (g *gateway) admit(c *call, est limits.Estimate) bool {
+// refusal itself when the call may not run. The estimate is only worked out when something
+// limits the call, since it reads the whole body.
+func (g *gateway) admit(c *call, estimate func() limits.Estimate) bool {
 	if c.limiter == nil {
 		return true
 	}
+	est := estimate()
 	// Any target of the route may end up serving the call, so the reservation is priced at the
 	// dearest one. A free first target must not let calls through that a paid fallback would bill.
 	est.Price = func(in, out int64) int64 {
@@ -213,96 +211,5 @@ func capAnthropic(body []byte, outLimit, reasoningLimit int64) []byte {
 	})
 }
 
-// base64DataURI matches an inline image, audio or file payload, which is not text for the model.
-var base64DataURI = regexp.MustCompile(`^data:[a-z]+/[a-zA-Z0-9.+-]+;base64,`)
-
 // minThinkingBudget is the smallest extended thinking budget Anthropic accepts.
 const minThinkingBudget = 1024
-
-// estimateInput counts every key and string in a request body, and every number in an array,
-// which is how token-array inputs arrive. Tool schemas, tool arguments and descriptions all reach
-// the model, so they all count. Signatures do not, and neither does an image's base64 data: an
-// image counts as tokens.Image instead, whatever its size. Other inline files, such as a PDF,
-// count by the size of their data, since the model reads their pages.
-func estimateInput(body []byte) int64 {
-	var v any
-	if json.Unmarshal(body, &v) != nil {
-		return tokens.Estimate(string(body))
-	}
-	var b bytes.Buffer
-	var numbers, images int64
-	var walk func(key string, v any)
-	walk = func(key string, v any) {
-		switch x := v.(type) {
-		case map[string]any:
-			if isImage(x) {
-				images++
-				x = withoutImageData(x)
-			}
-			for k, val := range x {
-				b.WriteString(k)
-				b.WriteByte(' ')
-				walk(k, val)
-			}
-		case []any:
-			for _, val := range x {
-				if _, ok := val.(float64); ok {
-					numbers++
-					continue
-				}
-				walk(key, val)
-			}
-		case string:
-			if key == "signature" {
-				return
-			}
-			b.WriteString(x)
-			b.WriteByte(' ')
-		}
-	}
-	walk("", v)
-	return tokens.Estimate(b.String()) + numbers + images*tokens.Image
-}
-
-// withoutImageData returns an image part without the fields that hold its inline data: an
-// Anthropic base64 source's data, and a data: URL in image_url or file_data. Anything else
-// in the part still counts.
-func withoutImageData(part map[string]any) map[string]any {
-	out := maps.Clone(part)
-	if src, ok := out["source"].(map[string]any); ok && src["type"] == "base64" {
-		src = maps.Clone(src)
-		delete(src, "data")
-		out["source"] = src
-	}
-	if u, ok := out["image_url"].(map[string]any); ok && isDataURI(u["url"]) {
-		u = maps.Clone(u)
-		delete(u, "url")
-		out["image_url"] = u
-	}
-	for _, k := range []string{"image_url", "file_data"} {
-		if isDataURI(out[k]) {
-			delete(out, k)
-		}
-	}
-	return out
-}
-
-func isDataURI(v any) bool {
-	s, ok := v.(string)
-	return ok && base64DataURI.MatchString(s)
-}
-
-// isImage reports whether a JSON object is an image part, in the form of OpenAI's chat or
-// Responses API or of Anthropic. A Responses API file counts as one image too: its size cannot
-// be read before the call, and callers with an input limit may not send one.
-func isImage(part map[string]any) bool {
-	switch part["type"] {
-	case "input_image", "input_file":
-		return true
-	case "image_url":
-		return part["image_url"] != nil
-	case "image":
-		return part["source"] != nil
-	}
-	return false
-}
